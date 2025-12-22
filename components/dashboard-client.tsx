@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { Eye, Package, LogOut, Plus, Settings, Trash2 } from "lucide-react"
+import { Eye, Package, LogOut, Plus, Settings, Trash2, ArrowLeft } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import {
   AlertDialog,
@@ -116,6 +116,14 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
+              <div className="mb-2">
+                <Button variant="ghost" size="sm" asChild className="mb-2">
+                  <Link href="/browse">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back to Browse
+                  </Link>
+                </Button>
+              </div>
               <h1 className="text-2xl font-bold text-foreground">{vendor.shop_name}</h1>
               <p className="text-sm text-muted-foreground">
                 {vendor.location.name}, {vendor.location.city}, {vendor.location.country}

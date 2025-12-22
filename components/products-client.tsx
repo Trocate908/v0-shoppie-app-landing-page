@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card"
 import { Search } from "lucide-react"
 import Image from "next/image"
 import { createBrowserClient } from "@/lib/supabase/client"
+import Link from "next/link"
 
 interface Product {
   id: string
@@ -114,52 +115,53 @@ export default function ProductsClient({ products }: ProductsClientProps) {
       ) : (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredProducts.map((product) => (
-            <Card
-              key={product.id}
-              data-product-id={product.id}
-              className="overflow-hidden transition-shadow hover:shadow-md"
-            >
-              {/* Product Image */}
-              <div className="relative aspect-square w-full overflow-hidden bg-muted">
-                {product.image_url ? (
-                  <Image
-                    src={product.image_url || "/placeholder.svg"}
-                    alt={product.name}
-                    fill
-                    className="object-cover"
-                    loading="lazy"
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center">
-                    <span className="text-sm text-muted-foreground">No image</span>
+            <Link key={product.id} href={`/product/${product.id}`}>
+              <Card
+                data-product-id={product.id}
+                className="overflow-hidden transition-shadow hover:shadow-md cursor-pointer"
+              >
+                {/* Product Image */}
+                <div className="relative aspect-square w-full overflow-hidden bg-muted">
+                  {product.image_url ? (
+                    <Image
+                      src={product.image_url || "/placeholder.svg"}
+                      alt={product.name}
+                      fill
+                      className="object-cover"
+                      loading="lazy"
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center">
+                      <span className="text-sm text-muted-foreground">No image</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Product Details */}
+                <div className="p-4">
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <h3 className="line-clamp-2 font-semibold text-foreground">{product.name}</h3>
+                    <Badge variant={product.in_stock ? "default" : "secondary"} className="shrink-0">
+                      {product.in_stock ? "In Stock" : "Out of Stock"}
+                    </Badge>
                   </div>
-                )}
-              </div>
 
-              {/* Product Details */}
-              <div className="p-4">
-                <div className="mb-2 flex items-start justify-between gap-2">
-                  <h3 className="line-clamp-2 font-semibold text-foreground">{product.name}</h3>
-                  <Badge variant={product.in_stock ? "default" : "secondary"} className="shrink-0">
-                    {product.in_stock ? "In Stock" : "Out of Stock"}
-                  </Badge>
+                  {product.description && (
+                    <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <p className="text-lg font-bold text-primary">${product.price.toFixed(2)}</p>
+                    <Badge variant={product.vendor.is_open ? "default" : "outline"}>
+                      {product.vendor.is_open ? "Open" : "Closed"}
+                    </Badge>
+                  </div>
+
+                  <p className="mt-2 text-xs text-muted-foreground">{product.vendor.shop_name}</p>
                 </div>
-
-                {product.description && (
-                  <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
-                )}
-
-                <div className="flex items-center justify-between">
-                  <p className="text-lg font-bold text-primary">${product.price.toFixed(2)}</p>
-                  <Badge variant={product.vendor.is_open ? "default" : "outline"}>
-                    {product.vendor.is_open ? "Open" : "Closed"}
-                  </Badge>
-                </div>
-
-                <p className="mt-2 text-xs text-muted-foreground">{product.vendor.shop_name}</p>
-              </div>
-            </Card>
+              </Card>
+            </Link>
           ))}
         </div>
       )}
