@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
-import Image from "next/image"
+import { User } from "lucide-react"
 
 export default function ProfileButton() {
   const [isLoading, setIsLoading] = useState(false)
@@ -33,7 +33,7 @@ export default function ProfileButton() {
 
   return (
     <Button variant="ghost" size="sm" className="gap-2" onClick={handleProfileClick} disabled={isLoading}>
-      <Image src="/logo.png" alt="Profile" width={20} height={20} className="h-5 w-5" />
+      <User className="h-5 w-5" />
       <span className="hidden sm:inline">{isLoading ? "Loading..." : "Profile"}</span>
     </Button>
   )

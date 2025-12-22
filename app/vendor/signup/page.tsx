@@ -348,7 +348,7 @@ export default function VendorSignupPage() {
 
       toast({
         title: "Success!",
-        description: "Your vendor account has been created. Redirecting...",
+        description: "Your account has been successfully created, check your inbox for confirmation.",
       })
 
       // Step 5: Redirect to dashboard

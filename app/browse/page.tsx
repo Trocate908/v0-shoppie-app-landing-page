@@ -36,14 +36,26 @@ async function getVisitorCountry(): Promise<string | null> {
     const ip = forwarded ? forwarded.split(",")[0] : headersList.get("x-real-ip") || "8.8.8.8"
 
     // Use ip-api.com (free, no API key needed)
-    const response = await fetch(`http://ip-api.com/json/${ip}?fields=country`, {
+    const response = await fetch(`https://ip-api.com/json/${ip}?fields=country`, {
       cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
     })
 
-    if (!response.ok) return null
+    if (!response.ok) {
+      return null
+    }
 
-    const data = await response.json()
-    return data.country || null
+    const text = await response.text()
+
+    try {
+      const data = JSON.parse(text)
+      return data.country || null
+    } catch (parseError) {
+      console.error("[v0] JSON parse error:", parseError)
+      return null
+    }
   } catch (error) {
     console.error("[v0] Error detecting visitor country:", error)
     return null
