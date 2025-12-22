@@ -18,6 +18,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import ProfileButton from "@/components/profile-button"
 
 interface Location {
   id: string
@@ -176,11 +177,7 @@ export default function BrowseProductsClient({
               <Store className="h-6 w-6 text-primary" />
               <h1 className="text-xl font-bold text-foreground">ShoppieApp</h1>
             </Link>
-            <Link href="/vendor/login">
-              <Button variant="ghost" size="sm">
-                Vendor Login
-              </Button>
-            </Link>
+            <ProfileButton />
           </div>
         </div>
       </header>

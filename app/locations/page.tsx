@@ -1,5 +1,8 @@
 import { createClient } from "@/lib/supabase/server"
 import LocationSelector from "@/components/location-selector"
+import ProfileButton from "@/components/profile-button"
+import Link from "next/link"
+import { Store } from "lucide-react"
 
 export const metadata = {
   title: "Select Location - ShoppieApp",
@@ -36,7 +39,13 @@ export default async function LocationsPage() {
     <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b border-border bg-background">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <h1 className="text-xl font-bold text-foreground">ShoppieApp</h1>
+          <div className="flex items-center justify-between">
+            <Link href="/" className="flex items-center gap-2">
+              <Store className="h-6 w-6 text-primary" />
+              <h1 className="text-xl font-bold text-foreground">ShoppieApp</h1>
+            </Link>
+            <ProfileButton />
+          </div>
         </div>
       </header>
 

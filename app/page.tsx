@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Store, User, MapPin } from "lucide-react"
+import ProfileButton from "@/components/profile-button"
 
 export default function HomePage() {
   return (
@@ -13,13 +14,7 @@ export default function HomePage() {
               <Store className="h-6 w-6 text-primary" />
               <h1 className="text-xl font-bold text-foreground">ShoppieApp</h1>
             </Link>
-            <Link href="/vendor/login">
-              <Button variant="ghost" size="sm" className="gap-2">
-                <User className="h-4 w-4" />
-                <span className="hidden sm:inline">Vendor Login</span>
-                <span className="sm:hidden">Login</span>
-              </Button>
-            </Link>
+            <ProfileButton />
           </div>
         </div>
       </header>

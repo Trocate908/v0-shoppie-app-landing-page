@@ -2,8 +2,9 @@ import { Suspense } from "react"
 import { createClient } from "@/lib/supabase/server"
 import ProductsClient from "@/components/products-client"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Store } from "lucide-react"
 import Link from "next/link"
+import ProfileButton from "@/components/profile-button"
 
 export const metadata = {
   title: "Products - ShoppieApp",
@@ -125,14 +126,20 @@ export default async function ProductsPage({
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-bold text-foreground">ShoppieApp</h1>
-            <Link
-              href="/locations"
-              className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Change Location
+            <Link href="/" className="flex items-center gap-2">
+              <Store className="h-6 w-6 text-primary" />
+              <h1 className="text-xl font-bold text-foreground">ShoppieApp</h1>
             </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/locations"
+                className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span className="hidden sm:inline">Change Location</span>
+              </Link>
+              <ProfileButton />
+            </div>
           </div>
         </div>
       </header>
