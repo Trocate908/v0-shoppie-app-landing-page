@@ -2,9 +2,9 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { User } from "lucide-react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
+import Image from "next/image"
 
 export default function ProfileButton() {
   const [isLoading, setIsLoading] = useState(false)
@@ -19,15 +19,12 @@ export default function ProfileButton() {
       } = await supabase.auth.getUser()
 
       if (user) {
-        // User is logged in, redirect to vendor dashboard
         router.push("/vendor/dashboard")
       } else {
-        // User not logged in, redirect to login page
         router.push("/vendor/login")
       }
     } catch (error) {
       console.error("[v0] Profile button error:", error)
-      // On error, redirect to login
       router.push("/vendor/login")
     } finally {
       setIsLoading(false)
@@ -36,7 +33,7 @@ export default function ProfileButton() {
 
   return (
     <Button variant="ghost" size="sm" className="gap-2" onClick={handleProfileClick} disabled={isLoading}>
-      <User className="h-4 w-4" />
+      <Image src="/logo.png" alt="Profile" width={20} height={20} className="h-5 w-5" />
       <span className="hidden sm:inline">{isLoading ? "Loading..." : "Profile"}</span>
     </Button>
   )

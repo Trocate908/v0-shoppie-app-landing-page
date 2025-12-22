@@ -2,6 +2,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Store, User, MapPin } from "lucide-react"
 import ProfileButton from "@/components/profile-button"
+import Image from "next/image"
 
 export default function HomePage() {
   return (
@@ -11,7 +12,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
-              <Store className="h-6 w-6 text-primary" />
+              <Image src="/logo.png" alt="ShoppieApp" width={32} height={32} className="h-8 w-8" />
               <h1 className="text-xl font-bold text-foreground">ShoppieApp</h1>
             </Link>
             <ProfileButton />
@@ -24,6 +25,9 @@ export default function HomePage() {
         {/* Hero Section */}
         <section className="bg-background px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
           <div className="mx-auto max-w-3xl text-center">
+            <div className="mb-8 flex justify-center">
+              <Image src="/logo.png" alt="ShoppieApp" width={120} height={120} className="h-24 w-24 sm:h-30 sm:w-30" />
+            </div>
             <h2 className="text-balance text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
               Find Local Products Near You
             </h2>
