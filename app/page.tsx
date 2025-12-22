@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Store, User, Search } from "lucide-react"
+import { Store, User, MapPin } from "lucide-react"
 
 export default function HomePage() {
   return (
@@ -36,9 +36,15 @@ export default function HomePage() {
               Connect with local vendors and discover products in your area
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-              <Link href="/locations" className="w-full sm:w-auto">
+              <Link href="/browse" className="w-full sm:w-auto">
                 <Button size="lg" className="w-full gap-2 sm:w-auto">
-                  <Search className="h-5 w-5" />
+                  <Store className="h-5 w-5" />
+                  Browse All Products
+                </Button>
+              </Link>
+              <Link href="/locations" className="w-full sm:w-auto">
+                <Button size="lg" variant="outline" className="w-full gap-2 sm:w-auto bg-transparent">
+                  <MapPin className="h-5 w-5" />
                   Find Products Near You
                 </Button>
               </Link>
