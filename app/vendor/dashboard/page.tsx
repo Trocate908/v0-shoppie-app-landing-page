@@ -83,6 +83,8 @@ export default async function VendorDashboardPage() {
   const vendorData = {
     id: vendor.id,
     shop_name: vendor.shop_name,
+    shop_description: vendor.shop_description || undefined,
+    location_id: vendor.location_id,
     is_open: vendor.is_open ?? true,
     location: {
       name: locationName,

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { Eye, Package, LogOut, Plus, Settings, Trash2, ArrowLeft } from "lucide-react"
+import { Eye, Package, LogOut, Plus, Settings, Trash2, ArrowLeft, Moon, Sun } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import {
   AlertDialog,
@@ -20,10 +20,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { EditProfileDialog } from "@/components/edit-profile-dialog"
+import { useTheme } from "@/components/theme-provider"
 
 type VendorData = {
   id: string
   shop_name: string
+  shop_description?: string
+  location_id: string
   is_open: boolean
   location: {
     name: string
@@ -44,6 +48,7 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
   const [isUpdating, setIsUpdating] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const { toast } = useToast()
+  const { theme, toggleTheme } = useTheme()
 
   const handleToggleShop = async (checked: boolean) => {
     setIsUpdating(true)
@@ -129,10 +134,26 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
                 {vendor.location.name}, {vendor.location.city}, {vendor.location.country}
               </p>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="w-fit">
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={toggleTheme}>
+                {theme === "light" ? (
+                  <>
+                    <Moon className="mr-2 h-4 w-4" />
+                    Dark
+                  </>
+                ) : (
+                  <>
+                    <Sun className="mr-2 h-4 w-4" />
+                    Light
+                  </>
+                )}
+              </Button>
+              <EditProfileDialog vendor={vendor} />
+              <Button variant="ghost" size="sm" onClick={handleLogout} className="w-fit">
+                <LogOut className="mr-2 h-4 w-4" />
+                Logout
+              </Button>
+            </div>
           </div>
         </div>
       </header>
