@@ -139,14 +139,6 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
     const supabase = createClient()
 
     try {
-      // Delete image from storage if exists
-      if (deletingProduct.image_url) {
-        const path = deletingProduct.image_url.split("/product-images/")[1]
-        if (path) {
-          await supabase.storage.from("product-images").remove([path])
-        }
-      }
-
       // Delete product from database (cascade will delete views)
       const { error } = await supabase.from("products").delete().eq("id", deletingProduct.id)
 

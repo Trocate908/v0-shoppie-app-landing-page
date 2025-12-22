@@ -64,34 +64,29 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
     try {
       let imageUrl = null
 
-      // Upload image to Supabase Storage if provided
       if (imageFile) {
-        const fileExt = imageFile.name.split(".").pop()
-        const fileName = `${vendorId}/${Date.now()}.${fileExt}`
+        const formData = new FormData()
+        formData.append("file", imageFile)
+        formData.append("upload_preset", "shoppieapp_products")
+        formData.append("folder", `vendors/${vendorId}`)
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from("product-images")
-          .upload(fileName, imageFile, {
-            cacheControl: "3600",
-            upsert: false,
-          })
+        const cloudinaryResponse = await fetch("https://api.cloudinary.com/v1_1/dibqpzu1j/image/upload", {
+          method: "POST",
+          body: formData,
+        })
 
-        if (uploadError) {
+        if (!cloudinaryResponse.ok) {
           toast({
             title: "Upload failed",
-            description: uploadError.message || "Failed to upload image. Please try again.",
+            description: "Failed to upload image. Please try again.",
             variant: "destructive",
           })
           setIsSubmitting(false)
           return
         }
 
-        // Get public URL
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from("product-images").getPublicUrl(uploadData.path)
-
-        imageUrl = publicUrl
+        const cloudinaryData = await cloudinaryResponse.json()
+        imageUrl = cloudinaryData.secure_url
       }
 
       // Insert product into database

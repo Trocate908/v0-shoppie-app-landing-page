@@ -16,11 +16,11 @@ A production-ready marketplace platform connecting local shoppers with nearby ve
 - Create your own location during signup
 - Dashboard with real-time analytics
 - Add and manage products
-- Upload product images to Supabase Storage
+- Upload product images to Cloudinary
 - Toggle shop open/closed status
 - Track product views (total and weekly)
 - Edit product details and stock status
-- Delete products with automatic image cleanup
+- Delete products
 
 ## Tech Stack
 
@@ -29,7 +29,7 @@ A production-ready marketplace platform connecting local shoppers with nearby ve
 - **Styling:** Tailwind CSS v4
 - **Database:** Supabase (PostgreSQL)
 - **Authentication:** Supabase Auth
-- **Storage:** Supabase Storage
+- **Image Storage:** Cloudinary
 - **Analytics:** Built-in SQL-based analytics
 - **Deployment:** Vercel-ready
 
@@ -70,7 +70,6 @@ shoppieapp/
 │   ├── 05_create_triggers.sql
 │   ├── 06_seed_locations.sql
 │   ├── 07_create_analytics_function.sql
-│   ├── 08_create_storage_bucket.sql
 │   └── 09_update_locations_structure.sql
 └── proxy.ts                     # Middleware for protected routes
 ```
@@ -81,6 +80,7 @@ shoppieapp/
 
 - Node.js 18+ installed
 - A Supabase account
+- A Cloudinary account
 - Vercel account (for deployment)
 
 ### 1. Clone and Install
@@ -106,9 +106,20 @@ pnpm install
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL=http://localhost:3000
+
+# Cloudinary Configuration
+CLOUDINARY_URL=cloudinary://your_api_key:your_api_secret@your_cloud_name
+NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
 ```
 
-### 3. Run Database Migrations
+### 3. Set Up Cloudinary
+
+1. Create a free account at [cloudinary.com](https://cloudinary.com)
+2. Go to Settings > Upload
+3. Enable unsigned uploading and create an upload preset named `shoppieapp_products`
+4. Add your Cloudinary credentials to `.env.local` (see above)
+
+### 4. Run Database Migrations
 
 Execute the SQL scripts in order in your Supabase SQL Editor:
 
@@ -119,20 +130,11 @@ Execute the SQL scripts in order in your Supabase SQL Editor:
 5. `scripts/05_create_triggers.sql` - Creates auto-update triggers
 6. `scripts/06_seed_locations.sql` - Seeds sample location data (optional)
 7. `scripts/07_create_analytics_function.sql` - Creates analytics function
-8. `scripts/08_create_storage_bucket.sql` - Sets up storage bucket
-9. `scripts/09_update_locations_structure.sql` - Updates location RLS policies
+8. `scripts/09_update_locations_structure.sql` - Updates location RLS policies
 
 **Important:** Run scripts in order to avoid dependency errors.
 
 **Note:** Script 06 (seed data) is optional. Locations are now created by vendors during signup.
-
-### 4. Configure Supabase Storage
-
-The storage bucket is created by script 08, but verify it in Supabase Dashboard:
-
-1. Go to Storage > Buckets
-2. Confirm `product-images` bucket exists
-3. Verify RLS policies are enabled
 
 ### 5. Run Development Server
 
@@ -179,15 +181,20 @@ Open [http://localhost:3000](http://localhost:3000) to see your app.
 
 ## Environment Variables
 
-Required environment variables (automatically set when using Supabase integration):
+Required environment variables:
 
 ```env
+# Supabase (automatically set when using Supabase integration on Vercel)
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL=http://localhost:3000
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+
+# Cloudinary
+CLOUDINARY_URL=cloudinary://api_key:api_secret@cloud_name
+NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
 ```
 
 ## Deployment
@@ -215,9 +222,9 @@ vercel
 
 ## Performance Optimizations
 
-- **Image Optimization** - Next.js Image component with lazy loading
+- **Image Optimization** - Cloudinary automatic optimization with Next.js Image component
 - **Lazy Loading** - IntersectionObserver for product view tracking
-- **Responsive Images** - Multiple sizes for different viewports
+- **Responsive Images** - Multiple sizes for different viewports via Cloudinary
 - **SQL Aggregation** - Efficient analytics queries
 - **Client-Side State** - Optimistic updates for better UX
 - **Mobile-First** - Optimized for low-end Android devices
@@ -228,7 +235,7 @@ vercel
 - **Row Level Security** - Database-level access control
 - **Protected Routes** - Middleware for vendor-only pages
 - **Password Hashing** - Handled by Supabase Auth
-- **Secure Storage** - RLS policies on product images
+- **Cloudinary Security** - Upload preset controls and folder organization
 - **CSRF Protection** - Built-in Next.js security
 
 ## Error Handling
