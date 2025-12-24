@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Link from "next/link"
 import { useState } from "react"
 import { useToast } from "@/hooks/use-toast"
@@ -209,6 +210,12 @@ const COUNTRIES = [
 ]
 
 export default function VendorSignupPage() {
+  const [authMethod, setAuthMethod] = useState<"email" | "phone">("email")
+  const [phone, setPhone] = useState("")
+  const [otp, setOtp] = useState("")
+  const [showOtpInput, setShowOtpInput] = useState(false)
+  const [pendingVerification, setPendingVerification] = useState(false)
+
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [repeatPassword, setRepeatPassword] = useState("")
@@ -219,6 +226,107 @@ export default function VendorSignupPage() {
   const [locationName, setLocationName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
+
+  const handlePhoneSignUp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const supabase = createClient()
+    setIsLoading(true)
+
+    if (!country || !city.trim() || !locationName.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please fill in country, city, and market location",
+      })
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      if (!showOtpInput) {
+        // Step 1: Send OTP to phone
+        const { error: otpError } = await supabase.auth.signInWithOtp({
+          phone,
+        })
+
+        if (otpError) throw otpError
+
+        setShowOtpInput(true)
+        setPendingVerification(true)
+        toast({
+          title: "OTP Sent",
+          description: "Please check your phone for the verification code",
+        })
+        setIsLoading(false)
+      } else {
+        // Step 2: Verify OTP and create account
+        const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({
+          phone,
+          token: otp,
+          type: "sms",
+        })
+
+        if (verifyError) throw verifyError
+        if (!authData.user) throw new Error("Failed to verify phone number")
+
+        // Step 3: Create or find location
+        let locationId: string
+
+        const { data: existingLocation } = await supabase
+          .from("locations")
+          .select("id")
+          .eq("country", country)
+          .eq("city", city.trim())
+          .eq("market_name", locationName.trim())
+          .maybeSingle()
+
+        if (existingLocation) {
+          locationId = existingLocation.id
+        } else {
+          const { data: newLocation, error: locationError } = await supabase
+            .from("locations")
+            .insert({
+              country,
+              city: city.trim(),
+              market_name: locationName.trim(),
+            })
+            .select("id")
+            .single()
+
+          if (locationError) throw locationError
+          if (!newLocation) throw new Error("Failed to create location")
+          locationId = newLocation.id
+        }
+
+        // Step 4: Create vendor profile
+        const { error: vendorError } = await supabase.from("vendors").insert({
+          user_id: authData.user.id,
+          location_id: locationId,
+          shop_name: shopName,
+          shop_description: shopDescription,
+          is_open: true,
+        })
+
+        if (vendorError) throw vendorError
+
+        toast({
+          title: "Success!",
+          description: "Your account has been successfully created, check your inbox for confirmation.",
+        })
+
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        window.location.href = "/vendor/dashboard"
+      }
+    } catch (error: unknown) {
+      console.error("[v0] Phone signup error:", error)
+      toast({
+        variant: "destructive",
+        title: "Signup Failed",
+        description: error instanceof Error ? error.message : "An error occurred during signup. Please try again.",
+      })
+      setIsLoading(false)
+    }
+  }
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -375,111 +483,242 @@ export default function VendorSignupPage() {
               <CardDescription>Create your vendor account</CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSignUp}>
-                <div className="flex flex-col gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="vendor@example.com"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="password">Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      required
-                      minLength={6}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="repeat-password">Repeat Password</Label>
-                    <Input
-                      id="repeat-password"
-                      type="password"
-                      required
-                      minLength={6}
-                      value={repeatPassword}
-                      onChange={(e) => setRepeatPassword(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="shop-name">Shop Name</Label>
-                    <Input
-                      id="shop-name"
-                      type="text"
-                      placeholder="My Shop"
-                      required
-                      value={shopName}
-                      onChange={(e) => setShopName(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="shop-description">Shop Description (optional)</Label>
-                    <Textarea
-                      id="shop-description"
-                      placeholder="Brief description of your shop"
-                      value={shopDescription}
-                      onChange={(e) => setShopDescription(e.target.value)}
-                      rows={2}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="country">Country</Label>
-                    <Select value={country} onValueChange={setCountry} required>
-                      <SelectTrigger id="country">
-                        <SelectValue placeholder="Select your country" />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-[300px]">
-                        {COUNTRIES.map((countryName) => (
-                          <SelectItem key={countryName} value={countryName}>
-                            {countryName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="city">City</Label>
-                    <Input
-                      id="city"
-                      type="text"
-                      placeholder="e.g., Nairobi, Lagos, Accra"
-                      required
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="location">Market Name</Label>
-                    <Input
-                      id="location"
-                      type="text"
-                      placeholder="e.g., Downtown Market"
-                      required
-                      value={locationName}
-                      onChange={(e) => setLocationName(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">The specific market where your shop is located</p>
-                  </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Creating account..." : "Sign up"}
-                  </Button>
-                </div>
-                <div className="mt-4 text-center text-sm">
-                  Already have an account?{" "}
-                  <Link href="/vendor/login" className="underline underline-offset-4">
-                    Login
-                  </Link>
-                </div>
-              </form>
+              <Tabs value={authMethod} onValueChange={(v) => setAuthMethod(v as "email" | "phone")}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="email">Email</TabsTrigger>
+                  <TabsTrigger value="phone">Phone</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="email">
+                  <form onSubmit={handleSignUp}>
+                    <div className="flex flex-col gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="email">Email</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          placeholder="vendor@example.com"
+                          required
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="password">Password</Label>
+                        <Input
+                          id="password"
+                          type="password"
+                          required
+                          minLength={6}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="repeat-password">Repeat Password</Label>
+                        <Input
+                          id="repeat-password"
+                          type="password"
+                          required
+                          minLength={6}
+                          value={repeatPassword}
+                          onChange={(e) => setRepeatPassword(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="shop-name">Shop Name</Label>
+                        <Input
+                          id="shop-name"
+                          type="text"
+                          placeholder="My Shop"
+                          required
+                          value={shopName}
+                          onChange={(e) => setShopName(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="shop-description">Shop Description (optional)</Label>
+                        <Textarea
+                          id="shop-description"
+                          placeholder="Brief description of your shop"
+                          value={shopDescription}
+                          onChange={(e) => setShopDescription(e.target.value)}
+                          rows={2}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="country">Country</Label>
+                        <Select value={country} onValueChange={setCountry} required>
+                          <SelectTrigger id="country">
+                            <SelectValue placeholder="Select your country" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[300px]">
+                            {COUNTRIES.map((countryName) => (
+                              <SelectItem key={countryName} value={countryName}>
+                                {countryName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="city">City</Label>
+                        <Input
+                          id="city"
+                          type="text"
+                          placeholder="e.g., Nairobi, Lagos, Accra"
+                          required
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="location">Market Name</Label>
+                        <Input
+                          id="location"
+                          type="text"
+                          placeholder="e.g., Downtown Market"
+                          required
+                          value={locationName}
+                          onChange={(e) => setLocationName(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">The specific market where your shop is located</p>
+                      </div>
+                      <Button type="submit" className="w-full" disabled={isLoading}>
+                        {isLoading ? "Creating account..." : "Sign up"}
+                      </Button>
+                    </div>
+                  </form>
+                </TabsContent>
+
+                <TabsContent value="phone">
+                  <form onSubmit={handlePhoneSignUp}>
+                    <div className="flex flex-col gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="phone">Phone Number</Label>
+                        <Input
+                          id="phone"
+                          type="tel"
+                          placeholder="+1234567890"
+                          required
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          disabled={showOtpInput}
+                        />
+                        <p className="text-xs text-muted-foreground">Include country code (e.g., +1 for US)</p>
+                      </div>
+
+                      {showOtpInput && (
+                        <div className="grid gap-2">
+                          <Label htmlFor="otp">Verification Code</Label>
+                          <Input
+                            id="otp"
+                            type="text"
+                            placeholder="123456"
+                            required
+                            value={otp}
+                            onChange={(e) => setOtp(e.target.value)}
+                            maxLength={6}
+                          />
+                          <p className="text-xs text-muted-foreground">Enter the 6-digit code sent to your phone</p>
+                        </div>
+                      )}
+
+                      {!showOtpInput && (
+                        <>
+                          <div className="grid gap-2">
+                            <Label htmlFor="phone-shop-name">Shop Name</Label>
+                            <Input
+                              id="phone-shop-name"
+                              type="text"
+                              placeholder="My Shop"
+                              required
+                              value={shopName}
+                              onChange={(e) => setShopName(e.target.value)}
+                            />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="phone-shop-description">Shop Description (optional)</Label>
+                            <Textarea
+                              id="phone-shop-description"
+                              placeholder="Brief description of your shop"
+                              value={shopDescription}
+                              onChange={(e) => setShopDescription(e.target.value)}
+                              rows={2}
+                            />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="phone-country">Country</Label>
+                            <Select value={country} onValueChange={setCountry} required>
+                              <SelectTrigger id="phone-country">
+                                <SelectValue placeholder="Select your country" />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[300px]">
+                                {COUNTRIES.map((countryName) => (
+                                  <SelectItem key={countryName} value={countryName}>
+                                    {countryName}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="phone-city">City</Label>
+                            <Input
+                              id="phone-city"
+                              type="text"
+                              placeholder="e.g., Nairobi, Lagos, Accra"
+                              required
+                              value={city}
+                              onChange={(e) => setCity(e.target.value)}
+                            />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="phone-location">Market Name</Label>
+                            <Input
+                              id="phone-location"
+                              type="text"
+                              placeholder="e.g., Downtown Market"
+                              required
+                              value={locationName}
+                              onChange={(e) => setLocationName(e.target.value)}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              The specific market where your shop is located
+                            </p>
+                          </div>
+                        </>
+                      )}
+
+                      <Button type="submit" className="w-full" disabled={isLoading}>
+                        {isLoading ? "Processing..." : showOtpInput ? "Verify & Create Account" : "Send Code"}
+                      </Button>
+
+                      {showOtpInput && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full bg-transparent"
+                          onClick={() => {
+                            setShowOtpInput(false)
+                            setPendingVerification(false)
+                            setOtp("")
+                          }}
+                        >
+                          Change Phone Number
+                        </Button>
+                      )}
+                    </div>
+                  </form>
+                </TabsContent>
+              </Tabs>
+
+              <div className="mt-4 text-center text-sm">
+                Already have an account?{" "}
+                <Link href="/vendor/login" className="underline underline-offset-4">
+                  Login
+                </Link>
+              </div>
             </CardContent>
           </Card>
         </div>
