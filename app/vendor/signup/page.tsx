@@ -212,9 +212,17 @@ const COUNTRIES = [
 export default function VendorSignupPage() {
   const [authMethod, setAuthMethod] = useState<"email" | "phone">("email")
   const [phone, setPhone] = useState("")
+  const [phonePassword, setPhonePassword] = useState("")
+  const [phoneRepeatPassword, setPhoneRepeatPassword] = useState("")
   const [otp, setOtp] = useState("")
   const [showOtpInput, setShowOtpInput] = useState(false)
-  const [pendingVerification, setPendingVerification] = useState(false)
+  const [pendingPhoneData, setPendingPhoneData] = useState<{
+    phone: string
+    password: string
+    shopName: string
+    shopDescription: string
+    locationId: string
+  } | null>(null)
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -232,6 +240,16 @@ export default function VendorSignupPage() {
     const supabase = createClient()
     setIsLoading(true)
 
+    if (phonePassword !== phoneRepeatPassword) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Passwords do not match",
+      })
+      setIsLoading(false)
+      return
+    }
+
     if (!country || !city.trim() || !locationName.trim()) {
       toast({
         variant: "destructive",
@@ -244,32 +262,6 @@ export default function VendorSignupPage() {
 
     try {
       if (!showOtpInput) {
-        // Step 1: Send OTP to phone
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-          phone,
-        })
-
-        if (otpError) throw otpError
-
-        setShowOtpInput(true)
-        setPendingVerification(true)
-        toast({
-          title: "OTP Sent",
-          description: "Please check your phone for the verification code",
-        })
-        setIsLoading(false)
-      } else {
-        // Step 2: Verify OTP and create account
-        const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({
-          phone,
-          token: otp,
-          type: "sms",
-        })
-
-        if (verifyError) throw verifyError
-        if (!authData.user) throw new Error("Failed to verify phone number")
-
-        // Step 3: Create or find location
         let locationId: string
 
         const { data: existingLocation } = await supabase
@@ -298,12 +290,49 @@ export default function VendorSignupPage() {
           locationId = newLocation.id
         }
 
-        // Step 4: Create vendor profile
+        const { error: otpError } = await supabase.auth.signInWithOtp({
+          phone,
+        })
+
+        if (otpError) throw otpError
+
+        setPendingPhoneData({
+          phone,
+          password: phonePassword,
+          shopName,
+          shopDescription,
+          locationId,
+        })
+
+        setShowOtpInput(true)
+        toast({
+          title: "OTP Sent",
+          description: "Please check your phone for the verification code",
+        })
+        setIsLoading(false)
+      } else {
+        if (!pendingPhoneData) throw new Error("Missing signup data")
+
+        const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+          phone: pendingPhoneData.phone,
+          token: otp,
+          type: "sms",
+        })
+
+        if (verifyError) throw verifyError
+        if (!verifyData.user) throw new Error("Failed to verify phone number")
+
+        const { error: updateError } = await supabase.auth.updateUser({
+          password: pendingPhoneData.password,
+        })
+
+        if (updateError) throw updateError
+
         const { error: vendorError } = await supabase.from("vendors").insert({
-          user_id: authData.user.id,
-          location_id: locationId,
-          shop_name: shopName,
-          shop_description: shopDescription,
+          user_id: verifyData.user.id,
+          location_id: pendingPhoneData.locationId,
+          shop_name: pendingPhoneData.shopName,
+          shop_description: pendingPhoneData.shopDescription,
           is_open: true,
         })
 
@@ -370,7 +399,6 @@ export default function VendorSignupPage() {
         return
       }
 
-      // Step 1: Sign up the user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -391,7 +419,6 @@ export default function VendorSignupPage() {
 
       if (!authData.user) throw new Error("Failed to create user account")
 
-      // Step 2: Immediately sign in
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -409,7 +436,6 @@ export default function VendorSignupPage() {
 
       if (!signInData.user) throw new Error("Auto-login failed")
 
-      // Step 3: Create or find location
       let locationId: string
 
       const { data: existingLocation } = await supabase
@@ -438,7 +464,6 @@ export default function VendorSignupPage() {
         locationId = newLocation.id
       }
 
-      // Step 4: Create vendor profile
       const { error: vendorError } = await supabase.from("vendors").insert({
         user_id: signInData.user.id,
         location_id: locationId,
@@ -459,7 +484,6 @@ export default function VendorSignupPage() {
         description: "Your account has been successfully created, check your inbox for confirmation.",
       })
 
-      // Step 5: Redirect to dashboard
       await new Promise((resolve) => setTimeout(resolve, 1000))
       window.location.href = "/vendor/dashboard"
     } catch (error: unknown) {
@@ -608,6 +632,33 @@ export default function VendorSignupPage() {
                         <p className="text-xs text-muted-foreground">Include country code (e.g., +1 for US)</p>
                       </div>
 
+                      {!showOtpInput && (
+                        <>
+                          <div className="grid gap-2">
+                            <Label htmlFor="phone-password">Password</Label>
+                            <Input
+                              id="phone-password"
+                              type="password"
+                              required
+                              minLength={6}
+                              value={phonePassword}
+                              onChange={(e) => setPhonePassword(e.target.value)}
+                            />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="phone-repeat-password">Repeat Password</Label>
+                            <Input
+                              id="phone-repeat-password"
+                              type="password"
+                              required
+                              minLength={6}
+                              value={phoneRepeatPassword}
+                              onChange={(e) => setPhoneRepeatPassword(e.target.value)}
+                            />
+                          </div>
+                        </>
+                      )}
+
                       {showOtpInput && (
                         <div className="grid gap-2">
                           <Label htmlFor="otp">Verification Code</Label>
@@ -691,7 +742,11 @@ export default function VendorSignupPage() {
                       )}
 
                       <Button type="submit" className="w-full" disabled={isLoading}>
-                        {isLoading ? "Processing..." : showOtpInput ? "Verify & Create Account" : "Send Code"}
+                        {isLoading
+                          ? "Processing..."
+                          : showOtpInput
+                            ? "Verify & Create Account"
+                            : "Send Verification Code"}
                       </Button>
 
                       {showOtpInput && (
@@ -701,8 +756,8 @@ export default function VendorSignupPage() {
                           className="w-full bg-transparent"
                           onClick={() => {
                             setShowOtpInput(false)
-                            setPendingVerification(false)
                             setOtp("")
+                            setPendingPhoneData(null)
                           }}
                         >
                           Change Phone Number

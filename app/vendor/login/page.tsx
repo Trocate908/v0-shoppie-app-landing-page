@@ -14,8 +14,7 @@ import { useState } from "react"
 export default function VendorLoginPage() {
   const [authMethod, setAuthMethod] = useState<"email" | "phone">("email")
   const [phone, setPhone] = useState("")
-  const [otp, setOtp] = useState("")
-  const [showOtpInput, setShowOtpInput] = useState(false)
+  const [phonePassword, setPhonePassword] = useState("")
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -29,30 +28,16 @@ export default function VendorLoginPage() {
     setError(null)
 
     try {
-      if (!showOtpInput) {
-        // Step 1: Send OTP
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-          phone,
-        })
+      const { data, error: loginError } = await supabase.auth.signInWithPassword({
+        phone,
+        password: phonePassword,
+      })
 
-        if (otpError) throw otpError
+      if (loginError) throw loginError
+      if (!data.user) throw new Error("Login failed - no user returned")
 
-        setShowOtpInput(true)
-        setIsLoading(false)
-      } else {
-        // Step 2: Verify OTP
-        const { data, error: verifyError } = await supabase.auth.verifyOtp({
-          phone,
-          token: otp,
-          type: "sms",
-        })
-
-        if (verifyError) throw verifyError
-        if (!data.user) throw new Error("Login failed - no user returned")
-
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        window.location.href = "/vendor/dashboard"
-      }
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      window.location.href = "/vendor/dashboard"
     } catch (error: unknown) {
       console.error("[v0] Phone login error:", error)
       setError(error instanceof Error ? error.message : "An error occurred")
@@ -153,47 +138,26 @@ export default function VendorLoginPage() {
                           required
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
-                          disabled={showOtpInput}
                         />
                         <p className="text-xs text-muted-foreground">Include country code (e.g., +1 for US)</p>
                       </div>
 
-                      {showOtpInput && (
-                        <div className="grid gap-2">
-                          <Label htmlFor="otp-login">Verification Code</Label>
-                          <Input
-                            id="otp-login"
-                            type="text"
-                            placeholder="123456"
-                            required
-                            value={otp}
-                            onChange={(e) => setOtp(e.target.value)}
-                            maxLength={6}
-                          />
-                          <p className="text-xs text-muted-foreground">Enter the 6-digit code sent to your phone</p>
-                        </div>
-                      )}
+                      <div className="grid gap-2">
+                        <Label htmlFor="phone-password">Password</Label>
+                        <Input
+                          id="phone-password"
+                          type="password"
+                          required
+                          value={phonePassword}
+                          onChange={(e) => setPhonePassword(e.target.value)}
+                        />
+                      </div>
 
                       {error && <p className="text-sm text-red-500">{error}</p>}
 
                       <Button type="submit" className="w-full" disabled={isLoading}>
-                        {isLoading ? "Processing..." : showOtpInput ? "Verify & Login" : "Send Code"}
+                        {isLoading ? "Logging in..." : "Login"}
                       </Button>
-
-                      {showOtpInput && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full bg-transparent"
-                          onClick={() => {
-                            setShowOtpInput(false)
-                            setOtp("")
-                            setError(null)
-                          }}
-                        >
-                          Change Phone Number
-                        </Button>
-                      )}
                     </div>
                   </form>
                 </TabsContent>
