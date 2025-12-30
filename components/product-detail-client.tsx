@@ -10,6 +10,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@/lib/supabase/client"
 import ProfileButton from "@/components/profile-button"
+import WhatsAppButton from "@/components/whatsapp-button"
 
 interface Location {
   id: string
@@ -22,6 +23,7 @@ interface Vendor {
   id: string
   shop_name: string
   is_open: boolean
+  whatsapp_number?: string | null
   location?: Location
 }
 
@@ -141,6 +143,16 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
                         {product.vendor.location.market_name}, {product.vendor.location.city},{" "}
                         {product.vendor.location.country}
                       </span>
+                    </div>
+                  )}
+                  {product.vendor.whatsapp_number && (
+                    <div className="pt-3">
+                      <WhatsAppButton
+                        phoneNumber={product.vendor.whatsapp_number}
+                        shopName={product.vendor.shop_name}
+                        productName={product.name}
+                        className="w-full"
+                      />
                     </div>
                   )}
                 </div>

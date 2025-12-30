@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import ProfileButton from "@/components/profile-button"
+import WhatsAppButton from "@/components/whatsapp-button"
 
 interface Location {
   id: string
@@ -38,6 +39,7 @@ interface Product {
     id: string
     shop_name: string
     is_open: boolean
+    whatsapp_number?: string | null
     location: Location
   }
 }
@@ -377,6 +379,20 @@ export default function BrowseProductsClient({
                           {product.vendor.location.market_name}, {product.vendor.location.city}
                         </p>
                       </div>
+
+                      {/* WhatsApp contact button if vendor has WhatsApp number */}
+                      {product.vendor.whatsapp_number && (
+                        <div className="mt-3" onClick={(e) => e.preventDefault()}>
+                          <WhatsAppButton
+                            phoneNumber={product.vendor.whatsapp_number}
+                            shopName={product.vendor.shop_name}
+                            productName={product.name}
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                          />
+                        </div>
+                      )}
                     </div>
                   </Card>
                 </Link>

@@ -20,6 +20,7 @@ interface Product {
     id: string
     shop_name: string
     is_open: boolean
+    whatsapp_number?: string | null
     location: {
       id: string
       country: string
@@ -35,7 +36,6 @@ async function getVisitorCountry(): Promise<string | null> {
     const forwarded = headersList.get("x-forwarded-for")
     const ip = forwarded ? forwarded.split(",")[0] : headersList.get("x-real-ip") || "8.8.8.8"
 
-    // Use ip-api.com (free, no API key needed)
     const response = await fetch(`https://ip-api.com/json/${ip}?fields=country`, {
       cache: "no-store",
       headers: {
@@ -78,6 +78,7 @@ async function getAllProducts() {
         id,
         shop_name,
         is_open,
+        whatsapp_number,
         location:locations!inner(
           id,
           country,

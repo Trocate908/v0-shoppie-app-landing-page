@@ -6,7 +6,6 @@ import { SetupShopClient } from "@/components/setup-shop-client"
 export default async function VendorDashboardPage() {
   const supabase = await createClient()
 
-  // Get current user
   const {
     data: { user },
     error: userError,
@@ -22,6 +21,7 @@ export default async function VendorDashboardPage() {
       id,
       shop_name,
       shop_description,
+      whatsapp_number,
       is_open,
       location_id,
       locations (
@@ -38,7 +38,6 @@ export default async function VendorDashboardPage() {
     return <SetupShopClient userId={user.id} userEmail={user.email || ""} />
   }
 
-  // Calculate stats
   let totalViews = 0
   let weeklyViews = 0
   let productCount = 0
@@ -46,7 +45,6 @@ export default async function VendorDashboardPage() {
   const weekAgo = new Date()
   weekAgo.setDate(weekAgo.getDate() - 7)
 
-  // Get products count
   const { data: products } = await supabase.from("products").select("id").eq("vendor_id", vendor.id)
 
   if (products) {
@@ -55,7 +53,6 @@ export default async function VendorDashboardPage() {
     if (products.length > 0) {
       const productIds = products.map((p) => p.id)
 
-      // Get total views
       const { count: totalCount } = await supabase
         .from("product_views")
         .select("*", { count: "exact", head: true })
@@ -63,7 +60,6 @@ export default async function VendorDashboardPage() {
 
       totalViews = totalCount || 0
 
-      // Get weekly views
       const { count: weeklyCount } = await supabase
         .from("product_views")
         .select("*", { count: "exact", head: true })
@@ -74,7 +70,6 @@ export default async function VendorDashboardPage() {
     }
   }
 
-  // Format vendor data for client
   const locationData = vendor.locations as { country: string; city: string; market_name: string } | null
   const locationName = locationData?.market_name || "Unknown Market"
   const cityName = locationData?.city || ""
@@ -84,6 +79,7 @@ export default async function VendorDashboardPage() {
     id: vendor.id,
     shop_name: vendor.shop_name,
     shop_description: vendor.shop_description || undefined,
+    whatsapp_number: vendor.whatsapp_number || undefined,
     location_id: vendor.location_id,
     is_open: vendor.is_open ?? true,
     location: {

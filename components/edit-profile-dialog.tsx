@@ -29,6 +29,7 @@ type VendorData = {
     city: string
     country: string
   }
+  whatsapp_number?: string
 }
 
 const COUNTRIES = [
@@ -234,6 +235,7 @@ export function EditProfileDialog({ vendor }: { vendor: VendorData }) {
   const [loading, setLoading] = useState(false)
   const [shopName, setShopName] = useState(vendor.shop_name)
   const [shopDescription, setShopDescription] = useState(vendor.shop_description || "")
+  const [whatsappNumber, setWhatsappNumber] = useState(vendor.whatsapp_number || "")
   const [country, setCountry] = useState(vendor.location.country)
   const [city, setCity] = useState(vendor.location.city)
   const [marketName, setMarketName] = useState(vendor.location.name)
@@ -249,11 +251,19 @@ export function EditProfileDialog({ vendor }: { vendor: VendorData }) {
       return
     }
 
+    if (whatsappNumber && !/^\+?[1-9]\d{1,14}$/.test(whatsappNumber.replace(/\s/g, ""))) {
+      toast({
+        title: "Invalid WhatsApp number",
+        description: "Please enter a valid WhatsApp number with country code (e.g., +265991234567)",
+        variant: "destructive",
+      })
+      return
+    }
+
     setLoading(true)
     const supabase = createBrowserClient()
 
     try {
-      // Check if location exists or create new one
       const { data: existingLocation } = await supabase
         .from("locations")
         .select("id")
@@ -264,7 +274,6 @@ export function EditProfileDialog({ vendor }: { vendor: VendorData }) {
 
       let locationId = existingLocation?.id || vendor.location_id
 
-      // Create new location if it doesn't exist and is different
       if (
         !existingLocation &&
         (country !== vendor.location.country || city !== vendor.location.city || marketName !== vendor.location.name)
@@ -279,12 +288,12 @@ export function EditProfileDialog({ vendor }: { vendor: VendorData }) {
         locationId = newLocation.id
       }
 
-      // Update vendor
       const { error: vendorError } = await supabase
         .from("vendors")
         .update({
           shop_name: shopName,
           shop_description: shopDescription || null,
+          whatsapp_number: whatsappNumber || null,
           location_id: locationId,
         })
         .eq("id", vendor.id)
@@ -343,6 +352,20 @@ export function EditProfileDialog({ vendor }: { vendor: VendorData }) {
               placeholder="Describe your shop"
               rows={3}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="whatsapp-number">WhatsApp Number</Label>
+            <Input
+              id="whatsapp-number"
+              type="tel"
+              value={whatsappNumber}
+              onChange={(e) => setWhatsappNumber(e.target.value)}
+              placeholder="+265991234567"
+            />
+            <p className="text-xs text-muted-foreground">
+              Include country code. Buyers will be able to contact you via WhatsApp.
+            </p>
           </div>
 
           <div className="space-y-2">

@@ -6,7 +6,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const { id } = await params
   const supabase = await createClient()
 
-  // Fetch the main product
   const { data: product, error } = await supabase
     .from("products")
     .select(
@@ -21,6 +20,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
         id,
         shop_name,
         is_open,
+        whatsapp_number,
         location:locations!inner(
           id,
           country,
