@@ -69,6 +69,19 @@ export default async function LocationsPage() {
           )}
         </div>
       </main>
+
+      <footer className="border-t border-border bg-background px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
+            <p className="text-sm text-muted-foreground">&copy; 2025 ShoppieApp. All rights reserved.</p>
+            <div className="flex gap-4">
+              <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
+                Terms & Conditions
+              </Link>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }
