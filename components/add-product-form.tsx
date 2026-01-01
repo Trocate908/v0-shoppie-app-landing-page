@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ArrowLeft, Upload, Loader2 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
@@ -20,6 +21,20 @@ type AddProductFormProps = {
   vendorId: string
   shopName: string
 }
+
+const PRODUCT_CATEGORIES = [
+  "Electronics",
+  "Fashion",
+  "Food & Beverages",
+  "Home & Garden",
+  "Health & Beauty",
+  "Sports & Outdoors",
+  "Toys & Games",
+  "Books & Media",
+  "Automotive",
+  "Services",
+  "Other",
+]
 
 export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
   const router = useRouter()
@@ -31,6 +46,7 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
     name: "",
     description: "",
     price: "",
+    category: "",
     inStock: true,
   })
 
@@ -89,12 +105,12 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
         imageUrl = cloudinaryData.secure_url
       }
 
-      // Insert product into database
       const { error: insertError } = await supabase.from("products").insert({
         vendor_id: vendorId,
         name: formData.name,
         description: formData.description,
         price: Number.parseFloat(formData.price),
+        category: formData.category || "Other",
         image_url: imageUrl,
         in_stock: formData.inStock,
       })
@@ -114,7 +130,6 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
         description: "Your product has been added successfully",
       })
 
-      // Success - redirect to manage products page
       router.push("/vendor/products")
       router.refresh()
     } catch (error) {
@@ -167,6 +182,27 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
                 />
               </div>
 
+              {/* Category Selection */}
+              <div className="space-y-2">
+                <Label htmlFor="category">Category *</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) => setFormData({ ...formData, category: value })}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRODUCT_CATEGORIES.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Description */}
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
@@ -181,7 +217,7 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
 
               {/* Price */}
               <div className="space-y-2">
-                <Label htmlFor="price">Price *</Label>
+                <Label htmlFor="price">Price (USD) *</Label>
                 <Input
                   id="price"
                   type="number"

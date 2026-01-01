@@ -14,6 +14,7 @@ interface Product {
   name: string
   description: string | null
   price: number
+  category: string | null
   image_url: string | null
   in_stock: boolean
   vendor: {
@@ -72,6 +73,7 @@ async function getAllProducts() {
       name,
       description,
       price,
+      category,
       image_url,
       in_stock,
       vendor:vendors!inner(

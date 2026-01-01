@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
-import { Search, MapPin, Store, X } from "lucide-react"
+import { Search, MapPin, Store, X, Filter, DollarSign } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 import { createBrowserClient } from "@/lib/supabase/client"
@@ -18,8 +18,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 import ProfileButton from "@/components/profile-button"
 import WhatsAppButton from "@/components/whatsapp-button"
+import { getCurrencyForCountry, convertPrice, formatPrice, CURRENCIES, type Currency } from "@/lib/currency"
 
 interface Location {
   id: string
@@ -33,6 +35,7 @@ interface Product {
   name: string
   description: string | null
   price: number
+  category: string | null
   image_url: string | null
   in_stock: boolean
   vendor: {
@@ -50,6 +53,20 @@ interface BrowseProductsClientProps {
   visitorCountry: string | null
 }
 
+const PRODUCT_CATEGORIES = [
+  "Electronics",
+  "Fashion",
+  "Food & Beverages",
+  "Home & Garden",
+  "Health & Beauty",
+  "Sports & Outdoors",
+  "Toys & Games",
+  "Books & Media",
+  "Automotive",
+  "Services",
+  "Other",
+]
+
 export default function BrowseProductsClient({
   products: initialProducts,
   locations,
@@ -61,6 +78,16 @@ export default function BrowseProductsClient({
   const [selectedLocation, setSelectedLocation] = useState<string>("")
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
   const [trackedViews, setTrackedViews] = useState<Set<string>>(new Set())
+
+  const [selectedCategory, setSelectedCategory] = useState<string>("")
+  const [sortBy, setSortBy] = useState<string>("name")
+  const [minPrice, setMinPrice] = useState<string>("")
+  const [maxPrice, setMaxPrice] = useState<string>("")
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false)
+
+  const [selectedCurrency, setSelectedCurrency] = useState<Currency>(
+    visitorCountry ? getCurrencyForCountry(visitorCountry) : CURRENCIES.USD,
+  )
 
   const sortedProducts = useMemo(() => {
     if (!visitorCountry) return initialProducts
@@ -86,17 +113,48 @@ export default function BrowseProductsClient({
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter(
-        (product) => product.name.toLowerCase().includes(query) || product.description?.toLowerCase().includes(query),
+        (product) =>
+          product.name.toLowerCase().includes(query) ||
+          product.description?.toLowerCase().includes(query) ||
+          product.category?.toLowerCase().includes(query),
       )
     }
 
-    // Filter by selected location
+    // Filter by category
+    if (selectedCategory) {
+      filtered = filtered.filter((product) => product.category === selectedCategory)
+    }
+
+    // Filter by location
     if (selectedLocation) {
       filtered = filtered.filter((product) => product.vendor.location.id === selectedLocation)
     }
 
-    return filtered
-  }, [sortedProducts, searchQuery, selectedLocation])
+    // Filter by price range
+    if (minPrice) {
+      filtered = filtered.filter((product) => product.price >= Number.parseFloat(minPrice))
+    }
+    if (maxPrice) {
+      filtered = filtered.filter((product) => product.price <= Number.parseFloat(maxPrice))
+    }
+
+    // Sort products
+    const sorted = [...filtered]
+    switch (sortBy) {
+      case "price-low":
+        sorted.sort((a, b) => a.price - b.price)
+        break
+      case "price-high":
+        sorted.sort((a, b) => b.price - a.price)
+        break
+      case "name":
+      default:
+        sorted.sort((a, b) => a.name.localeCompare(b.name))
+        break
+    }
+
+    return sorted
+  }, [sortedProducts, searchQuery, selectedCategory, selectedLocation, minPrice, maxPrice, sortBy])
 
   const countries = useMemo(() => {
     const uniqueCountries = new Set(locations.map((l) => l.country))
@@ -167,7 +225,15 @@ export default function BrowseProductsClient({
     setSelectedLocation("")
   }
 
+  const clearAllFilters = () => {
+    setSelectedCategory("")
+    setMinPrice("")
+    setMaxPrice("")
+    clearLocationFilter()
+  }
+
   const selectedLocationData = locations.find((l) => l.id === selectedLocation)
+  const activeFiltersCount = [selectedCategory, selectedLocation, minPrice, maxPrice].filter(Boolean).length
 
   return (
     <>
@@ -179,7 +245,21 @@ export default function BrowseProductsClient({
               <Store className="h-6 w-6 text-primary" />
               <h1 className="text-xl font-bold text-foreground">ShoppieApp</h1>
             </Link>
-            <ProfileButton />
+            <div className="flex items-center gap-3">
+              <Select value={selectedCurrency.code} onValueChange={(code) => setSelectedCurrency(CURRENCIES[code])}>
+                <SelectTrigger className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.values(CURRENCIES).map((currency) => (
+                    <SelectItem key={currency.code} value={currency.code}>
+                      {currency.code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <ProfileButton />
+            </div>
           </div>
         </div>
       </header>
@@ -207,6 +287,17 @@ export default function BrowseProductsClient({
                 className="pl-10"
               />
             </div>
+
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name">Name (A-Z)</SelectItem>
+                <SelectItem value="price-low">Price: Low to High</SelectItem>
+                <SelectItem value="price-high">Price: High to Low</SelectItem>
+              </SelectContent>
+            </Select>
 
             {/* Location Filter Button */}
             <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
@@ -293,23 +384,144 @@ export default function BrowseProductsClient({
                 </div>
               </DialogContent>
             </Dialog>
+
+            <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="gap-2 bg-transparent relative">
+                  <Filter className="h-4 w-4" />
+                  Filters
+                  {activeFiltersCount > 0 && (
+                    <Badge variant="destructive" className="absolute -right-2 -top-2 h-5 w-5 rounded-full p-0 text-xs">
+                      {activeFiltersCount}
+                    </Badge>
+                  )}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Filter Products</DialogTitle>
+                  <DialogDescription>Refine your search with these filters</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 pt-4">
+                  {/* Category Filter */}
+                  <div>
+                    <Label className="mb-2">Category</Label>
+                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All categories</SelectItem>
+                        {PRODUCT_CATEGORIES.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Price Range */}
+                  <div className="space-y-3">
+                    <Label>Price Range (USD)</Label>
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <Input
+                          type="number"
+                          placeholder="Min"
+                          value={minPrice}
+                          onChange={(e) => setMinPrice(e.target.value)}
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <Input
+                          type="number"
+                          placeholder="Max"
+                          value={maxPrice}
+                          onChange={(e) => setMaxPrice(e.target.value)}
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <Button onClick={() => setFilterDialogOpen(false)} className="flex-1">
+                      Apply Filters
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedCategory("")
+                        setMinPrice("")
+                        setMaxPrice("")
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
 
-          {/* Active Location Filter */}
-          {selectedLocationData && (
-            <div className="mb-4 flex items-center gap-2">
-              <Badge variant="secondary" className="gap-2 py-2 pr-2">
-                <MapPin className="h-3 w-3" />
-                {selectedLocationData.market_name}, {selectedLocationData.city}, {selectedLocationData.country}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-5 w-5 p-0 hover:bg-transparent"
-                  onClick={clearLocationFilter}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </Badge>
+          {/* Active Filters */}
+          {activeFiltersCount > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              {selectedLocationData && (
+                <Badge variant="secondary" className="gap-2 py-2 pr-2">
+                  <MapPin className="h-3 w-3" />
+                  {selectedLocationData.market_name}, {selectedLocationData.city}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 hover:bg-transparent"
+                    onClick={clearLocationFilter}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </Badge>
+              )}
+              {selectedCategory && (
+                <Badge variant="secondary" className="gap-2 py-2 pr-2">
+                  {selectedCategory}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 hover:bg-transparent"
+                    onClick={() => setSelectedCategory("")}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </Badge>
+              )}
+              {(minPrice || maxPrice) && (
+                <Badge variant="secondary" className="gap-2 py-2 pr-2">
+                  <DollarSign className="h-3 w-3" />
+                  {minPrice && maxPrice
+                    ? `$${minPrice} - $${maxPrice}`
+                    : minPrice
+                      ? `From $${minPrice}`
+                      : `Up to $${maxPrice}`}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 hover:bg-transparent"
+                    onClick={() => {
+                      setMinPrice("")
+                      setMaxPrice("")
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </Badge>
+              )}
+              <Button variant="ghost" size="sm" onClick={clearAllFilters} className="h-8">
+                Clear all
+              </Button>
             </div>
           )}
 
@@ -318,10 +530,10 @@ export default function BrowseProductsClient({
             <div className="flex min-h-[400px] items-center justify-center">
               <div className="text-center">
                 <p className="text-lg font-medium text-muted-foreground">
-                  {searchQuery || selectedLocation ? "No products found" : "No products available"}
+                  {searchQuery || activeFiltersCount > 0 ? "No products found" : "No products available"}
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {searchQuery || selectedLocation
+                  {searchQuery || activeFiltersCount > 0
                     ? "Try adjusting your search or filters"
                     : "Check back soon for new items!"}
                 </p>
@@ -329,74 +541,83 @@ export default function BrowseProductsClient({
             </div>
           ) : (
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredProducts.map((product) => (
-                <Link key={product.id} href={`/product/${product.id}`}>
-                  <Card
-                    data-product-id={product.id}
-                    className="overflow-hidden transition-shadow hover:shadow-md cursor-pointer"
-                  >
-                    {/* Product Image */}
-                    <div className="relative aspect-square w-full overflow-hidden bg-muted">
-                      {product.image_url ? (
-                        <Image
-                          src={product.image_url || "/placeholder.svg"}
-                          alt={product.name}
-                          fill
-                          className="object-cover"
-                          loading="lazy"
-                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center">
-                          <span className="text-sm text-muted-foreground">No image</span>
-                        </div>
-                      )}
-                    </div>
+              {filteredProducts.map((product) => {
+                const convertedPrice = convertPrice(product.price, selectedCurrency.code)
+                const formattedPrice = formatPrice(convertedPrice, selectedCurrency)
 
-                    {/* Product Details */}
-                    <div className="p-4">
-                      <div className="mb-2 flex items-start justify-between gap-2">
-                        <h3 className="line-clamp-2 font-semibold text-foreground">{product.name}</h3>
-                        <Badge variant={product.in_stock ? "default" : "secondary"} className="shrink-0">
-                          {product.in_stock ? "In Stock" : "Out of Stock"}
-                        </Badge>
-                      </div>
-
-                      {product.description && (
-                        <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
-                      )}
-
-                      <div className="flex items-center justify-between">
-                        <p className="text-lg font-bold text-primary">${product.price.toFixed(2)}</p>
-                        <Badge variant={product.vendor.is_open ? "default" : "outline"}>
-                          {product.vendor.is_open ? "Open" : "Closed"}
-                        </Badge>
-                      </div>
-
-                      <div className="mt-2 space-y-1">
-                        <p className="text-xs font-medium text-foreground">{product.vendor.shop_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {product.vendor.location.market_name}, {product.vendor.location.city}
-                        </p>
-                      </div>
-
-                      {/* WhatsApp contact button if vendor has WhatsApp number */}
-                      {product.vendor.whatsapp_number && (
-                        <div className="mt-3" onClick={(e) => e.preventDefault()}>
-                          <WhatsAppButton
-                            phoneNumber={product.vendor.whatsapp_number}
-                            shopName={product.vendor.shop_name}
-                            productName={product.name}
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
+                return (
+                  <Link key={product.id} href={`/product/${product.id}`}>
+                    <Card
+                      data-product-id={product.id}
+                      className="overflow-hidden transition-shadow hover:shadow-md cursor-pointer"
+                    >
+                      {/* Product Image */}
+                      <div className="relative aspect-square w-full overflow-hidden bg-muted">
+                        {product.image_url ? (
+                          <Image
+                            src={product.image_url || "/placeholder.svg"}
+                            alt={product.name}
+                            fill
+                            className="object-cover"
+                            loading="lazy"
+                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
                           />
+                        ) : (
+                          <div className="flex h-full items-center justify-center">
+                            <span className="text-sm text-muted-foreground">No image</span>
+                          </div>
+                        )}
+                        {product.category && (
+                          <Badge className="absolute left-2 top-2" variant="secondary">
+                            {product.category}
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Product Details */}
+                      <div className="p-4">
+                        <div className="mb-2 flex items-start justify-between gap-2">
+                          <h3 className="line-clamp-2 font-semibold text-foreground">{product.name}</h3>
+                          <Badge variant={product.in_stock ? "default" : "secondary"} className="shrink-0">
+                            {product.in_stock ? "In Stock" : "Out of Stock"}
+                          </Badge>
                         </div>
-                      )}
-                    </div>
-                  </Card>
-                </Link>
-              ))}
+
+                        {product.description && (
+                          <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
+                        )}
+
+                        <div className="flex items-center justify-between">
+                          <p className="text-lg font-bold text-primary">{formattedPrice}</p>
+                          <Badge variant={product.vendor.is_open ? "default" : "outline"}>
+                            {product.vendor.is_open ? "Open" : "Closed"}
+                          </Badge>
+                        </div>
+
+                        <div className="mt-2 space-y-1">
+                          <p className="text-xs font-medium text-foreground">{product.vendor.shop_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {product.vendor.location.market_name}, {product.vendor.location.city}
+                          </p>
+                        </div>
+
+                        {product.vendor.whatsapp_number && (
+                          <div className="mt-3" onClick={(e) => e.preventDefault()}>
+                            <WhatsAppButton
+                              phoneNumber={product.vendor.whatsapp_number}
+                              shopName={product.vendor.shop_name}
+                              productName={product.name}
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  </Link>
+                )
+              })}
             </div>
           )}
         </div>
