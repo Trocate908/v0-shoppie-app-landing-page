@@ -15,7 +15,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
       description,
       price,
       image_url,
-      image_urls,
       in_stock,
       vendor:vendors!inner(
         id,
@@ -38,6 +37,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
     notFound()
   }
 
+  // Fetch related products from the same vendor
   const { data: relatedProducts } = await supabase
     .from("products")
     .select(
@@ -47,7 +47,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
       description,
       price,
       image_url,
-      image_urls,
       in_stock,
       vendor:vendors!inner(
         id,

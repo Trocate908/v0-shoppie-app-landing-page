@@ -5,12 +5,12 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { ArrowLeft, Store, MapPin } from "lucide-react"
+import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@/lib/supabase/client"
 import ProfileButton from "@/components/profile-button"
 import WhatsAppButton from "@/components/whatsapp-button"
-import ProductCarousel from "@/components/product-carousel"
 
 interface Location {
   id: string
@@ -33,7 +33,6 @@ interface Product {
   description: string | null
   price: number
   image_url: string | null
-  image_urls?: string[] | null
   in_stock: boolean
   vendor: Vendor
 }
@@ -47,6 +46,7 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
   const router = useRouter()
   const [hasTracked, setHasTracked] = useState(false)
 
+  // Track product view on mount
   useEffect(() => {
     if (!hasTracked) {
       const trackView = async () => {
@@ -61,16 +61,6 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
       trackView()
     }
   }, [product.id, hasTracked])
-
-  const getProductImages = (p: Product): string[] => {
-    if (p.image_urls && p.image_urls.length > 0) {
-      return p.image_urls
-    }
-    if (p.image_url) {
-      return [p.image_url]
-    }
-    return []
-  }
 
   return (
     <>
@@ -98,15 +88,22 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
         <div className="mx-auto max-w-7xl">
           {/* Product Detail Section */}
           <div className="grid gap-8 lg:grid-cols-2">
-            <div className="overflow-hidden rounded-lg">
-              <ProductCarousel
-                images={getProductImages(product)}
-                productName={product.name}
-                aspectRatio="square"
-                showArrows={true}
-                autoPlay={true}
-                autoPlayInterval={5000}
-              />
+            {/* Product Image */}
+            <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">
+              {product.image_url ? (
+                <Image
+                  src={product.image_url || "/placeholder.svg"}
+                  alt={product.name}
+                  fill
+                  className="object-cover"
+                  priority
+                  sizes="(max-width: 1024px) 100vw, 50vw"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <span className="text-muted-foreground">No image available</span>
+                </div>
+              )}
             </div>
 
             {/* Product Info */}
@@ -171,13 +168,23 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
                 {relatedProducts.map((relatedProduct) => (
                   <Link key={relatedProduct.id} href={`/product/${relatedProduct.id}`}>
                     <Card className="overflow-hidden transition-shadow hover:shadow-md">
-                      <ProductCarousel
-                        images={getProductImages(relatedProduct)}
-                        productName={relatedProduct.name}
-                        aspectRatio="square"
-                        showArrows={false}
-                        autoPlay={false}
-                      />
+                      {/* Product Image */}
+                      <div className="relative aspect-square w-full overflow-hidden bg-muted">
+                        {relatedProduct.image_url ? (
+                          <Image
+                            src={relatedProduct.image_url || "/placeholder.svg"}
+                            alt={relatedProduct.name}
+                            fill
+                            className="object-cover"
+                            loading="lazy"
+                            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center">
+                            <span className="text-sm text-muted-foreground">No image</span>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Product Details */}
                       <div className="p-3">
