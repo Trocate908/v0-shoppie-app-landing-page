@@ -15,6 +15,7 @@ interface Product {
   description: string | null
   price: number
   image_url: string | null
+  image_urls: string[] | null
   in_stock: boolean
   vendor: {
     id: string
@@ -73,6 +74,7 @@ async function getAllProducts() {
       description,
       price,
       image_url,
+      image_urls,
       in_stock,
       vendor:vendors!inner(
         id,

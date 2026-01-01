@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Search, MapPin, Store, X } from "lucide-react"
-import Image from "next/image"
 import Link from "next/link"
 import { createBrowserClient } from "@/lib/supabase/client"
 import {
@@ -20,6 +19,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import ProfileButton from "@/components/profile-button"
 import WhatsAppButton from "@/components/whatsapp-button"
+import ProductCarousel from "@/components/product-carousel"
 
 interface Location {
   id: string
@@ -34,6 +34,7 @@ interface Product {
   description: string | null
   price: number
   image_url: string | null
+  image_urls: string[] | null
   in_stock: boolean
   vendor: {
     id: string
@@ -82,7 +83,6 @@ export default function BrowseProductsClient({
   const filteredProducts = useMemo(() => {
     let filtered = sortedProducts
 
-    // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter(
@@ -90,7 +90,6 @@ export default function BrowseProductsClient({
       )
     }
 
-    // Filter by selected location
     if (selectedLocation) {
       filtered = filtered.filter((product) => product.vendor.location.id === selectedLocation)
     }
@@ -116,7 +115,6 @@ export default function BrowseProductsClient({
       .sort((a, b) => a.market_name.localeCompare(b.market_name))
   }, [locations, selectedCountry, selectedCity])
 
-  // Track product views
   const trackProductView = async (productId: string) => {
     if (trackedViews.has(productId)) return
 
@@ -128,7 +126,7 @@ export default function BrowseProductsClient({
         setTrackedViews((prev) => new Set(prev).add(productId))
       }
     } catch (error) {
-      console.error("[v0] Error tracking product view:", error)
+      console.error("Error tracking product view:", error)
     }
   }
 
@@ -151,7 +149,7 @@ export default function BrowseProductsClient({
 
       return () => observer.disconnect()
     } catch (err) {
-      console.error("[v0] IntersectionObserver error:", err)
+      console.error("IntersectionObserver error:", err)
     }
   }, [filteredProducts])
 
@@ -168,6 +166,16 @@ export default function BrowseProductsClient({
   }
 
   const selectedLocationData = locations.find((l) => l.id === selectedLocation)
+
+  const getProductImages = (product: Product): string[] => {
+    if (product.image_urls && product.image_urls.length > 0) {
+      return product.image_urls
+    }
+    if (product.image_url) {
+      return [product.image_url]
+    }
+    return []
+  }
 
   return (
     <>
@@ -330,31 +338,24 @@ export default function BrowseProductsClient({
           ) : (
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredProducts.map((product) => (
-                <Link key={product.id} href={`/product/${product.id}`}>
-                  <Card
-                    data-product-id={product.id}
-                    className="overflow-hidden transition-shadow hover:shadow-md cursor-pointer"
-                  >
-                    {/* Product Image */}
-                    <div className="relative aspect-square w-full overflow-hidden bg-muted">
-                      {product.image_url ? (
-                        <Image
-                          src={product.image_url || "/placeholder.svg"}
-                          alt={product.name}
-                          fill
-                          className="object-cover"
-                          loading="lazy"
-                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center">
-                          <span className="text-sm text-muted-foreground">No image</span>
-                        </div>
-                      )}
-                    </div>
+                <Card
+                  key={product.id}
+                  data-product-id={product.id}
+                  className="overflow-hidden transition-shadow hover:shadow-md"
+                >
+                  <Link href={`/product/${product.id}`}>
+                    <ProductCarousel
+                      images={getProductImages(product)}
+                      productName={product.name}
+                      aspectRatio="square"
+                      showArrows={true}
+                      autoPlay={false}
+                    />
+                  </Link>
 
-                    {/* Product Details */}
-                    <div className="p-4">
+                  {/* Product Details */}
+                  <div className="p-4">
+                    <Link href={`/product/${product.id}`}>
                       <div className="mb-2 flex items-start justify-between gap-2">
                         <h3 className="line-clamp-2 font-semibold text-foreground">{product.name}</h3>
                         <Badge variant={product.in_stock ? "default" : "secondary"} className="shrink-0">
@@ -379,23 +380,23 @@ export default function BrowseProductsClient({
                           {product.vendor.location.market_name}, {product.vendor.location.city}
                         </p>
                       </div>
+                    </Link>
 
-                      {/* WhatsApp contact button if vendor has WhatsApp number */}
-                      {product.vendor.whatsapp_number && (
-                        <div className="mt-3" onClick={(e) => e.preventDefault()}>
-                          <WhatsAppButton
-                            phoneNumber={product.vendor.whatsapp_number}
-                            shopName={product.vendor.shop_name}
-                            productName={product.name}
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                </Link>
+                    {/* WhatsApp contact button */}
+                    {product.vendor.whatsapp_number && (
+                      <div className="mt-3">
+                        <WhatsAppButton
+                          phoneNumber={product.vendor.whatsapp_number}
+                          shopName={product.vendor.shop_name}
+                          productName={product.name}
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </Card>
               ))}
             </div>
           )}

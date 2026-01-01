@@ -20,8 +20,8 @@ import {
 } from "@/components/ui/dialog"
 import { ArrowLeft, Edit, Trash2, Eye, Loader2 } from "lucide-react"
 import Link from "next/link"
-import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
+import ProductCarousel from "@/components/product-carousel"
 
 type Product = {
   id: string
@@ -29,6 +29,7 @@ type Product = {
   description: string | null
   price: number
   image_url: string | null
+  image_urls?: string[] | null
   in_stock: boolean
   view_count: number
 }
@@ -51,6 +52,16 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
     price: "",
     inStock: true,
   })
+
+  const getProductImages = (product: Product): string[] => {
+    if (product.image_urls && product.image_urls.length > 0) {
+      return product.image_urls
+    }
+    if (product.image_url) {
+      return [product.image_url]
+    }
+    return []
+  }
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product)
@@ -85,7 +96,6 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
         variant: "destructive",
       })
     } else {
-      // Update local state
       setProducts(
         products.map((p) =>
           p.id === editingProduct.id
@@ -122,7 +132,6 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
         variant: "destructive",
       })
     } else {
-      // Update local state
       setProducts(products.map((p) => (p.id === productId ? { ...p, in_stock: !currentStock } : p)))
       toast({
         title: "Stock updated",
@@ -139,7 +148,6 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
     const supabase = createClient()
 
     try {
-      // Delete product from database (cascade will delete views)
       const { error } = await supabase.from("products").delete().eq("id", deletingProduct.id)
 
       if (error) {
@@ -149,7 +157,6 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
           variant: "destructive",
         })
       } else {
-        // Update local state
         setProducts(products.filter((p) => p.id !== deletingProduct.id))
         setDeleteingProduct(null)
         toast({
@@ -209,21 +216,14 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
             {products.map((product) => (
               <Card key={product.id}>
                 <CardHeader className="p-0">
-                  {product.image_url ? (
-                    <div className="relative h-48 w-full overflow-hidden rounded-t-lg">
-                      <Image
-                        src={product.image_url || "/placeholder.svg"}
-                        alt={product.name}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex h-48 items-center justify-center rounded-t-lg bg-muted">
-                      <span className="text-muted-foreground">No image</span>
-                    </div>
-                  )}
+                  <ProductCarousel
+                    images={getProductImages(product)}
+                    productName={product.name}
+                    aspectRatio="video"
+                    showArrows={true}
+                    autoPlay={false}
+                    className="rounded-t-lg"
+                  />
                 </CardHeader>
                 <CardContent className="pt-4">
                   <div className="mb-2 flex items-start justify-between gap-2">

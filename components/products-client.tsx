@@ -5,9 +5,9 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Search } from "lucide-react"
-import Image from "next/image"
 import { createBrowserClient } from "@/lib/supabase/client"
 import Link from "next/link"
+import ProductCarousel from "@/components/product-carousel"
 
 interface Product {
   id: string
@@ -15,6 +15,7 @@ interface Product {
   description: string | null
   price: number
   image_url: string | null
+  image_urls?: string[] | null
   in_stock: boolean
   vendor: {
     shop_name: string
@@ -29,9 +30,7 @@ interface ProductsClientProps {
 export default function ProductsClient({ products }: ProductsClientProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [trackedViews, setTrackedViews] = useState<Set<string>>(new Set())
-  const [error, setError] = useState<string | null>(null)
 
-  // Filter products based on search query
   const filteredProducts = useMemo(() => {
     if (!searchQuery.trim()) return products
 
@@ -39,9 +38,7 @@ export default function ProductsClient({ products }: ProductsClientProps) {
     return products.filter((product) => product.name.toLowerCase().includes(query))
   }, [products, searchQuery])
 
-  // Track product views
   const trackProductView = async (productId: string) => {
-    // Only track once per session
     if (trackedViews.has(productId)) return
 
     try {
@@ -52,11 +49,10 @@ export default function ProductsClient({ products }: ProductsClientProps) {
         setTrackedViews((prev) => new Set(prev).add(productId))
       }
     } catch (error) {
-      console.error("[v0] Error tracking product view:", error)
+      console.error("Error tracking product view:", error)
     }
   }
 
-  // Track views when products come into view
   useEffect(() => {
     try {
       const observer = new IntersectionObserver(
@@ -78,9 +74,19 @@ export default function ProductsClient({ products }: ProductsClientProps) {
 
       return () => observer.disconnect()
     } catch (err) {
-      console.error("[v0] IntersectionObserver error:", err)
+      console.error("IntersectionObserver error:", err)
     }
   }, [filteredProducts])
+
+  const getProductImages = (product: Product): string[] => {
+    if (product.image_urls && product.image_urls.length > 0) {
+      return product.image_urls
+    }
+    if (product.image_url) {
+      return [product.image_url]
+    }
+    return []
+  }
 
   if (products.length === 0) {
     return (
@@ -120,23 +126,13 @@ export default function ProductsClient({ products }: ProductsClientProps) {
                 data-product-id={product.id}
                 className="overflow-hidden transition-shadow hover:shadow-md cursor-pointer"
               >
-                {/* Product Image */}
-                <div className="relative aspect-square w-full overflow-hidden bg-muted">
-                  {product.image_url ? (
-                    <Image
-                      src={product.image_url || "/placeholder.svg"}
-                      alt={product.name}
-                      fill
-                      className="object-cover"
-                      loading="lazy"
-                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center">
-                      <span className="text-sm text-muted-foreground">No image</span>
-                    </div>
-                  )}
-                </div>
+                <ProductCarousel
+                  images={getProductImages(product)}
+                  productName={product.name}
+                  aspectRatio="square"
+                  showArrows={false}
+                  autoPlay={false}
+                />
 
                 {/* Product Details */}
                 <div className="p-4">
