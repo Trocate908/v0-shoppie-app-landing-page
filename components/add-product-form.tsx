@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
-import { ArrowLeft, Upload, Loader2 } from "lucide-react"
+import { ArrowLeft, Upload, Loader2, X } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
@@ -25,8 +25,8 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
   const router = useRouter()
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -35,24 +35,43 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
   })
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
+    const files = Array.from(e.target.files || [])
+
+    if (imageFiles.length + files.length > 3) {
+      toast({
+        title: "Too many images",
+        description: "You can upload a maximum of 3 images per product",
+        variant: "destructive",
+      })
+      return
+    }
+
+    for (const file of files) {
       if (file.size > 5 * 1024 * 1024) {
         toast({
           title: "File too large",
-          description: "Please select an image under 5MB",
+          description: `${file.name} is over 5MB. Please select smaller images.`,
           variant: "destructive",
         })
         return
       }
+    }
 
-      setImageFile(file)
+    const newFiles = [...imageFiles, ...files]
+    setImageFiles(newFiles)
+
+    files.forEach((file) => {
       const reader = new FileReader()
       reader.onloadend = () => {
-        setImagePreview(reader.result as string)
+        setImagePreviews((prev) => [...prev, reader.result as string])
       }
       reader.readAsDataURL(file)
-    }
+    })
+  }
+
+  const handleRemoveImage = (index: number) => {
+    setImageFiles((prev) => prev.filter((_, i) => i !== index))
+    setImagePreviews((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -62,23 +81,23 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
     const supabase = createClient()
 
     try {
-      let imageUrl = null
+      const imageUrls: { url: string; alt: string }[] = []
 
-      if (imageFile) {
-        const formData = new FormData()
-        formData.append("file", imageFile)
-        formData.append("upload_preset", "shoppieapp_products")
-        formData.append("folder", `vendors/${vendorId}`)
+      for (const file of imageFiles) {
+        const formDataCloudinary = new FormData()
+        formDataCloudinary.append("file", file)
+        formDataCloudinary.append("upload_preset", "shoppieapp_products")
+        formDataCloudinary.append("folder", `vendors/${vendorId}`)
 
         const cloudinaryResponse = await fetch("https://api.cloudinary.com/v1_1/dibqpzu1j/image/upload", {
           method: "POST",
-          body: formData,
+          body: formDataCloudinary,
         })
 
         if (!cloudinaryResponse.ok) {
           toast({
             title: "Upload failed",
-            description: "Failed to upload image. Please try again.",
+            description: `Failed to upload ${file.name}. Please try again.`,
             variant: "destructive",
           })
           setIsSubmitting(false)
@@ -86,16 +105,19 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
         }
 
         const cloudinaryData = await cloudinaryResponse.json()
-        imageUrl = cloudinaryData.secure_url
+        imageUrls.push({
+          url: cloudinaryData.secure_url,
+          alt: formData.name,
+        })
       }
 
-      // Insert product into database
       const { error: insertError } = await supabase.from("products").insert({
         vendor_id: vendorId,
         name: formData.name,
         description: formData.description,
         price: Number.parseFloat(formData.price),
-        image_url: imageUrl,
+        images: imageUrls,
+        image_url: imageUrls[0]?.url || null,
         in_stock: formData.inStock,
       })
 
@@ -114,7 +136,6 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
         description: "Your product has been added successfully",
       })
 
-      // Success - redirect to manage products page
       router.push("/vendor/products")
       router.refresh()
     } catch (error) {
@@ -129,7 +150,6 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
@@ -146,7 +166,6 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         <form onSubmit={handleSubmit}>
           <Card>
@@ -155,7 +174,6 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
               <CardDescription>Add a new product to your shop</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Product Name */}
               <div className="space-y-2">
                 <Label htmlFor="name">Product Name *</Label>
                 <Input
@@ -167,7 +185,6 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
                 />
               </div>
 
-              {/* Description */}
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
@@ -179,7 +196,6 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
                 />
               </div>
 
-              {/* Price */}
               <div className="space-y-2">
                 <Label htmlFor="price">Price *</Label>
                 <Input
@@ -194,29 +210,61 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
                 />
               </div>
 
-              {/* Image Upload */}
               <div className="space-y-2">
-                <Label htmlFor="image">Product Image</Label>
+                <Label htmlFor="images">Product Images (Max 3)</Label>
                 <div className="space-y-4">
                   <div className="flex items-center gap-4">
-                    <Button type="button" variant="outline" onClick={() => document.getElementById("image")?.click()}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => document.getElementById("images")?.click()}
+                      disabled={imageFiles.length >= 3}
+                    >
                       <Upload className="mr-2 h-4 w-4" />
-                      Choose Image
+                      Choose Images
                     </Button>
                     <span className="text-sm text-muted-foreground">
-                      {imageFile ? imageFile.name : "No file chosen"}
+                      {imageFiles.length === 0
+                        ? "No images chosen"
+                        : `${imageFiles.length} image${imageFiles.length > 1 ? "s" : ""} selected`}
                     </span>
                   </div>
-                  <Input id="image" type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
-                  {imagePreview && (
-                    <div className="relative h-48 w-48 overflow-hidden rounded-lg border border-border">
-                      <Image src={imagePreview || "/placeholder.svg"} alt="Preview" fill className="object-cover" />
+                  <Input
+                    id="images"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageChange}
+                    className="hidden"
+                  />
+                  {imagePreviews.length > 0 && (
+                    <div className="grid grid-cols-3 gap-4">
+                      {imagePreviews.map((preview, index) => (
+                        <div key={index} className="relative">
+                          <div className="relative h-32 w-full overflow-hidden rounded-lg border border-border">
+                            <Image
+                              src={preview || "/placeholder.svg"}
+                              alt={`Preview ${index + 1}`}
+                              fill
+                              className="object-cover"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="icon"
+                            className="absolute -right-2 -top-2 h-6 w-6"
+                            onClick={() => handleRemoveImage(index)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* In Stock Toggle */}
               <div className="flex items-center justify-between rounded-lg border border-border p-4">
                 <div className="space-y-0.5">
                   <Label htmlFor="in-stock">In Stock</Label>
@@ -229,7 +277,6 @@ export function AddProductForm({ vendorId, shopName }: AddProductFormProps) {
                 />
               </div>
 
-              {/* Submit Button */}
               <div className="flex gap-4">
                 <Button type="submit" disabled={isSubmitting} className="flex-1">
                   {isSubmitting ? (
