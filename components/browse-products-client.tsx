@@ -561,7 +561,7 @@ export default function BrowseProductsClient({
                     data-product-id={product.id}
                     className="group relative overflow-hidden transition-shadow hover:shadow-lg"
                   >
-                    <Link href={`/product/${product.id}`}>
+                    <div className="cursor-pointer" onClick={() => router.push(`/product/${product.id}`)}>
                       {/* Product Image */}
                       <div className="relative aspect-square w-full overflow-hidden bg-muted">
                         {product.image_url ? (
@@ -579,7 +579,7 @@ export default function BrowseProductsClient({
                           </div>
                         )}
 
-                        <div className="absolute right-2 top-2 flex gap-2">
+                        <div className="absolute right-2 top-2 flex gap-2" onClick={(e) => e.stopPropagation()}>
                           <FavoriteButton productId={product.id} variant="outline" />
                           <ShareButton
                             productId={product.id}
@@ -621,19 +621,18 @@ export default function BrowseProductsClient({
                         </div>
 
                         {product.vendor.whatsapp_number && (
-                          <div className="mt-3" onClick={(e) => e.preventDefault()}>
+                          <div className="mt-3" onClick={(e) => e.stopPropagation()}>
                             <WhatsAppButton
                               phoneNumber={product.vendor.whatsapp_number}
                               shopName={product.vendor.shop_name}
                               productName={product.name}
                               variant="outline"
                               size="sm"
-                              className="w-full"
                             />
                           </div>
                         )}
                       </div>
-                    </Link>
+                    </div>
                   </Card>
                 )
               })}

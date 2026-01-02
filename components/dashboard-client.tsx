@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { EditProfileDialog } from "@/components/edit-profile-dialog"
 import { useTheme } from "@/components/theme-provider"
-import { RequestVerificationDialog } from "@/components/request-verification-dialog"
+import { ActivateVerificationDialog } from "@/components/activate-verification-dialog"
 import { VerificationBadge } from "@/components/verification-badge"
 
 type VendorData = {
@@ -33,6 +33,7 @@ type VendorData = {
   is_open: boolean
   is_verified?: boolean
   verification_status?: string
+  verification_expires_at?: string | null
   location: {
     name: string
     city: string
@@ -155,9 +156,11 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
                   </>
                 )}
               </Button>
-              <RequestVerificationDialog
+              <ActivateVerificationDialog
                 vendorId={vendor.id}
-                verificationStatus={vendor.verification_status || "unverified"}
+                shopName={vendor.shop_name}
+                isVerified={vendor.is_verified || false}
+                expiresAt={vendor.verification_expires_at || null}
               />
               <EditProfileDialog vendor={vendor} />
               <Button variant="ghost" size="sm" onClick={handleLogout} className="w-fit">
@@ -172,28 +175,45 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="space-y-6">
-          {/* Verification Status Card */}
-          {vendor.verification_status === "pending" && (
-            <Card className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950">
-              <CardHeader>
-                <CardTitle className="text-blue-700 dark:text-blue-300">Verification Pending</CardTitle>
-                <CardDescription>
-                  Your verification request is being reviewed. We'll notify you within 2-3 business days.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          )}
+          {/* Verification Expiry Warning */}
+          {vendor.is_verified &&
+            vendor.verification_expires_at &&
+            (() => {
+              const daysUntilExpiry = Math.floor(
+                (new Date(vendor.verification_expires_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24),
+              )
+              const isExpiringSoon = daysUntilExpiry <= 7 && daysUntilExpiry > 0
+              const isExpired = daysUntilExpiry <= 0
 
-          {vendor.verification_status === "rejected" && (
-            <Card className="border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950">
-              <CardHeader>
-                <CardTitle className="text-orange-700 dark:text-orange-300">Verification Rejected</CardTitle>
-                <CardDescription>
-                  Your verification request was not approved. Please review the requirements and reapply.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          )}
+              if (isExpired) {
+                return (
+                  <Card className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950">
+                    <CardHeader>
+                      <CardTitle className="text-red-700 dark:text-red-300">Verification Expired</CardTitle>
+                      <CardDescription>
+                        Your verification has expired. Renew your key to continue displaying the verified badge.
+                      </CardDescription>
+                    </CardHeader>
+                  </Card>
+                )
+              }
+
+              if (isExpiringSoon) {
+                return (
+                  <Card className="border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950">
+                    <CardHeader>
+                      <CardTitle className="text-orange-700 dark:text-orange-300">Verification Expiring Soon</CardTitle>
+                      <CardDescription>
+                        Your verification expires in {daysUntilExpiry} day{daysUntilExpiry !== 1 ? "s" : ""}. Renew soon
+                        to keep your badge.
+                      </CardDescription>
+                    </CardHeader>
+                  </Card>
+                )
+              }
+
+              return null
+            })()}
 
           {/* Shop Status Card */}
           <Card>

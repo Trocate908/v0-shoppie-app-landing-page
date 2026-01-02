@@ -25,6 +25,7 @@ export default async function VendorDashboardPage() {
       is_open,
       is_verified,
       verification_status,
+      verification_expires_at,
       location_id,
       locations (
         id,
@@ -86,6 +87,7 @@ export default async function VendorDashboardPage() {
     is_open: vendor.is_open ?? true,
     is_verified: vendor.is_verified || false,
     verification_status: vendor.verification_status || "unverified",
+    verification_expires_at: vendor.verification_expires_at || null,
     location: {
       name: locationName,
       city: cityName,
