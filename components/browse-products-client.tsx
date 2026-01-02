@@ -25,6 +25,7 @@ import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
 import { getCurrencyForCountry, convertPrice, formatPrice, CURRENCIES, type Currency } from "@/lib/currency"
 import { useRouter } from "next/navigation"
+import { VerificationBadge } from "@/components/verification-badge"
 
 interface Location {
   id: string
@@ -45,6 +46,7 @@ interface Product {
     id: string
     shop_name: string
     is_open: boolean
+    is_verified?: boolean
     whatsapp_number?: string | null
     location: Location
   }
@@ -609,7 +611,10 @@ export default function BrowseProductsClient({
                         </div>
 
                         <div className="mt-2 space-y-1">
-                          <p className="text-xs font-medium text-foreground">{product.vendor.shop_name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-medium text-foreground">{product.vendor.shop_name}</p>
+                            <VerificationBadge isVerified={product.vendor.is_verified || false} size="sm" />
+                          </div>
                           <p className="text-xs text-muted-foreground">
                             {product.vendor.location.market_name}, {product.vendor.location.city}
                           </p>

@@ -21,6 +21,7 @@ interface Product {
     id: string
     shop_name: string
     is_open: boolean
+    is_verified?: boolean
     whatsapp_number?: string | null
     location: {
       id: string
@@ -80,6 +81,7 @@ async function getAllProducts() {
         id,
         shop_name,
         is_open,
+        is_verified,
         whatsapp_number,
         location:locations!inner(
           id,

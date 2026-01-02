@@ -23,6 +23,8 @@ export default async function VendorDashboardPage() {
       shop_description,
       whatsapp_number,
       is_open,
+      is_verified,
+      verification_status,
       location_id,
       locations (
         id,
@@ -82,6 +84,8 @@ export default async function VendorDashboardPage() {
     whatsapp_number: vendor.whatsapp_number || undefined,
     location_id: vendor.location_id,
     is_open: vendor.is_open ?? true,
+    is_verified: vendor.is_verified || false,
+    verification_status: vendor.verification_status || "unverified",
     location: {
       name: locationName,
       city: cityName,

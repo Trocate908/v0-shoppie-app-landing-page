@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { EditProfileDialog } from "@/components/edit-profile-dialog"
 import { useTheme } from "@/components/theme-provider"
+import { RequestVerificationDialog } from "@/components/request-verification-dialog"
+import { VerificationBadge } from "@/components/verification-badge"
 
 type VendorData = {
   id: string
@@ -29,6 +31,8 @@ type VendorData = {
   shop_description?: string
   location_id: string
   is_open: boolean
+  is_verified?: boolean
+  verification_status?: string
   location: {
     name: string
     city: string
@@ -129,7 +133,10 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
                   </Link>
                 </Button>
               </div>
-              <h1 className="text-2xl font-bold text-foreground">{vendor.shop_name}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-foreground">{vendor.shop_name}</h1>
+                <VerificationBadge isVerified={vendor.is_verified || false} />
+              </div>
               <p className="text-sm text-muted-foreground">
                 {vendor.location.name}, {vendor.location.city}, {vendor.location.country}
               </p>
@@ -148,6 +155,10 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
                   </>
                 )}
               </Button>
+              <RequestVerificationDialog
+                vendorId={vendor.id}
+                verificationStatus={vendor.verification_status || "unverified"}
+              />
               <EditProfileDialog vendor={vendor} />
               <Button variant="ghost" size="sm" onClick={handleLogout} className="w-fit">
                 <LogOut className="mr-2 h-4 w-4" />
@@ -161,6 +172,29 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="space-y-6">
+          {/* Verification Status Card */}
+          {vendor.verification_status === "pending" && (
+            <Card className="border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950">
+              <CardHeader>
+                <CardTitle className="text-blue-700 dark:text-blue-300">Verification Pending</CardTitle>
+                <CardDescription>
+                  Your verification request is being reviewed. We'll notify you within 2-3 business days.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+
+          {vendor.verification_status === "rejected" && (
+            <Card className="border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950">
+              <CardHeader>
+                <CardTitle className="text-orange-700 dark:text-orange-300">Verification Rejected</CardTitle>
+                <CardDescription>
+                  Your verification request was not approved. Please review the requirements and reapply.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+
           {/* Shop Status Card */}
           <Card>
             <CardHeader>

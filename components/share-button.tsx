@@ -53,7 +53,7 @@ export default function ShareButton({
       })
       setQrCodeUrl(url)
     } catch (error) {
-      console.error("[v0] Error generating QR code:", error)
+      console.error("Error generating QR code:", error)
     }
   }
 
@@ -89,20 +89,20 @@ export default function ShareButton({
     window.open(urls[platform], "_blank", "noopener,noreferrer")
   }
 
-  const handleShareClick = (e: React.MouseEvent) => {
+  const handleClick = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild onClick={handleShareClick}>
-        <Button variant={variant} size={size} className="gap-2">
+      <DialogTrigger asChild>
+        <Button variant={variant} size={size} className="gap-2" onClick={handleClick}>
           <Share2 className="h-4 w-4" />
           {showLabel && <span>Share</span>}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" onClick={handleClick}>
         <DialogHeader>
           <DialogTitle>Share Product</DialogTitle>
           <DialogDescription>Share this product with your friends and family</DialogDescription>
