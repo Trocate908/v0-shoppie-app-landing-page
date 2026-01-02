@@ -11,6 +11,8 @@ import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@/lib/supabase/client"
 import ProfileButton from "@/components/profile-button"
 import WhatsAppButton from "@/components/whatsapp-button"
+import FavoriteButton from "@/components/favorite-button"
+import ShareButton from "@/components/share-button"
 
 interface Location {
   id: string
@@ -122,6 +124,19 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
 
               <div>
                 <p className="text-3xl font-bold text-primary">${product.price.toFixed(2)}</p>
+              </div>
+
+              {/* Favorite and Share Buttons */}
+              <div className="flex gap-3">
+                <FavoriteButton productId={product.id} variant="outline" size="default" showLabel />
+                <ShareButton
+                  productId={product.id}
+                  productName={product.name}
+                  productPrice={product.price}
+                  variant="outline"
+                  size="default"
+                  showLabel
+                />
               </div>
 
               {product.description && (

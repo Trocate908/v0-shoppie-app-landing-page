@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
-import { Search, MapPin, Store, X, Filter, DollarSign } from "lucide-react"
+import { Search, MapPin, Store, X, Filter, DollarSign, Heart } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 import { createBrowserClient } from "@/lib/supabase/client"
@@ -21,7 +21,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import ProfileButton from "@/components/profile-button"
 import WhatsAppButton from "@/components/whatsapp-button"
+import FavoriteButton from "@/components/favorite-button"
+import ShareButton from "@/components/share-button"
 import { getCurrencyForCountry, convertPrice, formatPrice, CURRENCIES, type Currency } from "@/lib/currency"
+import { useRouter } from "next/navigation"
 
 interface Location {
   id: string
@@ -72,6 +75,7 @@ export default function BrowseProductsClient({
   locations,
   visitorCountry,
 }: BrowseProductsClientProps) {
+  const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCountry, setSelectedCountry] = useState<string>("")
   const [selectedCity, setSelectedCity] = useState<string>("")
@@ -258,6 +262,10 @@ export default function BrowseProductsClient({
                   ))}
                 </SelectContent>
               </Select>
+              <Button variant="ghost" size="sm" className="gap-2" onClick={() => router.push("/wishlist")}>
+                <Heart className="h-5 w-5" />
+                <span className="hidden sm:inline">Wishlist</span>
+              </Button>
               <ProfileButton />
             </div>
           </div>
@@ -546,11 +554,12 @@ export default function BrowseProductsClient({
                 const formattedPrice = formatPrice(convertedPrice, selectedCurrency)
 
                 return (
-                  <Link key={product.id} href={`/product/${product.id}`}>
-                    <Card
-                      data-product-id={product.id}
-                      className="overflow-hidden transition-shadow hover:shadow-md cursor-pointer"
-                    >
+                  <Card
+                    key={product.id}
+                    data-product-id={product.id}
+                    className="group relative overflow-hidden transition-shadow hover:shadow-lg"
+                  >
+                    <Link href={`/product/${product.id}`}>
                       {/* Product Image */}
                       <div className="relative aspect-square w-full overflow-hidden bg-muted">
                         {product.image_url ? (
@@ -558,7 +567,7 @@ export default function BrowseProductsClient({
                             src={product.image_url || "/placeholder.svg"}
                             alt={product.name}
                             fill
-                            className="object-cover"
+                            className="object-cover transition-transform group-hover:scale-105"
                             loading="lazy"
                             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
                           />
@@ -567,11 +576,16 @@ export default function BrowseProductsClient({
                             <span className="text-sm text-muted-foreground">No image</span>
                           </div>
                         )}
-                        {product.category && (
-                          <Badge className="absolute left-2 top-2" variant="secondary">
-                            {product.category}
-                          </Badge>
-                        )}
+
+                        <div className="absolute right-2 top-2 flex gap-2">
+                          <FavoriteButton productId={product.id} variant="outline" />
+                          <ShareButton
+                            productId={product.id}
+                            productName={product.name}
+                            productPrice={product.price}
+                            variant="outline"
+                          />
+                        </div>
                       </div>
 
                       {/* Product Details */}
@@ -614,8 +628,8 @@ export default function BrowseProductsClient({
                           </div>
                         )}
                       </div>
-                    </Card>
-                  </Link>
+                    </Link>
+                  </Card>
                 )
               })}
             </div>
