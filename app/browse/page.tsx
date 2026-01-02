@@ -16,12 +16,14 @@ interface Product {
   price: number
   category: string | null
   image_url: string | null
+  image_urls: string[] | null
   in_stock: boolean
   vendor: {
     id: string
     shop_name: string
     is_open: boolean
     is_verified?: boolean
+    verification_expires_at?: string | null
     whatsapp_number?: string | null
     location: {
       id: string
@@ -76,12 +78,14 @@ async function getAllProducts() {
       price,
       category,
       image_url,
+      image_urls,
       in_stock,
       vendor:vendors!inner(
         id,
         shop_name,
         is_open,
         is_verified,
+        verification_expires_at,
         whatsapp_number,
         location:locations!inner(
           id,

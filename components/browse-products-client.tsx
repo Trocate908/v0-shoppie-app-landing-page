@@ -1,14 +1,10 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
-import { Input } from "@/components/ui/input"
+import { useState, useMemo } from "react"
+import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card } from "@/components/ui/card"
-import { Search, MapPin, Store, X, Filter, DollarSign, Heart } from "lucide-react"
-import Image from "next/image"
-import Link from "next/link"
-import { createBrowserClient } from "@/lib/supabase/client"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -17,15 +13,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Store, MapPin, Filter, Search, X, DollarSign, BadgeCheck } from "lucide-react"
+import Link from "next/link"
 import ProfileButton from "@/components/profile-button"
 import WhatsAppButton from "@/components/whatsapp-button"
 import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
+import { createBrowserClient } from "@/lib/supabase/client"
 import { getCurrencyForCountry, convertPrice, formatPrice, CURRENCIES, type Currency } from "@/lib/currency"
 import { useRouter } from "next/navigation"
 import { VerificationBadge } from "@/components/verification-badge"
+import ProductCarousel from "./product-carousel"
 
 interface Location {
   id: string
@@ -41,6 +41,7 @@ interface Product {
   price: number
   category: string | null
   image_url: string | null
+  image_urls: string[] | null
   in_stock: boolean
   vendor: {
     id: string
@@ -95,6 +96,8 @@ export default function BrowseProductsClient({
     visitorCountry ? getCurrencyForCountry(visitorCountry) : CURRENCIES.USD,
   )
 
+  const [showVerifiedOnly, setShowVerifiedOnly] = useState(false)
+
   const sortedProducts = useMemo(() => {
     if (!visitorCountry) return initialProducts
 
@@ -109,11 +112,25 @@ export default function BrowseProductsClient({
       }
     })
 
+    // Priority sort: Verified first, then by country
+    const sortByVerification = (a: Product, b: Product) => {
+      if (a.vendor.is_verified && !b.vendor.is_verified) return -1
+      if (!a.vendor.is_verified && b.vendor.is_verified) return 1
+      return 0
+    }
+
+    fromVisitorCountry.sort(sortByVerification)
+    fromOtherCountries.sort(sortByVerification)
+
     return [...fromVisitorCountry, ...fromOtherCountries]
   }, [initialProducts, visitorCountry])
 
   const filteredProducts = useMemo(() => {
     let filtered = sortedProducts
+
+    if (showVerifiedOnly) {
+      filtered = filtered.filter((product) => product.vendor.is_verified)
+    }
 
     // Filter by search query
     if (searchQuery.trim()) {
@@ -160,7 +177,7 @@ export default function BrowseProductsClient({
     }
 
     return sorted
-  }, [sortedProducts, searchQuery, selectedCategory, selectedLocation, minPrice, maxPrice, sortBy])
+  }, [sortedProducts, searchQuery, selectedCategory, selectedLocation, minPrice, maxPrice, sortBy, showVerifiedOnly])
 
   const countries = useMemo(() => {
     const uniqueCountries = new Set(locations.map((l) => l.country))
@@ -196,29 +213,6 @@ export default function BrowseProductsClient({
     }
   }
 
-  useEffect(() => {
-    try {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              const productId = entry.target.getAttribute("data-product-id")
-              if (productId) trackProductView(productId)
-            }
-          })
-        },
-        { threshold: 0.5 },
-      )
-
-      const productCards = document.querySelectorAll("[data-product-id]")
-      productCards.forEach((card) => observer.observe(card))
-
-      return () => observer.disconnect()
-    } catch (err) {
-      console.error("[v0] IntersectionObserver error:", err)
-    }
-  }, [filteredProducts])
-
   const handleLocationSelect = () => {
     if (selectedLocation) {
       setLocationDialogOpen(false)
@@ -235,11 +229,14 @@ export default function BrowseProductsClient({
     setSelectedCategory("")
     setMinPrice("")
     setMaxPrice("")
+    setShowVerifiedOnly(false)
     clearLocationFilter()
   }
 
   const selectedLocationData = locations.find((l) => l.id === selectedLocation)
-  const activeFiltersCount = [selectedCategory, selectedLocation, minPrice, maxPrice].filter(Boolean).length
+  const activeFiltersCount = [selectedCategory, selectedLocation, minPrice, maxPrice, showVerifiedOnly].filter(
+    Boolean,
+  ).length
 
   return (
     <>
@@ -265,7 +262,7 @@ export default function BrowseProductsClient({
                 </SelectContent>
               </Select>
               <Button variant="ghost" size="sm" className="gap-2" onClick={() => router.push("/wishlist")}>
-                <Heart className="h-5 w-5" />
+                <BadgeCheck className="h-5 w-5" />
                 <span className="hidden sm:inline">Wishlist</span>
               </Button>
               <ProfileButton />
@@ -308,6 +305,16 @@ export default function BrowseProductsClient({
                 <SelectItem value="price-high">Price: High to Low</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Verified Only toggle button for trust filter */}
+            <Button
+              variant={showVerifiedOnly ? "default" : "outline"}
+              className="gap-2"
+              onClick={() => setShowVerifiedOnly(!showVerifiedOnly)}
+            >
+              <BadgeCheck className="h-4 w-4" />
+              {showVerifiedOnly ? "Showing Verified" : "Verified Only"}
+            </Button>
 
             {/* Location Filter Button */}
             <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
@@ -469,6 +476,7 @@ export default function BrowseProductsClient({
                         setMinPrice("")
                         setMaxPrice("")
                       }}
+                      className="flex-1"
                     >
                       Clear
                     </Button>
@@ -481,6 +489,20 @@ export default function BrowseProductsClient({
           {/* Active Filters */}
           {activeFiltersCount > 0 && (
             <div className="mb-4 flex flex-wrap items-center gap-2">
+              {showVerifiedOnly && (
+                <Badge variant="secondary" className="gap-2 py-2 pr-2">
+                  <BadgeCheck className="h-3 w-3" />
+                  Verified Only
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 hover:bg-transparent"
+                    onClick={() => setShowVerifiedOnly(false)}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </Badge>
+              )}
               {selectedLocationData && (
                 <Badge variant="secondary" className="gap-2 py-2 pr-2">
                   <MapPin className="h-3 w-3" />
@@ -562,76 +584,70 @@ export default function BrowseProductsClient({
                     className="group relative overflow-hidden transition-shadow hover:shadow-lg"
                   >
                     <div className="cursor-pointer" onClick={() => router.push(`/product/${product.id}`)}>
-                      {/* Product Image */}
-                      <div className="relative aspect-square w-full overflow-hidden bg-muted">
-                        {product.image_url ? (
-                          <Image
-                            src={product.image_url || "/placeholder.svg"}
-                            alt={product.name}
-                            fill
-                            className="object-cover transition-transform group-hover:scale-105"
-                            loading="lazy"
-                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center">
-                            <span className="text-sm text-muted-foreground">No image</span>
-                          </div>
-                        )}
+                      <ProductCarousel
+                        images={
+                          product.image_urls && product.image_urls.length > 0
+                            ? product.image_urls
+                            : product.image_url
+                              ? [product.image_url]
+                              : []
+                        }
+                        productName={product.name}
+                        autoSlide={false}
+                      />
 
-                        <div className="absolute right-2 top-2 flex gap-2" onClick={(e) => e.stopPropagation()}>
-                          <FavoriteButton productId={product.id} variant="outline" />
-                          <ShareButton
-                            productId={product.id}
+                      <div className="absolute right-2 top-2 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                        <FavoriteButton productId={product.id} variant="outline" />
+                        <ShareButton
+                          productId={product.id}
+                          productName={product.name}
+                          productPrice={product.price}
+                          variant="outline"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Product Details */}
+                    <div className="p-4">
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <h3 className="line-clamp-2 font-semibold text-foreground">{product.name}</h3>
+                        <Badge variant={product.in_stock ? "default" : "secondary"} className="shrink-0">
+                          {product.in_stock ? "In Stock" : "Out of Stock"}
+                        </Badge>
+                      </div>
+
+                      {product.description && (
+                        <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
+                      )}
+
+                      <div className="flex items-center justify-between">
+                        <p className="text-lg font-bold text-primary">{formattedPrice}</p>
+                        <Badge variant={product.vendor.is_open ? "default" : "outline"}>
+                          {product.vendor.is_open ? "Open" : "Closed"}
+                        </Badge>
+                      </div>
+
+                      <div className="mt-2 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-medium text-foreground">{product.vendor.shop_name}</p>
+                          <VerificationBadge isVerified={product.vendor.is_verified || false} size="sm" />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {product.vendor.location.market_name}, {product.vendor.location.city}
+                        </p>
+                      </div>
+
+                      {product.vendor.whatsapp_number && (
+                        <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                          <WhatsAppButton
+                            phoneNumber={product.vendor.whatsapp_number}
+                            shopName={product.vendor.shop_name}
                             productName={product.name}
-                            productPrice={product.price}
                             variant="outline"
+                            size="sm"
                           />
                         </div>
-                      </div>
-
-                      {/* Product Details */}
-                      <div className="p-4">
-                        <div className="mb-2 flex items-start justify-between gap-2">
-                          <h3 className="line-clamp-2 font-semibold text-foreground">{product.name}</h3>
-                          <Badge variant={product.in_stock ? "default" : "secondary"} className="shrink-0">
-                            {product.in_stock ? "In Stock" : "Out of Stock"}
-                          </Badge>
-                        </div>
-
-                        {product.description && (
-                          <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
-                        )}
-
-                        <div className="flex items-center justify-between">
-                          <p className="text-lg font-bold text-primary">{formattedPrice}</p>
-                          <Badge variant={product.vendor.is_open ? "default" : "outline"}>
-                            {product.vendor.is_open ? "Open" : "Closed"}
-                          </Badge>
-                        </div>
-
-                        <div className="mt-2 space-y-1">
-                          <div className="flex items-center gap-2">
-                            <p className="text-xs font-medium text-foreground">{product.vendor.shop_name}</p>
-                            <VerificationBadge isVerified={product.vendor.is_verified || false} size="sm" />
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {product.vendor.location.market_name}, {product.vendor.location.city}
-                          </p>
-                        </div>
-
-                        {product.vendor.whatsapp_number && (
-                          <div className="mt-3" onClick={(e) => e.stopPropagation()}>
-                            <WhatsAppButton
-                              phoneNumber={product.vendor.whatsapp_number}
-                              shopName={product.vendor.shop_name}
-                              productName={product.name}
-                              variant="outline"
-                              size="sm"
-                            />
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </Card>
                 )

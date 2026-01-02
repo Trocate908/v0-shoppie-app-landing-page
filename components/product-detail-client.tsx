@@ -4,8 +4,8 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
-import { ArrowLeft, Store, MapPin } from "lucide-react"
-import Image from "next/image"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ArrowLeft, Store, MapPin, Shield } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@/lib/supabase/client"
@@ -13,6 +13,8 @@ import ProfileButton from "@/components/profile-button"
 import WhatsAppButton from "@/components/whatsapp-button"
 import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
+import { VerificationBadge } from "@/components/verification-badge"
+import ProductCarousel from "@/components/product-carousel"
 
 interface Location {
   id: string
@@ -25,6 +27,8 @@ interface Vendor {
   id: string
   shop_name: string
   is_open: boolean
+  is_verified?: boolean
+  verification_expires_at?: string | null
   whatsapp_number?: string | null
   location?: Location
 }
@@ -35,6 +39,7 @@ interface Product {
   description: string | null
   price: number
   image_url: string | null
+  image_urls?: string[] | null
   in_stock: boolean
   vendor: Vendor
 }
@@ -90,23 +95,18 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
         <div className="mx-auto max-w-7xl">
           {/* Product Detail Section */}
           <div className="grid gap-8 lg:grid-cols-2">
-            {/* Product Image */}
-            <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">
-              {product.image_url ? (
-                <Image
-                  src={product.image_url || "/placeholder.svg"}
-                  alt={product.name}
-                  fill
-                  className="object-cover"
-                  priority
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center">
-                  <span className="text-muted-foreground">No image available</span>
-                </div>
-              )}
-            </div>
+            {/* Product Image/Carousel */}
+            <ProductCarousel
+              images={
+                product.image_urls && product.image_urls.length > 0
+                  ? product.image_urls
+                  : product.image_url
+                    ? [product.image_url]
+                    : []
+              }
+              productName={product.name}
+              autoSlide={true}
+            />
 
             {/* Product Info */}
             <div className="space-y-6">
@@ -148,9 +148,30 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
 
               {/* Vendor Info */}
               <Card className="p-4">
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <h3 className="font-semibold text-foreground">Sold by</h3>
-                  <p className="text-lg font-medium text-primary">{product.vendor.shop_name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-lg font-medium text-primary">{product.vendor.shop_name}</p>
+                    {product.vendor.is_verified && (
+                      <VerificationBadge
+                        isVerified={product.vendor.is_verified}
+                        verificationExpiresAt={product.vendor.verification_expires_at}
+                        showProtection
+                      />
+                    )}
+                  </div>
+
+                  {/* Buyer Protection Notice for Verified Vendors */}
+                  {product.vendor.is_verified && (
+                    <Alert className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+                      <Shield className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+                      <AlertDescription className="text-sm text-blue-700 dark:text-blue-300">
+                        <span className="font-semibold">Buyer Protection:</span> This verified seller is committed to
+                        quality service. Issues are resolved with priority support.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
                   {product.vendor.location && (
                     <div className="flex items-start gap-2 text-sm text-muted-foreground">
                       <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
@@ -183,23 +204,18 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
                 {relatedProducts.map((relatedProduct) => (
                   <Link key={relatedProduct.id} href={`/product/${relatedProduct.id}`}>
                     <Card className="overflow-hidden transition-shadow hover:shadow-md">
-                      {/* Product Image */}
-                      <div className="relative aspect-square w-full overflow-hidden bg-muted">
-                        {relatedProduct.image_url ? (
-                          <Image
-                            src={relatedProduct.image_url || "/placeholder.svg"}
-                            alt={relatedProduct.name}
-                            fill
-                            className="object-cover"
-                            loading="lazy"
-                            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center">
-                            <span className="text-sm text-muted-foreground">No image</span>
-                          </div>
-                        )}
-                      </div>
+                      {/* Product Image/Carousel */}
+                      <ProductCarousel
+                        images={
+                          relatedProduct.image_urls && relatedProduct.image_urls.length > 0
+                            ? relatedProduct.image_urls
+                            : relatedProduct.image_url
+                              ? [relatedProduct.image_url]
+                              : []
+                        }
+                        productName={relatedProduct.name}
+                        autoSlide={false}
+                      />
 
                       {/* Product Details */}
                       <div className="p-3">
