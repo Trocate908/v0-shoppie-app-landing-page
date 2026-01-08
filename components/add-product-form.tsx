@@ -16,6 +16,7 @@ import { ArrowLeft, Upload, Loader2, X, Shield } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
+import { ImageCropperDialog } from "@/components/image-cropper-dialog"
 
 type AddProductFormProps = {
   vendorId: string
@@ -43,11 +44,14 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
+  const [cropperOpen, setCropperOpen] = useState(false)
+  const [currentImageSrc, setCurrentImageSrc] = useState<string>("")
+  const [currentFileName, setCurrentFileName] = useState<string>("")
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    price: "",
     category: "",
+    price: "",
     inStock: true,
   })
 
@@ -65,26 +69,42 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
       return
     }
 
-    const validFiles = files.filter((file) => {
-      if (file.size > 5 * 1024 * 1024) {
-        toast({
-          title: "File too large",
-          description: `${file.name} is over 5MB`,
-          variant: "destructive",
-        })
-        return false
-      }
-      return true
-    })
+    const file = files[0]
+    if (!file) return
 
-    setImageFiles((prev) => [...prev, ...validFiles])
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: `${file.name} is over 5MB`,
+        variant: "destructive",
+      })
+      return
+    }
 
-    validFiles.forEach((file) => {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setImagePreviews((prev) => [...prev, reader.result as string])
-      }
-      reader.readAsDataURL(file)
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      setCurrentImageSrc(reader.result as string)
+      setCurrentFileName(file.name)
+      setCropperOpen(true)
+    }
+    reader.readAsDataURL(file)
+
+    // Reset input
+    e.target.value = ""
+  }
+
+  const handleCropComplete = (croppedFile: File) => {
+    setImageFiles((prev) => [...prev, croppedFile])
+
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      setImagePreviews((prev) => [...prev, reader.result as string])
+    }
+    reader.readAsDataURL(croppedFile)
+
+    toast({
+      title: "Image added",
+      description: "Your cropped image has been added",
     })
   }
 
@@ -167,7 +187,14 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
+      <ImageCropperDialog
+        open={cropperOpen}
+        onOpenChange={setCropperOpen}
+        imageSrc={currentImageSrc}
+        onCropComplete={handleCropComplete}
+        fileName={currentFileName}
+      />
+
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-4">
@@ -184,7 +211,6 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         <form onSubmit={handleSubmit}>
           <Card>
@@ -193,7 +219,6 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
               <CardDescription>Add a new product to your shop</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Product Name */}
               <div className="space-y-2">
                 <Label htmlFor="name">Product Name *</Label>
                 <Input
@@ -205,7 +230,6 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                 />
               </div>
 
-              {/* Category Selection */}
               <div className="space-y-2">
                 <Label htmlFor="category">Category *</Label>
                 <Select
@@ -226,7 +250,6 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                 </Select>
               </div>
 
-              {/* Description */}
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
@@ -238,7 +261,6 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                 />
               </div>
 
-              {/* Price */}
               <div className="space-y-2">
                 <Label htmlFor="price">Price (USD) *</Label>
                 <Input
@@ -253,7 +275,6 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                 />
               </div>
 
-              {/* Image Upload */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="image">Product Image{isVerified ? "s" : ""}</Label>
@@ -276,14 +297,7 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                       </span>
                     </div>
                   )}
-                  <Input
-                    id="image"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    className="hidden"
-                    multiple={isVerified}
-                  />
+                  <Input id="image" type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
                   {imagePreviews.length > 0 && (
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                       {imagePreviews.map((preview, index) => (
@@ -318,7 +332,6 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                 </div>
               </div>
 
-              {/* In Stock Toggle */}
               <div className="flex items-center justify-between rounded-lg border border-border p-4">
                 <div className="space-y-0.5">
                   <Label htmlFor="in-stock">In Stock</Label>
@@ -331,7 +344,6 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                 />
               </div>
 
-              {/* Submit Button */}
               <div className="flex gap-4">
                 <Button type="submit" disabled={isSubmitting} className="flex-1">
                   {isSubmitting ? (
