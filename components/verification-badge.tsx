@@ -1,6 +1,7 @@
-import { BadgeCheck, Shield } from "lucide-react"
+import { Shield } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import Image from "next/image"
 
 interface VerificationBadgeProps {
   isVerified: boolean
@@ -32,7 +33,13 @@ export function VerificationBadge({
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge variant="secondary" className="gap-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-            <BadgeCheck className={sizeClasses[size]} />
+            <Image
+              src="/images/icons8-verified-badge-48-20-281-29.png"
+              alt="Verified"
+              width={size === "sm" ? 12 : size === "md" ? 16 : 20}
+              height={size === "sm" ? 12 : size === "md" ? 16 : 20}
+              className={sizeClasses[size]}
+            />
             Verified
             {showProtection && <Shield className={sizeClasses[size]} />}
           </Badge>
