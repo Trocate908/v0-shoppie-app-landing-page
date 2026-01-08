@@ -8,6 +8,7 @@ import { Search } from "lucide-react"
 import Image from "next/image"
 import { createBrowserClient } from "@/lib/supabase/client"
 import Link from "next/link"
+import { VerificationBadge } from "@/components/verification-badge" // Using named import instead of default import
 
 interface Product {
   id: string
@@ -19,6 +20,7 @@ interface Product {
   vendor: {
     shop_name: string
     is_open: boolean
+    is_verified: boolean // Add is_verified field
   }
 }
 
@@ -158,7 +160,12 @@ export default function ProductsClient({ products }: ProductsClientProps) {
                     </Badge>
                   </div>
 
-                  <p className="mt-2 text-xs text-muted-foreground">{product.vendor.shop_name}</p>
+                  <div className="mt-2 flex items-center gap-1">
+                    <p className="text-xs text-muted-foreground">{product.vendor.shop_name}</p>
+                    {product.vendor.is_verified && (
+                      <VerificationBadge isVerified={product.vendor.is_verified} size="xs" showTooltip={false} />
+                    )}
+                  </div>
                 </div>
               </Card>
             </Link>

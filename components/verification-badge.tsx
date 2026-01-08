@@ -1,13 +1,12 @@
-import { Shield } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import Image from "next/image"
 
 interface VerificationBadgeProps {
   isVerified: boolean
   verificationExpiresAt?: string | null
-  size?: "sm" | "md" | "lg"
+  size?: "xs" | "sm" | "md" | "lg"
   showProtection?: boolean
+  showTooltip?: boolean
 }
 
 export function VerificationBadge({
@@ -15,35 +14,48 @@ export function VerificationBadge({
   verificationExpiresAt,
   size = "md",
   showProtection = false,
+  showTooltip = true,
 }: VerificationBadgeProps) {
   if (!isVerified) return null
 
   const sizeClasses = {
-    sm: "h-3 w-3",
+    xs: "h-3 w-3",
+    sm: "h-3.5 w-3.5",
     md: "h-4 w-4",
     lg: "h-5 w-5",
+  }
+
+  const imageSizes = {
+    xs: 12,
+    sm: 14,
+    md: 16,
+    lg: 20,
   }
 
   const daysUntilExpiry = verificationExpiresAt
     ? Math.ceil((new Date(verificationExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : null
 
+  const badgeContent = (
+    <span className="inline-flex items-center">
+      <Image
+        src="/images/icons8-verified-badge-48-20-281-29.png"
+        alt="Verified"
+        width={imageSizes[size]}
+        height={imageSizes[size]}
+        className={sizeClasses[size]}
+      />
+    </span>
+  )
+
+  if (!showTooltip) {
+    return badgeContent
+  }
+
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant="secondary" className="gap-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-            <Image
-              src="/images/icons8-verified-badge-48-20-281-29.png"
-              alt="Verified"
-              width={size === "sm" ? 12 : size === "md" ? 16 : 20}
-              height={size === "sm" ? 12 : size === "md" ? 16 : 20}
-              className={sizeClasses[size]}
-            />
-            Verified
-            {showProtection && <Shield className={sizeClasses[size]} />}
-          </Badge>
-        </TooltipTrigger>
+        <TooltipTrigger asChild>{badgeContent}</TooltipTrigger>
         <TooltipContent className="max-w-xs">
           <div className="space-y-2">
             <p className="font-semibold">Verified Seller Benefits:</p>
@@ -64,3 +76,5 @@ export function VerificationBadge({
     </TooltipProvider>
   )
 }
+
+export default VerificationBadge

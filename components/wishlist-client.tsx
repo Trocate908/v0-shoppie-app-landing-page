@@ -11,6 +11,7 @@ import ProfileButton from "@/components/profile-button"
 import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
 import WhatsAppButton from "@/components/whatsapp-button"
+import { VerificationBadge } from "@/components/verification-badge"
 
 interface Location {
   id: string
@@ -23,6 +24,7 @@ interface Vendor {
   id: string
   shop_name: string
   is_open: boolean
+  is_verified?: boolean
   whatsapp_number?: string | null
   location: Location
 }
@@ -151,6 +153,9 @@ export default function WishlistClient({ products }: WishlistClientProps) {
                         <div className="flex items-center gap-2">
                           <Store className="h-4 w-4 text-muted-foreground" />
                           <span className="text-sm font-medium text-foreground">{product.vendor.shop_name}</span>
+                          {product.vendor.is_verified && (
+                            <VerificationBadge isVerified={product.vendor.is_verified} size="sm" showTooltip={false} />
+                          )}
                           <Badge variant={product.vendor.is_open ? "default" : "outline"} className="ml-auto text-xs">
                             {product.vendor.is_open ? "Open" : "Closed"}
                           </Badge>

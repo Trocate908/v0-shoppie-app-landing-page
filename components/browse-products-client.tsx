@@ -628,9 +628,11 @@ export default function BrowseProductsClient({
                       </div>
 
                       <div className="mt-2 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs font-medium text-foreground">{product.vendor.shop_name}</p>
-                          <VerificationBadge isVerified={product.vendor.is_verified || false} size="sm" />
+                        <div className="flex items-center gap-1">
+                          <p className="text-xs text-muted-foreground">{product.vendor.shop_name}</p>
+                          {product.vendor.is_verified && (
+                            <VerificationBadge isVerified={product.vendor.is_verified} size="xs" showTooltip={false} />
+                          )}
                         </div>
                         <p className="text-xs text-muted-foreground">
                           {product.vendor.location.market_name}, {product.vendor.location.city}
