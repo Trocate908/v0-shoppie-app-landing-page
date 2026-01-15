@@ -1,10 +1,9 @@
 import type { MetadataRoute } from "next"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = "https://shoppieapp.co.zw" // Updated to actual production domain
+  const baseUrl = "https://shoppieapp.co.zw"
 
-  // Static pages
   const staticPages: MetadataRoute.Sitemap = [
     {
       url: baseUrl,
@@ -51,17 +50,39 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ]
 
   try {
-    const supabase = createClient()
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    const { data: products } = await supabase.from("products").select("id, updated_at").eq("in_stock", true).limit(1000) // Limit for performance
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("[v0] Missing Supabase credentials for sitemap")
+      return staticPages
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey)
+
+    const { data: products, error } = await supabase
+      .from("products")
+      .select("id, updated_at")
+      .eq("in_stock", true)
+      .order("updated_at", { ascending: false })
+      .limit(500)
+
+    if (error) {
+      console.error("[v0] Error fetching products for sitemap:", error)
+      return staticPages
+    }
 
     const productPages: MetadataRoute.Sitemap =
       products?.map((product) => ({
         url: `${baseUrl}/product/${product.id}`,
-        lastModified: new Date(product.updated_at || new Date()),
+        lastModified: product.updated_at ? new Date(product.updated_at) : new Date(),
         changeFrequency: "weekly" as const,
         priority: 0.8,
       })) || []
+
+    console.log(
+      `[v0] Generated sitemap with ${staticPages.length} static pages and ${productPages.length} product pages`,
+    )
 
     return [...staticPages, ...productPages]
   } catch (error) {
