@@ -108,6 +108,9 @@ export default function HomePage() {
               <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
                 Terms & Conditions
               </Link>
+              <Link href="/contact" className="text-sm text-muted-foreground hover:text-foreground">
+                Contact
+              </Link>
             </div>
           </div>
         </div>
