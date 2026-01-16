@@ -9,6 +9,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/vendor/dashboard", "/vendor/products", "/vendor/add-product", "/wishlist"],
       },
     ],
-    sitemap: "https://shoppieapp.com/sitemap.xml", // Replace with your actual domain
+    sitemap: "https://shoppieapp.co.zw/sitemap.xml", // Replace with your actual domain
   }
 }
