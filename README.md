@@ -35,7 +35,7 @@ A production-ready marketplace platform connecting local shoppers with nearby ve
 
 ## Project Structure
 
-```
+\`\`\`
 shoppieapp/
 ├── app/                          # Next.js App Router pages
 │   ├── page.tsx                  # Landing page
@@ -72,7 +72,7 @@ shoppieapp/
 │   ├── 07_create_analytics_function.sql
 │   └── 09_update_locations_structure.sql
 └── proxy.ts                     # Middleware for protected routes
-```
+\`\`\`
 
 ## Getting Started
 
@@ -85,7 +85,7 @@ shoppieapp/
 
 ### 1. Clone and Install
 
-```bash
+\`\`\`bash
 # Clone the repository
 git clone <your-repo-url>
 cd shoppieapp
@@ -94,7 +94,7 @@ cd shoppieapp
 npm install
 # or
 pnpm install
-```
+\`\`\`
 
 ### 2. Set Up Supabase
 
@@ -102,7 +102,7 @@ pnpm install
 2. Get your project credentials from Settings > API
 3. Create a `.env.local` file in the root directory:
 
-```env
+\`\`\`env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL=http://localhost:3000
@@ -110,7 +110,7 @@ NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL=http://localhost:3000
 # Cloudinary Configuration
 CLOUDINARY_URL=cloudinary://your_api_key:your_api_secret@your_cloud_name
 NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
-```
+\`\`\`
 
 ### 3. Set Up Cloudinary
 
@@ -138,11 +138,11 @@ Execute the SQL scripts in order in your Supabase SQL Editor:
 
 ### 5. Run Development Server
 
-```bash
+\`\`\`bash
 npm run dev
 # or
 pnpm dev
-```
+\`\`\`
 
 Open [http://localhost:3000](http://localhost:3000) to see your app.
 
@@ -183,7 +183,7 @@ Open [http://localhost:3000](http://localhost:3000) to see your app.
 
 Required environment variables:
 
-```env
+\`\`\`env
 # Supabase (automatically set when using Supabase integration on Vercel)
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
@@ -195,7 +195,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 # Cloudinary
 CLOUDINARY_URL=cloudinary://api_key:api_secret@cloud_name
 NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
-```
+\`\`\`
 
 ## Deployment
 
@@ -209,9 +209,9 @@ NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
 
 Or use the Vercel CLI:
 
-```bash
+\`\`\`bash
 vercel
-```
+\`\`\`
 
 ### Post-Deployment
 
