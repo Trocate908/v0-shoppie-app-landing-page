@@ -23,8 +23,6 @@ const nextConfig = {
   },
   // Enable compression
   compress: true,
-  // Enable SWC minification
-  swcMinify: true,
 }
 
 export default nextConfig
