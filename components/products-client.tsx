@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback, memo } from "react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
@@ -41,8 +41,8 @@ export default function ProductsClient({ products }: ProductsClientProps) {
     return products.filter((product) => product.name.toLowerCase().includes(query))
   }, [products, searchQuery])
 
-  // Track product views
-  const trackProductView = async (productId: string) => {
+  // Track product views (memoized for performance)
+  const trackProductView = useCallback(async (productId: string) => {
     // Only track once per session
     if (trackedViews.has(productId)) return
 
@@ -56,7 +56,7 @@ export default function ProductsClient({ products }: ProductsClientProps) {
     } catch (error) {
       console.error("[v0] Error tracking product view:", error)
     }
-  }
+  }, [trackedViews])
 
   // Track views when products come into view
   useEffect(() => {
@@ -132,6 +132,8 @@ export default function ProductsClient({ products }: ProductsClientProps) {
                       className="object-cover"
                       loading="lazy"
                       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                      quality={75}
+                      priority={false}
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center">

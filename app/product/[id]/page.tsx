@@ -2,6 +2,23 @@ import { createClient } from "@/lib/supabase/server"
 import { notFound } from "next/navigation"
 import ProductDetailClient from "@/components/product-detail-client"
 
+// Enable ISR with revalidation
+export const revalidate = 3600 // Revalidate every hour
+export const dynamicParams = true
+
+// Generate static params for popular products
+export async function generateStaticParams() {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("products")
+    .select("id")
+    .limit(20) // Pre-render top 20 products
+  
+  return (data || []).map((product) => ({
+    id: product.id,
+  }))
+}
+
 export default async function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()

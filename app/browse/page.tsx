@@ -4,6 +4,9 @@ import BrowseProductsClient from "@/components/browse-products-client"
 import { Skeleton } from "@/components/ui/skeleton"
 import { headers } from "next/headers"
 
+// Enable static generation with revalidation
+export const revalidate = 60 // Revalidate every 60 seconds
+
 export const metadata = {
   title: "Browse All Products - ShoppieApp",
   description: "Discover products from vendors across all locations",
@@ -97,6 +100,7 @@ async function getAllProducts() {
     `)
     .eq("in_stock", true)
     .order("name")
+    .limit(100) // Limit initial load for better performance
 
   if (error) {
     console.error("[v0] Error fetching products:", error)
