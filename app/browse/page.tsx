@@ -2,7 +2,6 @@ import { Suspense } from "react"
 import { createClient } from "@/lib/supabase/server"
 import BrowseProductsClient from "@/components/browse-products-client"
 import { Skeleton } from "@/components/ui/skeleton"
-import { headers } from "next/headers"
 
 // Enable static generation with revalidation
 export const revalidate = 60 // Revalidate every 60 seconds
@@ -34,38 +33,6 @@ interface Product {
       city: string
       market_name: string
     }
-  }
-}
-
-async function getVisitorCountry(): Promise<string | null> {
-  try {
-    const headersList = await headers()
-    const forwarded = headersList.get("x-forwarded-for")
-    const ip = forwarded ? forwarded.split(",")[0] : headersList.get("x-real-ip") || "8.8.8.8"
-
-    const response = await fetch(`https://ip-api.com/json/${ip}?fields=country`, {
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-      },
-    })
-
-    if (!response.ok) {
-      return null
-    }
-
-    const text = await response.text()
-
-    try {
-      const data = JSON.parse(text)
-      return data.country || null
-    } catch (parseError) {
-      console.error("[v0] JSON parse error:", parseError)
-      return null
-    }
-  } catch (error) {
-    console.error("[v0] Error detecting visitor country:", error)
-    return null
   }
 }
 
@@ -143,16 +110,15 @@ function ProductsSkeleton() {
 }
 
 export default async function BrowsePage() {
-  const [products, locations, visitorCountry] = await Promise.all([
+  const [products, locations] = await Promise.all([
     getAllProducts(),
     getAllLocations(),
-    getVisitorCountry(),
   ])
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Suspense fallback={<ProductsSkeleton />}>
-        <BrowseProductsClient products={products} locations={locations} visitorCountry={visitorCountry} />
+        <BrowseProductsClient products={products} locations={locations} visitorCountry={null} />
       </Suspense>
     </div>
   )
