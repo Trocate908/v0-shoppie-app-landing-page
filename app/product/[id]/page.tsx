@@ -6,18 +6,8 @@ import ProductDetailClient from "@/components/product-detail-client"
 export const revalidate = 3600 // Revalidate every hour
 export const dynamicParams = true
 
-// Generate static params for popular products
-export async function generateStaticParams() {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from("products")
-    .select("id")
-    .limit(20) // Pre-render top 20 products
-  
-  return (data || []).map((product) => ({
-    id: product.id,
-  }))
-}
+// Note: generateStaticParams removed due to cookies() usage conflict
+// Pages will be generated on-demand with ISR (dynamicParams = true)
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
