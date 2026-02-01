@@ -110,6 +110,9 @@ export default function HomePage() {
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
             <p className="text-sm text-muted-foreground">&copy; 2025 ShoppieApp. All rights reserved.</p>
             <div className="flex gap-4">
+              <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground">
+                About Us
+              </Link>
               <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
                 Terms & Conditions
               </Link>
