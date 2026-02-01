@@ -508,10 +508,11 @@ export default function VendorSignupPage() {
             </CardHeader>
             <CardContent>
               <Tabs value={authMethod} onValueChange={(v) => setAuthMethod(v as "email" | "phone")}>
-                <TabsList className="grid w-full grid-cols-2">
+                {/* Temporarily hidden - will be enabled after Twilio SMS subscription */}
+                {/* <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="email">Email</TabsTrigger>
                   <TabsTrigger value="phone">Phone</TabsTrigger>
-                </TabsList>
+                </TabsList> */}
 
                 <TabsContent value="email">
                   <form onSubmit={handleSignUp}>
@@ -615,7 +616,8 @@ export default function VendorSignupPage() {
                   </form>
                 </TabsContent>
 
-                <TabsContent value="phone">
+                {/* Temporarily hidden - Phone authentication will be enabled after Twilio SMS subscription */}
+                {/* <TabsContent value="phone">
                   <form onSubmit={handlePhoneSignUp}>
                     <div className="flex flex-col gap-4">
                       <div className="grid gap-2">
@@ -765,7 +767,7 @@ export default function VendorSignupPage() {
                       )}
                     </div>
                   </form>
-                </TabsContent>
+                </TabsContent> */}
               </Tabs>
             </CardContent>
           </Card>
