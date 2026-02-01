@@ -89,10 +89,11 @@ export default function VendorLoginPage() {
             </CardHeader>
             <CardContent>
               <Tabs value={authMethod} onValueChange={(v) => setAuthMethod(v as "email" | "phone")}>
-                <TabsList className="grid w-full grid-cols-2">
+                {/* Temporarily hidden - will be enabled after Twilio SMS subscription */}
+                {/* <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="email">Email</TabsTrigger>
                   <TabsTrigger value="phone">Phone</TabsTrigger>
-                </TabsList>
+                </TabsList> */}
 
                 <TabsContent value="email">
                   <form onSubmit={handleLogin}>
@@ -126,7 +127,8 @@ export default function VendorLoginPage() {
                   </form>
                 </TabsContent>
 
-                <TabsContent value="phone">
+                {/* Temporarily hidden - Phone authentication will be enabled after Twilio SMS subscription */}
+                {/* <TabsContent value="phone">
                   <form onSubmit={handlePhoneLogin}>
                     <div className="flex flex-col gap-6">
                       <div className="grid gap-2">
@@ -160,7 +162,7 @@ export default function VendorLoginPage() {
                       </Button>
                     </div>
                   </form>
-                </TabsContent>
+                </TabsContent> */}
               </Tabs>
 
               <div className="mt-4 text-center text-sm">
