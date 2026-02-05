@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect, useCallback, memo } from "react"
+import { useState, useMemo, useEffect, useCallback, memo, useTransition } from "react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
@@ -8,7 +8,7 @@ import { Search } from "lucide-react"
 import Image from "next/image"
 import { createBrowserClient } from "@/lib/supabase/client"
 import Link from "next/link"
-import { VerificationBadge } from "@/components/verification-badge" // Using named import instead of default import
+import { VerificationBadge } from "@/components/verification-badge"
 
 interface Product {
   id: string
@@ -20,7 +20,7 @@ interface Product {
   vendor: {
     shop_name: string
     is_open: boolean
-    is_verified: boolean // Add is_verified field
+    is_verified: boolean
   }
 }
 
@@ -30,31 +30,44 @@ interface ProductsClientProps {
 
 export default function ProductsClient({ products }: ProductsClientProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
   const [trackedViews, setTrackedViews] = useState<Set<string>>(new Set())
-  const [error, setError] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
 
-  // Filter products based on search query
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery)
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  // Filter products based on debounced search query
   const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return products
+    if (!debouncedQuery.trim()) return products
 
-    const query = searchQuery.toLowerCase()
+    const query = debouncedQuery.toLowerCase()
     return products.filter((product) => product.name.toLowerCase().includes(query))
-  }, [products, searchQuery])
+  }, [products, debouncedQuery])
+
+  // Handle search with transition for smoother UI
+  const handleSearch = (value: string) => {
+    startTransition(() => {
+      setSearchQuery(value)
+    })
+  }
 
   // Track product views (memoized for performance)
   const trackProductView = useCallback(async (productId: string) => {
-    // Only track once per session
     if (trackedViews.has(productId)) return
 
     try {
       const supabase = createBrowserClient()
-      const { error } = await supabase.from("product_views").insert({ product_id: productId })
-
-      if (!error) {
-        setTrackedViews((prev) => new Set(prev).add(productId))
-      }
+      await supabase.from("product_views").insert({ product_id: productId })
+      setTrackedViews((prev) => new Set(prev).add(productId))
     } catch (error) {
-      console.error("[v0] Error tracking product view:", error)
+      console.error("Error tracking product view:", error)
     }
   }, [trackedViews])
 
@@ -104,7 +117,7 @@ export default function ProductsClient({ products }: ProductsClientProps) {
           type="search"
           placeholder="Search products..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => handleSearch(e.target.value)}
           className="pl-10"
         />
       </div>

@@ -66,8 +66,8 @@ async function getAllProducts() {
       )
     `)
     .eq("in_stock", true)
-    .order("name")
-    .limit(100) // Limit initial load for better performance
+    .order("created_at", { ascending: false })
+    .limit(200) // Optimized limit for better performance
 
   if (error) {
     console.error("[v0] Error fetching products:", error)
