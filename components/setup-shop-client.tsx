@@ -210,14 +210,21 @@ const COUNTRIES = [
 interface SetupShopClientProps {
   userId: string
   userEmail: string
+  initialData?: {
+    shopName?: string
+    shopDescription?: string
+    country?: string
+    city?: string
+    marketName?: string
+  }
 }
 
-export function SetupShopClient({ userId, userEmail }: SetupShopClientProps) {
-  const [shopName, setShopName] = useState("")
-  const [shopDescription, setShopDescription] = useState("")
-  const [country, setCountry] = useState("")
-  const [city, setCity] = useState("")
-  const [marketName, setMarketName] = useState("")
+export function SetupShopClient({ userId, userEmail, initialData }: SetupShopClientProps) {
+  const [shopName, setShopName] = useState(initialData?.shopName || "")
+  const [shopDescription, setShopDescription] = useState(initialData?.shopDescription || "")
+  const [country, setCountry] = useState(initialData?.country || "")
+  const [city, setCity] = useState(initialData?.city || "")
+  const [marketName, setMarketName] = useState(initialData?.marketName || "")
   const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
 

@@ -406,6 +406,10 @@ export default function VendorSignupPage() {
           emailRedirectTo: `${window.location.origin}/vendor/dashboard`,
           data: {
             shop_name: shopName,
+            shop_description: shopDescription,
+            country: country,
+            city: city,
+            market_name: locationName,
           },
         },
       })
