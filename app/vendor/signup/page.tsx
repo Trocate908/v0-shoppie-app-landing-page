@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-
+import { useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Mail, CheckCircle2 } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 
 const COUNTRIES = [
@@ -233,6 +234,8 @@ export default function VendorSignupPage() {
   const [city, setCity] = useState("")
   const [locationName, setLocationName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [userEmail, setUserEmail] = useState("")
+  const [showEmailConfirmation, setShowEmailConfirmation] = useState(false)
   const { toast } = useToast()
 
   const handlePhoneSignUp = async (e: React.FormEvent) => {
@@ -483,12 +486,16 @@ export default function VendorSignupPage() {
         throw vendorError
       }
 
+      setUserEmail(email)
+      setShowEmailConfirmation(true)
+      
       toast({
-        title: "Success!",
-        description: "Your account has been successfully created, check your inbox for confirmation.",
+        title: "Account Created Successfully!",
+        description: "Please check your email to confirm your account.",
+        duration: 8000,
       })
 
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await new Promise((resolve) => setTimeout(resolve, 3000))
       window.location.href = "/vendor/dashboard"
     } catch (error: unknown) {
       console.error("[v0] Signup error:", error)
@@ -499,6 +506,46 @@ export default function VendorSignupPage() {
       })
       setIsLoading(false)
     }
+  }
+
+  if (showEmailConfirmation) {
+    return (
+      <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+        <div className="w-full max-w-md">
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
+                <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+              <CardTitle className="text-2xl">Check Your Email</CardTitle>
+              <CardDescription>We've sent a confirmation link to your email</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <Mail className="h-4 w-4" />
+                <AlertTitle>Email Sent to</AlertTitle>
+                <AlertDescription className="font-medium">{userEmail}</AlertDescription>
+              </Alert>
+              
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>Please check your email and click the confirmation link to verify your account.</p>
+                <p className="font-medium">Don't forget to check your spam or junk folder if you don't see it in your inbox.</p>
+              </div>
+
+              <div className="pt-4">
+                <Button
+                  onClick={() => window.location.href = "/vendor/login"}
+                  className="w-full"
+                  variant="outline"
+                >
+                  Go to Login
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -775,6 +822,15 @@ export default function VendorSignupPage() {
               </Tabs>
             </CardContent>
           </Card>
+          {showEmailConfirmation && (
+            <Alert variant="default">
+              <Mail className="h-4 w-4" />
+              <AlertTitle>Check Your Email</AlertTitle>
+              <AlertDescription>
+                We have sent a confirmation link to {userEmail}. Please click the link to verify your email.
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="mt-4 text-center text-sm">
             Already have an account?{" "}
             <Link href="/vendor/login" className="underline underline-offset-4">
