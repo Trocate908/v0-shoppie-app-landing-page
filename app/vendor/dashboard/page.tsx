@@ -38,7 +38,22 @@ export default async function VendorDashboardPage() {
     .maybeSingle()
 
   if (vendorError || !vendor) {
-    return <SetupShopClient userId={user.id} userEmail={user.email || ""} />
+    // Try to get any signup data from user metadata
+    const signupData = user.user_metadata || {}
+    
+    return (
+      <SetupShopClient 
+        userId={user.id} 
+        userEmail={user.email || ""} 
+        initialData={{
+          shopName: signupData.shop_name || "",
+          shopDescription: signupData.shop_description || "",
+          country: signupData.country || "",
+          city: signupData.city || "",
+          marketName: signupData.market_name || "",
+        }}
+      />
+    )
   }
 
   let totalViews = 0
