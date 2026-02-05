@@ -5,37 +5,10 @@ import ProductDetailClient from "@/components/product-detail-client"
 // Enable ISR with revalidation for better performance
 export const revalidate = 300 // Revalidate every 5 minutes
 export const dynamicParams = true
+export const dynamic = 'force-dynamic'
 
-// Generate metadata for better SEO
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const supabase = await createClient()
-
-  const { data: product } = await supabase
-    .from("products")
-    .select("name, description, price, image_url")
-    .eq("id", id)
-    .single()
-
-  if (!product) {
-    return {
-      title: "Product Not Found - ShoppieApp",
-    }
-  }
-
-  return {
-    title: `${product.name} - ShoppieApp`,
-    description: product.description || `Buy ${product.name} for $${product.price}`,
-    openGraph: {
-      title: product.name,
-      description: product.description || undefined,
-      images: product.image_url ? [product.image_url] : undefined,
-    },
-  }
-}
-
-// Note: generateStaticParams removed due to cookies() usage conflict
-// Pages will be generated on-demand with ISR (dynamicParams = true)
+// Note: Metadata generation removed to avoid cookies() usage during build
+// Default metadata is set in the layout
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
