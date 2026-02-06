@@ -13,7 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Share2, Copy, Facebook, Twitter, Linkedin, MessageCircle, Check } from "lucide-react"
-import { toast } from "sonner"
+import { useToast } from "@/hooks/use-toast"
 import QRCode from "qrcode"
 import Image from "next/image"
 
@@ -37,6 +37,7 @@ export default function ShareButton({
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("")
+  const { toast } = useToast()
 
   const productUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/product/${productId}`
   const shareText = `Check out ${productName} for $${productPrice.toFixed(2)} on ShoppieApp!`
@@ -68,10 +69,17 @@ export default function ShareButton({
     try {
       await navigator.clipboard.writeText(productUrl)
       setCopied(true)
-      toast.success("Link copied to clipboard")
+      toast({
+        title: "Success!",
+        description: "Link copied to clipboard",
+      })
       setTimeout(() => setCopied(false), 2000)
     } catch (error) {
-      toast.error("Failed to copy link")
+      toast({
+        title: "Error",
+        description: "Failed to copy link",
+        variant: "destructive",
+      })
     }
   }
 
