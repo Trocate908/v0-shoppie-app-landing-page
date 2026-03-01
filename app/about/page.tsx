@@ -11,6 +11,9 @@ export const metadata: Metadata = {
   authors: [{ name: "Milton Mukundwa", url: "mailto:miltonmukundwa6@gmail.com" }],
   creator: "Milton Mukundwa",
   publisher: "ShoppieApp",
+  alternates: {
+    canonical: "https://shoppieapp.co.zw/about",
+  },
   openGraph: {
     title: "About ShoppieApp - Milton Mukundwa | Founder & Developer",
     description: "Meet Milton Mukundwa, the young developer behind ShoppieApp. Born November 30, 2008, empowering local businesses through technology.",

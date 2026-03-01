@@ -21,6 +21,10 @@ export const metadata: Metadata = {
   title: "ShoppieApp - Find Local Products Near You",
   description: "Connect with local vendors and discover products in your area",
   generator: "v0.app",
+  metadataBase: new URL("https://shoppieapp.co.zw"),
+  alternates: {
+    canonical: "/",
+  },
   icons: {
     icon: "/favicon.ico",
     apple: "/logo.png",

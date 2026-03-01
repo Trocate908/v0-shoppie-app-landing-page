@@ -9,6 +9,9 @@ export const revalidate = 60 // Revalidate every 60 seconds
 export const metadata = {
   title: "Browse All Products - ShoppieApp",
   description: "Discover products from vendors across all locations",
+  alternates: {
+    canonical: "https://shoppieapp.co.zw/browse",
+  },
 }
 
 interface Product {

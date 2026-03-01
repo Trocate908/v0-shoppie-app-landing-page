@@ -86,10 +86,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         priority: 0.8,
       })) || []
 
-    console.log(
-      `[v0] Generated sitemap with ${staticPages.length} static pages and ${productPages.length} product pages`,
-    )
-
     return [...staticPages, ...productPages]
   } catch (error) {
     console.error("[v0] Error generating sitemap:", error)

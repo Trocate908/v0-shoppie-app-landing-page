@@ -7,6 +7,9 @@ import { Store } from "lucide-react"
 export const metadata = {
   title: "Select Location - ShoppieApp",
   description: "Choose your country and market to find local products",
+  alternates: {
+    canonical: "https://shoppieapp.co.zw/locations",
+  },
 }
 
 async function getLocations() {

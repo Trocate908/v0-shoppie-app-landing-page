@@ -7,6 +7,9 @@ import Image from "next/image"
 export const metadata = {
   title: "ShoppieApp - Find Local Products Near You",
   description: "Connect with local vendors and discover products in your area",
+  alternates: {
+    canonical: "https://shoppieapp.co.zw",
+  },
 }
 
 export default function HomePage() {
