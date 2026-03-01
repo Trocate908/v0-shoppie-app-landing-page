@@ -60,7 +60,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
     if (!supabaseUrl || !supabaseKey) {
-      console.error("[v0] Missing Supabase credentials for sitemap")
       return staticPages
     }
 
@@ -74,7 +73,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .limit(500)
 
     if (error) {
-      console.error("[v0] Error fetching products for sitemap:", error)
       return staticPages
     }
 
@@ -88,7 +86,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     return [...staticPages, ...productPages]
   } catch (error) {
-    console.error("[v0] Error generating sitemap:", error)
     return staticPages
   }
 }

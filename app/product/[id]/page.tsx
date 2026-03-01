@@ -1,20 +1,17 @@
 import { createClient } from "@/lib/supabase/server"
 import { notFound } from "next/navigation"
 import ProductDetailClient from "@/components/product-detail-client"
-import type { Metadata } from "next"
 
 // Enable ISR with revalidation for better performance
 export const revalidate = 300 // Revalidate every 5 minutes
 export const dynamicParams = true
 export const dynamic = 'force-dynamic'
 
-const BASE_URL = "https://shoppieapp.co.zw"
-
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   return {
     alternates: {
-      canonical: `${BASE_URL}/product/${id}`,
+      canonical: `https://shoppieapp.co.zw/product/${id}`,
     },
   }
 }

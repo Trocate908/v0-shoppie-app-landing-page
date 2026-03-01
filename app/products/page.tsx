@@ -12,6 +12,10 @@ export const metadata = {
   alternates: {
     canonical: "https://shoppieapp.co.zw/products",
   },
+  robots: {
+    index: false,
+    follow: true,
+  },
 }
 
 interface Product {
