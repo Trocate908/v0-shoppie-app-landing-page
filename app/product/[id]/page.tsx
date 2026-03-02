@@ -7,8 +7,14 @@ export const revalidate = 300 // Revalidate every 5 minutes
 export const dynamicParams = true
 export const dynamic = 'force-dynamic'
 
-// Note: Metadata generation removed to avoid cookies() usage during build
-// Default metadata is set in the layout
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  return {
+    alternates: {
+      canonical: `https://shoppieapp.co.zw/product/${id}`,
+    },
+  }
+}
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

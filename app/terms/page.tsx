@@ -1,6 +1,9 @@
 export const metadata = {
   title: "Terms and Conditions - ShoppieApp",
   description: "Terms and Conditions for using ShoppieApp platform",
+  alternates: {
+    canonical: "https://shoppieapp.co.zw/terms",
+  },
 }
 
 export default function TermsPage() {

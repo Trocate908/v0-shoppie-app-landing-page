@@ -9,6 +9,13 @@ import ProfileButton from "@/components/profile-button"
 export const metadata = {
   title: "Products - ShoppieApp",
   description: "Browse products from local vendors",
+  alternates: {
+    canonical: "https://shoppieapp.co.zw/products",
+  },
+  robots: {
+    index: false,
+    follow: true,
+  },
 }
 
 interface Product {

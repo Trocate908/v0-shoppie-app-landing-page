@@ -6,6 +6,9 @@ import { Mail, Phone, MessageCircle } from "lucide-react"
 export const metadata = {
   title: "Contact Us - ShoppieApp",
   description: "Get in touch with the ShoppieApp team and developer",
+  alternates: {
+    canonical: "https://shoppieapp.co.zw/contact",
+  },
 }
 
 export default function ContactPage() {

@@ -17,10 +17,16 @@ const _geistMono = Geist_Mono({
   preload: true,
 })
 
+const BASE_URL = "https://shoppieapp.co.zw"
+
 export const metadata: Metadata = {
   title: "ShoppieApp - Find Local Products Near You",
   description: "Connect with local vendors and discover products in your area",
   generator: "v0.app",
+  metadataBase: new URL(BASE_URL),
+  alternates: {
+    canonical: "/",
+  },
   icons: {
     icon: "/favicon.ico",
     apple: "/logo.png",
