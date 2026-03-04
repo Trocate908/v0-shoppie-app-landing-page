@@ -22,6 +22,7 @@ interface Product {
   image_url: string | null
   image_urls: string[] | null
   in_stock: boolean
+  created_at: string | null
   vendor: {
     id: string
     shop_name: string
@@ -43,7 +44,7 @@ async function getAllProducts() {
   const { data, error } = await supabase
     .from("products")
     .select(`
-      id, name, description, price, category, image_url, image_urls, in_stock,
+      id, name, description, price, category, image_url, image_urls, in_stock, created_at,
       vendor:vendors!inner(
         id, shop_name, is_open, is_verified, verification_expires_at, whatsapp_number,
         location:locations!inner(id, country, city, market_name)

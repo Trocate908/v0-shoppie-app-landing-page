@@ -86,7 +86,7 @@ export default function BrowseProductsClient({
   const [trackedViews, setTrackedViews] = useState<Set<string>>(new Set())
 
   const [selectedCategory, setSelectedCategory] = useState<string>("")
-  const [sortBy, setSortBy] = useState<string>("name")
+  const [sortBy, setSortBy] = useState<string>("newest")
   const [minPrice, setMinPrice] = useState<string>("")
   const [maxPrice, setMaxPrice] = useState<string>("")
   const [filterDialogOpen, setFilterDialogOpen] = useState(false)
@@ -207,8 +207,15 @@ export default function BrowseProductsClient({
         sorted.sort((a, b) => b.price - a.price)
         break
       case "name":
-      default:
         sorted.sort((a, b) => a.name.localeCompare(b.name))
+        break
+      case "newest":
+      default:
+        sorted.sort((a, b) => {
+          const dateA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0
+          const dateB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0
+          return dateB - dateA
+        })
         break
     }
 
@@ -344,6 +351,7 @@ export default function BrowseProductsClient({
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="newest">Newest First</SelectItem>
                 <SelectItem value="name">Name (A-Z)</SelectItem>
                 <SelectItem value="price-low">Price: Low to High</SelectItem>
                 <SelectItem value="price-high">Price: High to Low</SelectItem>
