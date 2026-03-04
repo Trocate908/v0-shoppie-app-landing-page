@@ -45,7 +45,7 @@ export default function AppShell({ products, locations }: AppShellProps) {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       {/* Tab Content */}
-      <div className="flex-1 pb-16">
+      <div className="flex-1 pb-20">
         {activeTab === "store" && (
           <BrowseProductsClient products={products} locations={locations} visitorCountry={null} />
         )}
