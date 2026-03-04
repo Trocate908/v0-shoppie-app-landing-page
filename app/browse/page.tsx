@@ -1,6 +1,7 @@
 import { Suspense } from "react"
 import { createClient } from "@/lib/supabase/server"
 import BrowseProductsClient from "@/components/browse-products-client"
+import BrowseNavBar from "@/components/browse-nav-bar"
 import { Skeleton } from "@/components/ui/skeleton"
 
 // Enable static generation with revalidation
@@ -119,10 +120,11 @@ export default async function BrowsePage() {
   ])
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-background pb-20">
       <Suspense fallback={<ProductsSkeleton />}>
         <BrowseProductsClient products={products} locations={locations} visitorCountry={null} />
       </Suspense>
+      <BrowseNavBar />
     </div>
   )
 }

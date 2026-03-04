@@ -25,6 +25,7 @@ import { getCurrencyForCountry, convertPrice, formatPrice, CURRENCIES, type Curr
 import { useRouter } from "next/navigation"
 import { VerificationBadge } from "@/components/verification-badge"
 import ProductCarousel from "./product-carousel"
+import SearchBox from "@/components/search-box"
 
 interface Location {
   id: string
@@ -281,6 +282,14 @@ export default function BrowseProductsClient({
     Boolean,
   ).length
 
+  // Build suggestion pool from all product names + unique categories
+  const searchSuggestions = useMemo(() => {
+    const names = initialProducts.map((p) => p.name)
+    const shopNames = initialProducts.map((p) => p.vendor.shop_name)
+    const categories = Array.from(new Set(initialProducts.map((p) => p.category).filter(Boolean))) as string[]
+    return Array.from(new Set([...names, ...shopNames, ...categories]))
+  }, [initialProducts])
+
   return (
     <>
       {/* Store Header */}
@@ -335,16 +344,12 @@ export default function BrowseProductsClient({
 
           {/* Search and Filter Bar */}
           <div className="mb-6 flex flex-col gap-3 sm:flex-row">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search products..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
+            <SearchBox
+              value={searchQuery}
+              onChange={setSearchQuery}
+              suggestions={searchSuggestions}
+              placeholder="Search products, shops, categories..."
+            />
 
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-[180px]">
