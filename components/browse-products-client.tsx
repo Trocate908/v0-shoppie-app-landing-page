@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Store, MapPin, Filter, Search, X, DollarSign, BadgeCheck } from "lucide-react"
 import Link from "next/link"
-import ProfileButton from "@/components/profile-button"
 import WhatsAppButton from "@/components/whatsapp-button"
 import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
@@ -240,17 +239,17 @@ export default function BrowseProductsClient({
 
   return (
     <>
-      {/* Header */}
+      {/* Store Header */}
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-2">
-              <Store className="h-6 w-6 text-primary" />
-              <h1 className="text-xl font-bold text-foreground">ShoppieApp</h1>
-            </Link>
-            <div className="flex items-center gap-3">
+        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Store className="h-5 w-5 text-primary" />
+              <h1 className="text-base font-bold text-foreground">Store</h1>
+            </div>
+            <div className="flex items-center gap-2">
               <Select value={selectedCurrency.code} onValueChange={(code) => setSelectedCurrency(CURRENCIES[code])}>
-                <SelectTrigger className="w-24">
+                <SelectTrigger className="h-8 w-20 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -261,18 +260,17 @@ export default function BrowseProductsClient({
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant="ghost" size="sm" className="gap-2" onClick={() => router.push("/wishlist")}>
-                <BadgeCheck className="h-5 w-5" />
-                <span className="hidden sm:inline">Wishlist</span>
+              <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2" onClick={() => router.push("/wishlist")}>
+                <BadgeCheck className="h-4 w-4" />
+                <span className="hidden sm:inline text-xs">Wishlist</span>
               </Button>
-              <ProfileButton />
             </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+      <main className="flex-1 px-4 py-4 sm:px-6 lg:px-8 pb-20">
         <div className="mx-auto max-w-7xl">
           {/* Page Title */}
           <div className="mb-6">
