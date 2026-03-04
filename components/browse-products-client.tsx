@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Store, MapPin, Filter, Search, X, DollarSign, BadgeCheck } from "lucide-react"
+import { Store, MapPin, Filter, Search, X, DollarSign, BadgeCheck, Locate, Loader2 } from "lucide-react"
 import Link from "next/link"
 import WhatsAppButton from "@/components/whatsapp-button"
 import FavoriteButton from "@/components/favorite-button"
@@ -75,7 +75,7 @@ const PRODUCT_CATEGORIES = [
 export default function BrowseProductsClient({
   products: initialProducts,
   locations,
-  visitorCountry,
+  visitorCountry: initialVisitorCountry,
 }: BrowseProductsClientProps) {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
@@ -91,20 +91,57 @@ export default function BrowseProductsClient({
   const [maxPrice, setMaxPrice] = useState<string>("")
   const [filterDialogOpen, setFilterDialogOpen] = useState(false)
 
+  // Detected visitor country (from prop or auto-detected)
+  const [detectedCountry, setDetectedCountry] = useState<string | null>(initialVisitorCountry)
+  const [geoStatus, setGeoStatus] = useState<"idle" | "detecting" | "success" | "error">("idle")
+
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>(
-    visitorCountry ? getCurrencyForCountry(visitorCountry) : CURRENCIES.USD,
+    initialVisitorCountry ? getCurrencyForCountry(initialVisitorCountry) : CURRENCIES.USD,
   )
 
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false)
 
+  // Auto-detect country on mount using browser Geolocation + reverse geocoding
+  useEffect(() => {
+    if (detectedCountry) return // already have one
+    if (!navigator.geolocation) return
+
+    setGeoStatus("detecting")
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+            { headers: { "Accept-Language": "en" } }
+          )
+          if (!res.ok) throw new Error("Geocoding failed")
+          const data = await res.json()
+          const country: string = data?.address?.country ?? ""
+          if (country) {
+            setDetectedCountry(country)
+            setSelectedCurrency(getCurrencyForCountry(country))
+            setGeoStatus("success")
+          } else {
+            setGeoStatus("error")
+          }
+        } catch {
+          setGeoStatus("error")
+        }
+      },
+      () => setGeoStatus("error"),
+      { timeout: 8000 }
+    )
+  }, [detectedCountry])
+
   const sortedProducts = useMemo(() => {
-    if (!visitorCountry) return initialProducts
+    if (!detectedCountry) return initialProducts
 
     const fromVisitorCountry: Product[] = []
     const fromOtherCountries: Product[] = []
 
     initialProducts.forEach((product) => {
-      if (product.vendor.location.country === visitorCountry) {
+      if (product.vendor.location.country === detectedCountry) {
         fromVisitorCountry.push(product)
       } else {
         fromOtherCountries.push(product)
@@ -122,7 +159,7 @@ export default function BrowseProductsClient({
     fromOtherCountries.sort(sortByVerification)
 
     return [...fromVisitorCountry, ...fromOtherCountries]
-  }, [initialProducts, visitorCountry])
+  }, [initialProducts, detectedCountry])
 
   const filteredProducts = useMemo(() => {
     let filtered = sortedProducts
@@ -275,8 +312,17 @@ export default function BrowseProductsClient({
           {/* Page Title */}
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-foreground sm:text-3xl">Browse All Products</h2>
-            {visitorCountry && (
-              <p className="mt-1 text-sm text-muted-foreground">Showing products from {visitorCountry} first</p>
+            {detectedCountry && (
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+                <MapPin className="h-3.5 w-3.5 text-primary" />
+                Showing products from <strong className="text-foreground">{detectedCountry}</strong> first
+              </p>
+            )}
+            {geoStatus === "detecting" && (
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Detecting your location...
+              </p>
             )}
           </div>
 
@@ -328,6 +374,55 @@ export default function BrowseProductsClient({
                   <DialogDescription>Choose your country, city, and market to see nearby products</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 pt-4">
+                  {/* Auto-detect button */}
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2"
+                    disabled={geoStatus === "detecting"}
+                    onClick={() => {
+                      if (!navigator.geolocation) return
+                      setGeoStatus("detecting")
+                      navigator.geolocation.getCurrentPosition(
+                        async (pos) => {
+                          try {
+                            const { latitude, longitude } = pos.coords
+                            const res = await fetch(
+                              `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+                              { headers: { "Accept-Language": "en" } }
+                            )
+                            if (!res.ok) throw new Error()
+                            const data = await res.json()
+                            const country: string = data?.address?.country ?? ""
+                            const city: string = data?.address?.city ?? data?.address?.town ?? data?.address?.state ?? ""
+                            if (country) {
+                              setDetectedCountry(country)
+                              setSelectedCurrency(getCurrencyForCountry(country))
+                              setSelectedCountry(country)
+                              if (city) setSelectedCity(city)
+                              setGeoStatus("success")
+                            } else {
+                              setGeoStatus("error")
+                            }
+                          } catch {
+                            setGeoStatus("error")
+                          }
+                        },
+                        () => setGeoStatus("error"),
+                        { timeout: 8000 }
+                      )
+                    }}
+                  >
+                    {geoStatus === "detecting" ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> Detecting...</>
+                    ) : (
+                      <><Locate className="h-4 w-4" /> Use My Current Location</>
+                    )}
+                  </Button>
+                  <div className="relative flex items-center">
+                    <div className="flex-1 border-t border-border" />
+                    <span className="mx-3 text-xs text-muted-foreground">or select manually</span>
+                    <div className="flex-1 border-t border-border" />
+                  </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium">Country</label>
                     <Select
