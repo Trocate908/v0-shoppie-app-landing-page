@@ -239,29 +239,35 @@ export default function BrowseProductsClient({
 
   return (
     <>
-      {/* Store Sub-Header: search controls toolbar */}
-      <div className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="mx-auto max-w-7xl px-4 py-2 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-end gap-2">
-            <Select value={selectedCurrency.code} onValueChange={(code) => setSelectedCurrency(CURRENCIES[code])}>
-              <SelectTrigger className="h-8 w-20 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.values(CURRENCIES).map((currency) => (
-                  <SelectItem key={currency.code} value={currency.code}>
-                    {currency.code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2" onClick={() => router.push("/wishlist")}>
-              <BadgeCheck className="h-4 w-4" />
-              <span className="hidden sm:inline text-xs">Wishlist</span>
-            </Button>
+      {/* Store Header */}
+      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Store className="h-5 w-5 text-primary" />
+              <h1 className="text-base font-bold text-foreground">Store</h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={selectedCurrency.code} onValueChange={(code) => setSelectedCurrency(CURRENCIES[code])}>
+                <SelectTrigger className="h-8 w-20 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.values(CURRENCIES).map((currency) => (
+                    <SelectItem key={currency.code} value={currency.code}>
+                      {currency.code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2" onClick={() => router.push("/wishlist")}>
+                <BadgeCheck className="h-4 w-4" />
+                <span className="hidden sm:inline text-xs">Wishlist</span>
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Main Content */}
       <main className="flex-1 px-4 py-4 sm:px-6 lg:px-8 pb-20">
