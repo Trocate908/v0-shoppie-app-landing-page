@@ -705,6 +705,7 @@ export default function BrowseProductsClient({
                       <div className="absolute right-2 top-2 flex gap-2" onClick={(e) => e.stopPropagation()}>
                         <FavoriteButton productId={product.id} variant="outline" />
                         <ShareButton
+                          type="product"
                           productId={product.id}
                           productName={product.name}
                           productPrice={product.price}
@@ -756,6 +757,19 @@ export default function BrowseProductsClient({
                           />
                         </div>
                       )}
+                      {/* Share shop button — visible to all buyers */}
+                      <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                        <ShareButton
+                          type="shop"
+                          vendorId={product.vendor.id}
+                          shopName={product.vendor.shop_name}
+                          location={`${product.vendor.location.market_name}, ${product.vendor.location.city}`}
+                          variant="outline"
+                          size="sm"
+                          showLabel
+                          className="w-full gap-2 text-xs"
+                        />
+                      </div>
                     </div>
                   </Card>
                 )

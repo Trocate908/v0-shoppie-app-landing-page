@@ -130,6 +130,7 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
               <div className="flex gap-3">
                 <FavoriteButton productId={product.id} variant="outline" size="default" showLabel />
                 <ShareButton
+                  type="product"
                   productId={product.id}
                   productName={product.name}
                   productPrice={product.price}
@@ -191,6 +192,23 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
                       />
                     </div>
                   )}
+                  {/* Share shop link — visible to all buyers */}
+                  <div className="pt-2">
+                    <ShareButton
+                      type="shop"
+                      vendorId={product.vendor.id}
+                      shopName={product.vendor.shop_name}
+                      location={
+                        product.vendor.location
+                          ? `${product.vendor.location.market_name}, ${product.vendor.location.city}`
+                          : undefined
+                      }
+                      variant="outline"
+                      size="sm"
+                      showLabel
+                      className="w-full gap-2"
+                    />
+                  </div>
                 </div>
               </Card>
             </div>
