@@ -24,6 +24,7 @@ import { EditProfileDialog } from "@/components/edit-profile-dialog"
 import { useTheme } from "@/components/theme-provider"
 import { ActivateVerificationDialog } from "@/components/activate-verification-dialog"
 import { VerificationBadge } from "@/components/verification-badge"
+import ShopShareButton from "@/components/shop-share-button"
 
 type VendorData = {
   id: string
@@ -156,6 +157,11 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
                   </>
                 )}
               </Button>
+              <ShopShareButton
+                shopName={vendor.shop_name}
+                vendorId={vendor.id}
+                location={`${vendor.location.name}, ${vendor.location.city}`}
+              />
               <ActivateVerificationDialog
                 vendorId={vendor.id}
                 shopName={vendor.shop_name}
