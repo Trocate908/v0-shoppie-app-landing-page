@@ -143,33 +143,39 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
                 {vendor.location.name}, {vendor.location.city}, {vendor.location.country}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={toggleTheme}>
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <Button variant="ghost" size="sm" onClick={toggleTheme} className="shrink-0">
                 {theme === "light" ? (
                   <>
                     <Moon className="mr-2 h-4 w-4" />
-                    Dark
+                    <span className="whitespace-nowrap">Dark</span>
                   </>
                 ) : (
                   <>
                     <Sun className="mr-2 h-4 w-4" />
-                    Light
+                    <span className="whitespace-nowrap">Light</span>
                   </>
                 )}
               </Button>
-              <ShopShareButton
-                shopName={vendor.shop_name}
-                vendorId={vendor.id}
-                location={`${vendor.location.name}, ${vendor.location.city}`}
-              />
-              <ActivateVerificationDialog
-                vendorId={vendor.id}
-                shopName={vendor.shop_name}
-                isVerified={vendor.is_verified || false}
-                expiresAt={vendor.verification_expires_at || null}
-              />
-              <EditProfileDialog vendor={vendor} />
-              <Button variant="ghost" size="sm" onClick={handleLogout} className="w-fit">
+              <div className="shrink-0">
+                <ShopShareButton
+                  shopName={vendor.shop_name}
+                  vendorId={vendor.id}
+                  location={`${vendor.location.name}, ${vendor.location.city}`}
+                />
+              </div>
+              <div className="shrink-0">
+                <ActivateVerificationDialog
+                  vendorId={vendor.id}
+                  shopName={vendor.shop_name}
+                  isVerified={vendor.is_verified || false}
+                  expiresAt={vendor.verification_expires_at || null}
+                />
+              </div>
+              <div className="shrink-0">
+                <EditProfileDialog vendor={vendor} />
+              </div>
+              <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0 whitespace-nowrap">
                 <LogOut className="mr-2 h-4 w-4" />
                 Logout
               </Button>
