@@ -9,9 +9,59 @@ export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const supabase = await createClient()
+
+  const { data: product } = await supabase
+    .from("products")
+    .select(`
+      name,
+      description,
+      price,
+      image_url,
+      vendor:vendors!inner(shop_name, location:locations!inner(city))
+    `)
+    .eq("id", id)
+    .single()
+
+  if (!product) {
+    return {
+      title: "Product | Shoppie",
+      alternates: { canonical: `https://shoppieapp.co.zw/product/${id}` },
+    }
+  }
+
+  const url = `https://shoppieapp.co.zw/product/${id}`
+  const title = `${product.name} – ${product.vendor.shop_name} | Shoppie`
+  const description = product.description
+    ? product.description.slice(0, 160)
+    : `Buy ${product.name} from ${product.vendor.shop_name} in ${product.vendor.location.city} on Shoppie. Price: $${product.price}.`
+
   return {
-    alternates: {
-      canonical: `https://shoppieapp.co.zw/product/${id}`,
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title,
+      description,
+      url,
+      siteName: "Shoppie",
+      type: "website",
+      images: product.image_url
+        ? [
+            {
+              url: product.image_url,
+              width: 800,
+              height: 800,
+              alt: product.name,
+            },
+          ]
+        : [],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: product.image_url ? [product.image_url] : [],
     },
   }
 }
