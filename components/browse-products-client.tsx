@@ -739,9 +739,6 @@ export default function BrowseProductsClient({
 
                       <div className="flex items-center justify-between">
                         <p className="text-lg font-bold text-primary">{formattedPrice}</p>
-                        <Badge variant={product.vendor.is_open ? "default" : "outline"}>
-                          {product.vendor.is_open ? "Open" : "Closed"}
-                        </Badge>
                       </div>
 
                       <div className="mt-2 space-y-1">
@@ -762,24 +759,13 @@ export default function BrowseProductsClient({
                             phoneNumber={product.vendor.whatsapp_number}
                             shopName={product.vendor.shop_name}
                             productName={product.name}
+                            label="Chat"
                             variant="outline"
                             size="sm"
+                            className="w-full"
                           />
                         </div>
                       )}
-                      {/* Share shop button — visible to all buyers */}
-                      <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                        <ShareButton
-                          type="shop"
-                          vendorId={product.vendor.id}
-                          shopName={product.vendor.shop_name}
-                          location={`${product.vendor.location.market_name}, ${product.vendor.location.city}`}
-                          variant="outline"
-                          size="sm"
-                          showLabel
-                          className="w-full gap-2 text-xs"
-                        />
-                      </div>
                     </div>
                   </Card>
                 )

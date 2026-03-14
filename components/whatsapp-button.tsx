@@ -7,6 +7,7 @@ interface WhatsAppButtonProps {
   phoneNumber: string
   shopName: string
   productName: string
+  label?: string
   variant?: "default" | "outline" | "ghost"
   size?: "default" | "sm" | "lg"
   className?: string
@@ -16,6 +17,7 @@ export default function WhatsAppButton({
   phoneNumber,
   shopName,
   productName,
+  label = "Contact on WhatsApp",
   variant = "default",
   size = "default",
   className = "",
@@ -35,7 +37,7 @@ export default function WhatsAppButton({
   return (
     <Button variant={variant} size={size} className={`gap-2 ${className}`} onClick={handleWhatsAppClick}>
       <MessageCircle className="h-4 w-4" />
-      Contact on WhatsApp
+      {label}
     </Button>
   )
 }
