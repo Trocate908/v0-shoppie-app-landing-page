@@ -48,6 +48,7 @@ interface Product {
     shop_name: string
     is_open: boolean
     is_verified?: boolean
+    verification_expires_at?: string | null
     whatsapp_number?: string | null
     location: Location
   }
@@ -149,10 +150,14 @@ export default function BrowseProductsClient({
       }
     })
 
-    // Priority sort: Verified first, then by country
+    // Priority sort: Verified (and not expired) first, then by country
+    const isActivelyVerified = (p: Product) =>
+      !!p.vendor.is_verified &&
+      (!p.vendor.verification_expires_at || new Date(p.vendor.verification_expires_at).getTime() >= Date.now())
+
     const sortByVerification = (a: Product, b: Product) => {
-      if (a.vendor.is_verified && !b.vendor.is_verified) return -1
-      if (!a.vendor.is_verified && b.vendor.is_verified) return 1
+      if (isActivelyVerified(a) && !isActivelyVerified(b)) return -1
+      if (!isActivelyVerified(a) && isActivelyVerified(b)) return 1
       return 0
     }
 
@@ -166,7 +171,12 @@ export default function BrowseProductsClient({
     let filtered = sortedProducts
 
     if (showVerifiedOnly) {
-      filtered = filtered.filter((product) => product.vendor.is_verified)
+      filtered = filtered.filter(
+        (product) =>
+          product.vendor.is_verified &&
+          (!product.vendor.verification_expires_at ||
+            new Date(product.vendor.verification_expires_at).getTime() >= Date.now()),
+      )
     }
 
     // Filter by search query

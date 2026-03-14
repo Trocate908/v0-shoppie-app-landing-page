@@ -25,6 +25,7 @@ interface Vendor {
   shop_name: string
   is_open: boolean
   is_verified?: boolean
+  verification_expires_at?: string | null
   whatsapp_number?: string | null
   location: Location
 }
@@ -154,7 +155,12 @@ export default function WishlistClient({ products }: WishlistClientProps) {
                           <Store className="h-4 w-4 text-muted-foreground" />
                           <span className="text-sm font-medium text-foreground">{product.vendor.shop_name}</span>
                           {product.vendor.is_verified && (
-                            <VerificationBadge isVerified={product.vendor.is_verified} size="sm" showTooltip={false} />
+                            <VerificationBadge
+                              isVerified={product.vendor.is_verified}
+                              verificationExpiresAt={product.vendor.verification_expires_at}
+                              size="sm"
+                              showTooltip={false}
+                            />
                           )}
                           <Badge variant={product.vendor.is_open ? "default" : "outline"} className="ml-auto text-xs">
                             {product.vendor.is_open ? "Open" : "Closed"}

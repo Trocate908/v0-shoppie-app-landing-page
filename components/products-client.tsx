@@ -21,6 +21,7 @@ interface Product {
     shop_name: string
     is_open: boolean
     is_verified: boolean
+    verification_expires_at?: string | null
   }
 }
 
@@ -178,7 +179,12 @@ export default function ProductsClient({ products }: ProductsClientProps) {
                   <div className="mt-2 flex items-center gap-1">
                     <p className="text-xs text-muted-foreground">{product.vendor.shop_name}</p>
                     {product.vendor.is_verified && (
-                      <VerificationBadge isVerified={product.vendor.is_verified} size="xs" showTooltip={false} />
+                      <VerificationBadge
+                        isVerified={product.vendor.is_verified}
+                        verificationExpiresAt={product.vendor.verification_expires_at}
+                        size="xs"
+                        showTooltip={false}
+                      />
                     )}
                   </div>
                 </div>

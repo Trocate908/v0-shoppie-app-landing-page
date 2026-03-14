@@ -18,6 +18,9 @@ export function VerificationBadge({
 }: VerificationBadgeProps) {
   if (!isVerified) return null
 
+  // Hide badge if verification has expired
+  if (verificationExpiresAt && new Date(verificationExpiresAt).getTime() < Date.now()) return null
+
   const sizeClasses = {
     xs: "h-3 w-3",
     sm: "h-3.5 w-3.5",
