@@ -335,22 +335,7 @@ export default function BrowseProductsClient({
       {/* Main Content */}
       <main className="flex-1 px-4 py-4 sm:px-6 lg:px-8 pb-20">
         <div className="mx-auto max-w-7xl">
-          {/* Page Title */}
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-foreground sm:text-3xl">Browse All Products</h2>
-            {detectedCountry && (
-              <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-                <MapPin className="h-3.5 w-3.5 text-primary" />
-                Showing products from <strong className="text-foreground">{detectedCountry}</strong> first
-              </p>
-            )}
-            {geoStatus === "detecting" && (
-              <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Detecting your location...
-              </p>
-            )}
-          </div>
+          {/* Location detection happens silently in the background */}
 
           {/* Search and Filter Bar */}
           <div className="mb-6 flex flex-col gap-3 sm:flex-row">
@@ -779,7 +764,7 @@ export default function BrowseProductsClient({
       <footer className="border-t border-border bg-background px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <p className="text-sm text-muted-foreground">&copy; 2025 ShoppieApp. All rights reserved.</p>
+            <p className="text-sm text-muted-foreground">&copy; 2026 ShoppieApp. All rights reserved.</p>
             <div className="flex gap-4">
               <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
                 Terms & Conditions
