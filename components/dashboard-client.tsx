@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { Eye, Package, LogOut, Plus, Settings, Trash2, ArrowLeft, Moon, Sun } from "lucide-react"
+import { Eye, Package, LogOut, Plus, Settings, Trash2, ArrowLeft, Moon, Sun, User } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import Image from "next/image"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +36,7 @@ type VendorData = {
   is_verified?: boolean
   verification_status?: string
   verification_expires_at?: string | null
+  profile_picture_url?: string
   location: {
     name: string
     city: string
@@ -135,13 +137,32 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
                   </Link>
                 </Button>
               </div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-foreground">{vendor.shop_name}</h1>
-                <VerificationBadge isVerified={vendor.is_verified || false} />
+              <div className="flex items-center gap-3">
+                {/* Profile picture */}
+                <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full border-2 border-border bg-muted">
+                  {vendor.profile_picture_url ? (
+                    <Image
+                      src={vendor.profile_picture_url}
+                      alt={vendor.shop_name}
+                      fill
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <User className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-foreground">{vendor.shop_name}</h1>
+                    <VerificationBadge isVerified={vendor.is_verified || false} />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {vendor.location.name}, {vendor.location.city}, {vendor.location.country}
+                  </p>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">
-                {vendor.location.name}, {vendor.location.city}, {vendor.location.country}
-              </p>
             </div>
             <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <Button variant="ghost" size="sm" onClick={toggleTheme} className="shrink-0">

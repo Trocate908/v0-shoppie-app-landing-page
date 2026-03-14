@@ -27,6 +27,7 @@ export default async function VendorDashboardPage() {
       verification_status,
       verification_expires_at,
       location_id,
+      profile_picture_url,
       locations (
         id,
         country,
@@ -103,6 +104,7 @@ export default async function VendorDashboardPage() {
     is_verified: vendor.is_verified || false,
     verification_status: vendor.verification_status || "unverified",
     verification_expires_at: vendor.verification_expires_at || null,
+    profile_picture_url: vendor.profile_picture_url || undefined,
     location: {
       name: locationName,
       city: cityName,

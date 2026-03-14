@@ -17,6 +17,7 @@ export default function SettingsTab() {
   const [mounted, setMounted] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [vendorName, setVendorName] = useState<string | null>(null)
+  const [profilePictureUrl, setProfilePictureUrl] = useState<string | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
@@ -30,11 +31,14 @@ export default function SettingsTab() {
         // Try to get vendor name
         supabase
           .from("vendors")
-          .select("shop_name")
+          .select("shop_name, profile_picture_url")
           .eq("user_id", user.id)
           .single()
           .then(({ data }) => {
-            if (data) setVendorName(data.shop_name)
+            if (data) {
+              setVendorName(data.shop_name)
+              setProfilePictureUrl(data.profile_picture_url || null)
+            }
           })
       }
     })
@@ -74,8 +78,19 @@ export default function SettingsTab() {
             <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Account</p>
             <div className="overflow-hidden rounded-xl border border-border bg-card">
               <div className="flex items-center gap-3 px-4 py-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                  <Store className="h-5 w-5 text-primary" />
+                <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-border bg-muted">
+                  {profilePictureUrl ? (
+                    <Image
+                      src={profilePictureUrl}
+                      alt={vendorName ?? "Vendor"}
+                      fill
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <Store className="h-5 w-5 text-primary" />
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="truncate font-medium text-foreground">{vendorName ?? "Vendor"}</p>
