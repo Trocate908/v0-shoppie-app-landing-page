@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import type React from "react"
+import { useState, useRef } from "react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,7 +18,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Edit } from "lucide-react"
+import { Edit, Camera, Loader2, User } from "lucide-react"
+import Image from "next/image"
 
 type VendorData = {
   id: string
@@ -30,6 +32,7 @@ type VendorData = {
     country: string
   }
   whatsapp_number?: string
+  profile_picture_url?: string
 }
 
 const COUNTRIES = [
@@ -239,7 +242,35 @@ export function EditProfileDialog({ vendor }: { vendor: VendorData }) {
   const [country, setCountry] = useState(vendor.location.country)
   const [city, setCity] = useState(vendor.location.city)
   const [marketName, setMarketName] = useState(vendor.location.name)
+  const [profilePicturePreview, setProfilePicturePreview] = useState<string | null>(
+    vendor.profile_picture_url || null,
+  )
+  const [profilePictureFile, setProfilePictureFile] = useState<File | null>(null)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Profile picture must be under 5MB",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setProfilePictureFile(file)
+    const reader = new FileReader()
+    reader.onloadend = () => setProfilePicturePreview(reader.result as string)
+    reader.readAsDataURL(file)
+
+    // Reset input
+    e.target.value = ""
+  }
 
   const handleSave = async () => {
     if (!shopName.trim() || !country || !city.trim() || !marketName.trim()) {
@@ -264,6 +295,29 @@ export function EditProfileDialog({ vendor }: { vendor: VendorData }) {
     const supabase = createBrowserClient()
 
     try {
+      // Upload profile picture to Cloudinary if changed
+      let profilePictureUrl = vendor.profile_picture_url || null
+
+      if (profilePictureFile) {
+        setUploadingPhoto(true)
+        const uploadData = new FormData()
+        uploadData.append("file", profilePictureFile)
+        uploadData.append("upload_preset", "shoppieapp_products")
+        uploadData.append("folder", `vendors/${vendor.id}/profile`)
+
+        const cloudinaryResponse = await fetch("https://api.cloudinary.com/v1_1/dibqpzu1j/image/upload", {
+          method: "POST",
+          body: uploadData,
+        })
+
+        if (!cloudinaryResponse.ok) {
+          throw new Error("Failed to upload profile picture")
+        }
+
+        const cloudinaryData = await cloudinaryResponse.json()
+        profilePictureUrl = cloudinaryData.secure_url
+        setUploadingPhoto(false)
+      }
       const { data: existingLocation } = await supabase
         .from("locations")
         .select("id")
@@ -295,6 +349,7 @@ export function EditProfileDialog({ vendor }: { vendor: VendorData }) {
           shop_description: shopDescription || null,
           whatsapp_number: whatsappNumber || null,
           location_id: locationId,
+          profile_picture_url: profilePictureUrl,
         })
         .eq("id", vendor.id)
 
@@ -333,6 +388,68 @@ export function EditProfileDialog({ vendor }: { vendor: VendorData }) {
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {/* Profile Picture */}
+          <div className="space-y-2">
+            <Label>Profile Picture</Label>
+            <div className="flex items-center gap-4">
+              <div className="relative h-20 w-20 shrink-0">
+                <div className="h-20 w-20 overflow-hidden rounded-full border-2 border-border bg-muted">
+                  {profilePicturePreview ? (
+                    <Image
+                      src={profilePicturePreview}
+                      alt="Profile picture preview"
+                      fill
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <User className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background shadow-sm hover:bg-muted transition-colors"
+                  aria-label="Change profile picture"
+                >
+                  <Camera className="h-3.5 w-3.5 text-foreground" />
+                </button>
+              </div>
+              <div className="flex-1 space-y-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingPhoto}
+                >
+                  {uploadingPhoto ? (
+                    <>
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="mr-2 h-3.5 w-3.5" />
+                      {profilePicturePreview ? "Change Photo" : "Upload Photo"}
+                    </>
+                  )}
+                </Button>
+                <p className="text-xs text-muted-foreground">JPG, PNG or WebP. Max 5MB.</p>
+              </div>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoChange}
+              className="hidden"
+              aria-label="Upload profile picture"
+            />
+          </div>
+
+          <div className="border-t border-border" />
           <div className="space-y-2">
             <Label htmlFor="shop-name">Shop Name *</Label>
             <Input
@@ -404,8 +521,8 @@ export function EditProfileDialog({ vendor }: { vendor: VendorData }) {
           <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={loading}>
-            {loading ? "Saving..." : "Save Changes"}
+          <Button onClick={handleSave} disabled={loading || uploadingPhoto}>
+            {loading ? (uploadingPhoto ? "Uploading photo..." : "Saving...") : "Save Changes"}
           </Button>
         </DialogFooter>
       </DialogContent>
