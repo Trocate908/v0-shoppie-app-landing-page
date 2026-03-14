@@ -121,7 +121,7 @@ export default function SearchBox({
           if (e.key === "Enter") handleSubmit()
           if (e.key === "Escape") setOpen(false)
         }}
-        className="pl-10 pr-8"
+        className="pl-10 pr-8 font-medium text-foreground placeholder:text-muted-foreground/70 border-2"
       />
       {value && (
         <button
