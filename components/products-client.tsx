@@ -21,6 +21,7 @@ interface Product {
     shop_name: string
     is_open: boolean
     is_verified: boolean
+    verification_expires_at?: string | null
   }
 }
 
@@ -128,7 +129,7 @@ export default function ProductsClient({ products }: ProductsClientProps) {
           <p className="text-muted-foreground">No products found matching "{searchQuery}"</p>
         </div>
       ) : (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredProducts.map((product) => (
             <Link key={product.id} href={`/product/${product.id}`}>
               <Card
@@ -178,7 +179,12 @@ export default function ProductsClient({ products }: ProductsClientProps) {
                   <div className="mt-2 flex items-center gap-1">
                     <p className="text-xs text-muted-foreground">{product.vendor.shop_name}</p>
                     {product.vendor.is_verified && (
-                      <VerificationBadge isVerified={product.vendor.is_verified} size="xs" showTooltip={false} />
+                      <VerificationBadge
+                        isVerified={product.vendor.is_verified}
+                        verificationExpiresAt={product.vendor.verification_expires_at}
+                        size="xs"
+                        showTooltip={false}
+                      />
                     )}
                   </div>
                 </div>

@@ -25,6 +25,7 @@ interface Vendor {
   shop_name: string
   is_open: boolean
   is_verified?: boolean
+  verification_expires_at?: string | null
   whatsapp_number?: string | null
   location: Location
 }
@@ -94,7 +95,7 @@ export default function WishlistClient({ products }: WishlistClientProps) {
               </div>
             </div>
           ) : (
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {products.map((product) => (
                 <Card key={product.id} className="group relative overflow-hidden transition-shadow hover:shadow-lg">
                   <Link href={`/product/${product.id}`}>
@@ -154,7 +155,12 @@ export default function WishlistClient({ products }: WishlistClientProps) {
                           <Store className="h-4 w-4 text-muted-foreground" />
                           <span className="text-sm font-medium text-foreground">{product.vendor.shop_name}</span>
                           {product.vendor.is_verified && (
-                            <VerificationBadge isVerified={product.vendor.is_verified} size="sm" showTooltip={false} />
+                            <VerificationBadge
+                              isVerified={product.vendor.is_verified}
+                              verificationExpiresAt={product.vendor.verification_expires_at}
+                              size="sm"
+                              showTooltip={false}
+                            />
                           )}
                           <Badge variant={product.vendor.is_open ? "default" : "outline"} className="ml-auto text-xs">
                             {product.vendor.is_open ? "Open" : "Closed"}
