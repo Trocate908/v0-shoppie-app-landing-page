@@ -12,11 +12,12 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Upload, Loader2, X, Shield } from "lucide-react"
+import { ArrowLeft, Upload, Loader2, X, Shield, ImageSearch } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
 import { ImageCropperDialog } from "@/components/image-cropper-dialog"
+import { PexelsImagePickerDialog } from "@/components/pexels-image-picker-dialog"
 
 type AddProductFormProps = {
   vendorId: string
@@ -45,6 +46,7 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const [cropperOpen, setCropperOpen] = useState(false)
+  const [pexelsOpen, setPexelsOpen] = useState(false)
   const [currentImageSrc, setCurrentImageSrc] = useState<string>("")
   const [currentFileName, setCurrentFileName] = useState<string>("")
   const [formData, setFormData] = useState({
@@ -113,6 +115,17 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
     setImagePreviews((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const handlePexelsSelect = (cloudinaryUrl: string, fileName: string) => {
+    // Create a placeholder file entry (URL-based, already on Cloudinary)
+    // We store the cloudinary URL directly as a "pre-uploaded" sentinel
+    setImageFiles((prev) => [...prev, new File([], fileName)])
+    setImagePreviews((prev) => [...prev, cloudinaryUrl])
+    toast({
+      title: "Image added",
+      description: "Stock photo has been added to your product",
+    })
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -122,15 +135,24 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
     try {
       const imageUrls: string[] = []
 
-      for (const imageFile of imageFiles) {
-        const formData = new FormData()
-        formData.append("file", imageFile)
-        formData.append("upload_preset", "shoppieapp_products")
-        formData.append("folder", `vendors/${vendorId}`)
+      for (let i = 0; i < imageFiles.length; i++) {
+        const imageFile = imageFiles[i]
+        const preview = imagePreviews[i]
+
+        // If this image was picked from Pexels it's already on Cloudinary
+        if (preview.startsWith("https://res.cloudinary.com")) {
+          imageUrls.push(preview)
+          continue
+        }
+
+        const uploadForm = new FormData()
+        uploadForm.append("file", imageFile)
+        uploadForm.append("upload_preset", "shoppieapp_products")
+        uploadForm.append("folder", `vendors/${vendorId}`)
 
         const cloudinaryResponse = await fetch("https://api.cloudinary.com/v1_1/dibqpzu1j/image/upload", {
           method: "POST",
-          body: formData,
+          body: uploadForm,
         })
 
         if (!cloudinaryResponse.ok) {
@@ -193,6 +215,12 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
         imageSrc={currentImageSrc}
         onCropComplete={handleCropComplete}
         fileName={currentFileName}
+      />
+      <PexelsImagePickerDialog
+        open={pexelsOpen}
+        onOpenChange={setPexelsOpen}
+        productName={formData.name}
+        onSelectImage={handlePexelsSelect}
       />
 
       <header className="border-b border-border bg-card">
@@ -287,14 +315,32 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                 </div>
                 <div className="space-y-4">
                   {imageFiles.length < maxImages && (
-                    <div className="flex items-center gap-4">
-                      <Button type="button" variant="outline" onClick={() => document.getElementById("image")?.click()}>
-                        <Upload className="mr-2 h-4 w-4" />
-                        Choose Image{isVerified ? "s" : ""}
-                      </Button>
-                      <span className="text-sm text-muted-foreground">
-                        {imageFiles.length} / {maxImages} selected
-                      </span>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => document.getElementById("image")?.click()}
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload Image
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setPexelsOpen(true)}
+                          className="border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
+                        >
+                          <ImageSearch className="mr-2 h-4 w-4" />
+                          Search Stock Photos
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          {imageFiles.length} / {maxImages} selected
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Upload your own image or find a free stock photo from Pexels
+                      </p>
                     </div>
                   )}
                   <Input id="image" type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
