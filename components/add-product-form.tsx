@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Upload, Loader2, X, Shield, ImageSearch } from "lucide-react"
+import { ArrowLeft, Upload, Loader2, X, Shield, Images } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
@@ -331,7 +331,7 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                           onClick={() => setPexelsOpen(true)}
                           className="border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
                         >
-                          <ImageSearch className="mr-2 h-4 w-4" />
+                          <Images className="mr-2 h-4 w-4" />
                           Search Stock Photos
                         </Button>
                         <span className="text-sm text-muted-foreground">

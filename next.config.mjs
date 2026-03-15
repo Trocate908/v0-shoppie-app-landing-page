@@ -24,6 +24,18 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'res.cloudinary.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'images.pexels.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'photos.pexels.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.pexels.com',
+      },
     ],
   },
   experimental: {
