@@ -12,12 +12,13 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Upload, Loader2, X, Shield, Images } from "lucide-react"
+import { ArrowLeft, Upload, Loader2, X, Shield, Images, Camera } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
 import { ImageCropperDialog } from "@/components/image-cropper-dialog"
 import { PexelsImagePickerDialog } from "@/components/pexels-image-picker-dialog"
+import { CameraDialog } from "@/components/camera-dialog"
 
 type AddProductFormProps = {
   vendorId: string
@@ -47,6 +48,7 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const [cropperOpen, setCropperOpen] = useState(false)
   const [pexelsOpen, setPexelsOpen] = useState(false)
+  const [cameraOpen, setCameraOpen] = useState(false)
   const [currentImageSrc, setCurrentImageSrc] = useState<string>("")
   const [currentFileName, setCurrentFileName] = useState<string>("")
   const [formData, setFormData] = useState({
@@ -124,6 +126,21 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
       title: "Image added",
       description: "Stock photo has been added to your product",
     })
+  }
+
+  const handleCameraCapture = (file: File, previewUrl: string) => {
+    if (imageFiles.length >= maxImages) {
+      toast({
+        title: "Too many images",
+        description: `You can upload up to ${maxImages} image${maxImages > 1 ? "s" : ""}`,
+        variant: "destructive",
+      })
+      return
+    }
+    // Run through cropper so user can adjust framing
+    setCurrentImageSrc(previewUrl)
+    setCurrentFileName(file.name)
+    setCropperOpen(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -221,6 +238,11 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
         onOpenChange={setPexelsOpen}
         productName={formData.name}
         onSelectImage={handlePexelsSelect}
+      />
+      <CameraDialog
+        open={cameraOpen}
+        onOpenChange={setCameraOpen}
+        onCapture={handleCameraCapture}
       />
 
       <header className="border-b border-border bg-card">
@@ -328,6 +350,15 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                         <Button
                           type="button"
                           variant="outline"
+                          onClick={() => setCameraOpen(true)}
+                          className="border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
+                        >
+                          <Camera className="mr-2 h-4 w-4" />
+                          Take Photo
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
                           onClick={() => setPexelsOpen(true)}
                           className="border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
                         >
@@ -339,7 +370,7 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Upload your own image or find a free stock photo from Pexels
+                        Upload an image, take a photo with your camera, or find a free stock photo from Pexels
                       </p>
                     </div>
                   )}
