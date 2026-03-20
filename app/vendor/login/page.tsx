@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import Link from "next/link"
-import { saveAccount, setActiveAccountId } from "@/lib/account-switcher"
+import { saveAccount, setActiveAccountId, getSavedAccounts } from "@/lib/account-switcher"
 
 function VendorLoginForm() {
   const [email, setEmail] = useState("")
@@ -29,11 +29,43 @@ function VendorLoginForm() {
     setError(null)
 
     try {
+      // When adding an account, snapshot & save the current session FIRST before
+      // Supabase overwrites it with the new signInWithPassword call.
+      if (isAddingAccount) {
+        const { data: existing } = await supabase.auth.getSession()
+        if (existing.session) {
+          const { data: existingVendor } = await supabase
+            .from("vendors")
+            .select("shop_name, profile_picture_url")
+            .eq("user_id", existing.session.user.id)
+            .single()
+          saveAccount({
+            userId: existing.session.user.id,
+            email: existing.session.user.email ?? "",
+            shopName: existingVendor?.shop_name ?? "Vendor",
+            profilePictureUrl: existingVendor?.profile_picture_url ?? null,
+            refreshToken: existing.session.refresh_token,
+            accessToken: existing.session.access_token,
+          })
+        }
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
       if (!data.user || !data.session) throw new Error("Login failed - no user returned")
 
-      // Fetch vendor info for the account switcher
+      // Check if this account is already saved to prevent duplicates
+      if (isAddingAccount) {
+        const savedAccounts = getSavedAccounts()
+        const alreadyExists = savedAccounts.some((a) => a.userId === data.user.id)
+        if (alreadyExists) {
+          setError("This account is already added. Please use a different account.")
+          setIsLoading(false)
+          return
+        }
+      }
+
+      // Fetch vendor info and save the new account
       const { data: vendor } = await supabase
         .from("vendors")
         .select("shop_name, profile_picture_url")
@@ -109,10 +141,18 @@ function VendorLoginForm() {
               </Tabs>
 
               <div className="mt-4 text-center text-sm">
-                Don&apos;t have an account?{" "}
-                <Link href="/vendor/signup" className="underline underline-offset-4">
-                  Sign up
-                </Link>
+                {isAddingAccount ? (
+                  <Link href="/vendor/dashboard" className="underline underline-offset-4 text-muted-foreground">
+                    Cancel — back to dashboard
+                  </Link>
+                ) : (
+                  <>
+                    Don&apos;t have an account?{" "}
+                    <Link href="/vendor/signup" className="underline underline-offset-4">
+                      Sign up
+                    </Link>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>
