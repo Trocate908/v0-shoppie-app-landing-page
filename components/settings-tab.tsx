@@ -179,8 +179,11 @@ export default function SettingsTab() {
 
               {/* Add another account — always visible when logged in */}
               <button
-                onClick={() => router.push("/vendor/login?add_account=1")}
-                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-primary"
+                type="button"
+                onClick={() => {
+                  window.location.href = "/vendor/login?add_account=1"
+                }}
+                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-primary cursor-pointer"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border">
                   <Plus className="h-4 w-4" />
