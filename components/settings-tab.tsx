@@ -115,53 +115,69 @@ export default function SettingsTab() {
           <section className="mb-2">
             <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Accounts</p>
             <div className="overflow-hidden rounded-xl border border-border bg-card divide-y divide-border">
-              {/* All saved accounts */}
-              {savedAccounts.map((account) => {
-                const isActive = account.userId === currentUserId
-                const isSwitching = switchingTo === account.userId
-                return (
-                  <button
-                    key={account.userId}
-                    onClick={() => handleSwitchAccount(account)}
-                    disabled={isSwitching || isActive}
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-default"
-                  >
-                    <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full border border-border bg-muted">
-                      {account.profilePictureUrl ? (
-                        <Image src={account.profilePictureUrl} alt={account.shopName} fill className="object-cover" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <Store className="h-4 w-4 text-primary" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{account.shopName}</p>
-                      <p className="truncate text-xs text-muted-foreground">{account.email}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      {isActive && (
-                        <span className="flex items-center gap-1 text-xs font-semibold text-primary">
-                          <Check className="h-3.5 w-3.5" /> Active
-                        </span>
-                      )}
-                      {isSwitching && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
-                      {!isActive && !isSwitching && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                      {!isActive && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleRemoveAccount(account.userId) }}
-                          className="rounded p-1 text-muted-foreground hover:text-destructive transition-colors"
-                          aria-label="Remove account"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </button>
-                )
-              })}
+              {/* All saved accounts — shown even if only one */}
+              {savedAccounts.length > 0 ? (
+                savedAccounts.map((account) => {
+                  const isActive = account.userId === currentUserId
+                  const isSwitching = switchingTo === account.userId
+                  return (
+                    <button
+                      key={account.userId}
+                      onClick={() => handleSwitchAccount(account)}
+                      disabled={isSwitching || isActive}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-default"
+                    >
+                      <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full border border-border bg-muted">
+                        {account.profilePictureUrl ? (
+                          <Image src={account.profilePictureUrl} alt={account.shopName} fill className="object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center">
+                            <Store className="h-4 w-4 text-primary" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{account.shopName}</p>
+                        <p className="truncate text-xs text-muted-foreground">{account.email}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {isActive && (
+                          <span className="flex items-center gap-1 text-xs font-semibold text-primary">
+                            <Check className="h-3.5 w-3.5" /> Active
+                          </span>
+                        )}
+                        {isSwitching && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
+                        {!isActive && !isSwitching && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                        {!isActive && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemoveAccount(account.userId) }}
+                            className="rounded p-1 text-muted-foreground hover:text-destructive transition-colors"
+                            aria-label="Remove account"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })
+              ) : (
+                /* Fallback: current session not yet saved — show a placeholder row */
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted">
+                    <Store className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{vendorName ?? "Your account"}</p>
+                    <p className="truncate text-xs text-muted-foreground">Currently signed in</p>
+                  </div>
+                  <span className="flex items-center gap-1 text-xs font-semibold text-primary">
+                    <Check className="h-3.5 w-3.5" /> Active
+                  </span>
+                </div>
+              )}
 
-              {/* Add another account */}
+              {/* Add another account — always visible when logged in */}
               <button
                 onClick={() => router.push("/vendor/login?add_account=1")}
                 className="flex w-full items-center gap-3 px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-primary"
@@ -169,7 +185,7 @@ export default function SettingsTab() {
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border">
                   <Plus className="h-4 w-4" />
                 </div>
-                <span>Add another account</span>
+                <span className="font-medium">Add another account</span>
               </button>
 
               {/* Dashboard & Logout for current */}
