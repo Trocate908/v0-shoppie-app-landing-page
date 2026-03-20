@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,8 @@ import { useTheme } from "@/components/theme-provider"
 import { ActivateVerificationDialog } from "@/components/activate-verification-dialog"
 import { VerificationBadge } from "@/components/verification-badge"
 import ShopShareButton from "@/components/shop-share-button"
+import { AccountSwitcherSheet } from "@/components/account-switcher-sheet"
+import { saveAccount, updateAccountTokens, setActiveAccountId } from "@/lib/account-switcher"
 
 type VendorData = {
   id: string
@@ -49,14 +51,44 @@ type DashboardClientProps = {
   totalViews: number
   weeklyViews: number
   productCount: number
+  userId: string
 }
 
-export function DashboardClient({ vendor, totalViews, weeklyViews, productCount }: DashboardClientProps) {
+export function DashboardClient({ vendor, totalViews, weeklyViews, productCount, userId }: DashboardClientProps) {
   const [isOpen, setIsOpen] = useState(vendor.is_open)
   const [isUpdating, setIsUpdating] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const { toast } = useToast()
   const { theme, toggleTheme } = useTheme()
+
+  // Keep saved account tokens up to date
+  useEffect(() => {
+    const supabase = createBrowserClient()
+
+    // Save/refresh the current account entry
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        saveAccount({
+          userId,
+          email: session.user.email ?? "",
+          shopName: vendor.shop_name,
+          profilePictureUrl: vendor.profile_picture_url ?? null,
+          refreshToken: session.refresh_token,
+          accessToken: session.access_token,
+        })
+        setActiveAccountId(userId)
+      }
+    })
+
+    // Listen for token refreshes and update stored tokens
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session && session.user.id === userId) {
+        updateAccountTokens(userId, session.refresh_token, session.access_token)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [userId, vendor.shop_name, vendor.profile_picture_url])
 
   const handleToggleShop = async (checked: boolean) => {
     setIsUpdating(true)
@@ -178,6 +210,9 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount 
                   </>
                 )}
               </Button>
+              <div className="shrink-0">
+                <AccountSwitcherSheet currentUserId={userId} />
+              </div>
               <div className="shrink-0">
                 <ShopShareButton
                   shopName={vendor.shop_name}

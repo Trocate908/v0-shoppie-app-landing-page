@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Link from "next/link"
 import { useState } from "react"
+import { useSearchParams } from "next/navigation"
+import { saveAccount, setActiveAccountId } from "@/lib/account-switcher"
 
 export default function VendorLoginPage() {
   const [authMethod, setAuthMethod] = useState<"email" | "phone">("email")
@@ -20,6 +22,9 @@ export default function VendorLoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+
+  const searchParams = useSearchParams()
+  const isAddingAccount = searchParams.get("add_account") === "1"
 
   const handlePhoneLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,26 +56,35 @@ export default function VendorLoginPage() {
     setIsLoading(true)
     setError(null)
 
-    console.log("[v0] Starting login process")
-
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      console.log("[v0] Login response:", data, error)
-
       if (error) throw error
+      if (!data.user || !data.session) throw new Error("Login failed - no user returned")
 
-      if (!data.user) {
-        throw new Error("Login failed - no user returned")
-      }
+      // Fetch vendor info to save in account switcher
+      const { data: vendor } = await supabase
+        .from("vendors")
+        .select("shop_name, profile_picture_url")
+        .eq("user_id", data.user.id)
+        .single()
 
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      // Save account for multi-account switching
+      saveAccount({
+        userId: data.user.id,
+        email: data.user.email ?? email,
+        shopName: vendor?.shop_name ?? "Vendor",
+        profilePictureUrl: vendor?.profile_picture_url ?? null,
+        refreshToken: data.session.refresh_token,
+        accessToken: data.session.access_token,
+      })
+      setActiveAccountId(data.user.id)
 
-      console.log("[v0] Redirecting to dashboard")
-      window.location.href = "/vendor/dashboard"
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      window.location.href = isAddingAccount ? "/vendor/dashboard" : "/vendor/dashboard"
     } catch (error: unknown) {
       console.error("[v0] Login error:", error)
       setError(error instanceof Error ? error.message : "An error occurred")
@@ -84,8 +98,12 @@ export default function VendorLoginPage() {
         <div className="flex flex-col gap-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-2xl">Vendor Login</CardTitle>
-              <CardDescription>Login to your vendor account</CardDescription>
+              <CardTitle className="text-2xl">{isAddingAccount ? "Add Account" : "Vendor Login"}</CardTitle>
+              <CardDescription>
+                {isAddingAccount
+                  ? "Login with another vendor account to switch between them"
+                  : "Login to your vendor account"}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Tabs value={authMethod} onValueChange={(v) => setAuthMethod(v as "email" | "phone")}>

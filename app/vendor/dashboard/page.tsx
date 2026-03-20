@@ -118,6 +118,7 @@ export default async function VendorDashboardPage() {
       totalViews={totalViews}
       weeklyViews={weeklyViews}
       productCount={productCount}
+      userId={user.id}
     />
   )
 }
