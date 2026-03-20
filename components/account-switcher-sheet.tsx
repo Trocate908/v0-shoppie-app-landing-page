@@ -98,7 +98,7 @@ export function AccountSwitcherSheet({ currentUserId, trigger }: AccountSwitcher
   const handleAddAccount = () => {
     setOpen(false)
     // Navigate to login with a flag indicating we want to add an account
-    router.push("/vendor/login?add_account=1")
+    window.location.href = "/vendor/login?add_account=1"
   }
 
   return (
