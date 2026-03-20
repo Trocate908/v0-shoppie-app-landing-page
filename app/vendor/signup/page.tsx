@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Mail, CheckCircle2 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
+import { Checkbox } from "@/components/ui/checkbox"
 
 const COUNTRIES = [
   "Afghanistan",
@@ -234,6 +235,7 @@ export default function VendorSignupPage() {
   const [city, setCity] = useState("")
   const [locationName, setLocationName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
   const [userEmail, setUserEmail] = useState("")
   const [showEmailConfirmation, setShowEmailConfirmation] = useState(false)
   const { toast } = useToast()
@@ -242,6 +244,16 @@ export default function VendorSignupPage() {
     e.preventDefault()
     const supabase = createClient()
     setIsLoading(true)
+
+    if (!agreedToTerms) {
+      toast({
+        variant: "destructive",
+        title: "Terms Required",
+        description: "Please agree to the Terms and Conditions to continue.",
+      })
+      setIsLoading(false)
+      return
+    }
 
     if (phonePassword !== phoneRepeatPassword) {
       toast({
@@ -364,6 +376,16 @@ export default function VendorSignupPage() {
     e.preventDefault()
     const supabase = createClient()
     setIsLoading(true)
+
+    if (!agreedToTerms) {
+      toast({
+        variant: "destructive",
+        title: "Terms Required",
+        description: "Please agree to the Terms and Conditions to continue.",
+      })
+      setIsLoading(false)
+      return
+    }
 
     if (password !== repeatPassword) {
       toast({
@@ -660,7 +682,22 @@ export default function VendorSignupPage() {
                         />
                         <p className="text-xs text-muted-foreground">The specific market where your shop is located</p>
                       </div>
-                      <Button type="submit" className="w-full" disabled={isLoading}>
+                      <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 p-3">
+                        <Checkbox
+                          id="terms"
+                          checked={agreedToTerms}
+                          onCheckedChange={(checked) => setAgreedToTerms(checked === true)}
+                          className="mt-0.5 shrink-0"
+                        />
+                        <label htmlFor="terms" className="text-sm leading-relaxed text-muted-foreground cursor-pointer">
+                          I agree to the{" "}
+                          <Link href="/terms" className="font-medium text-primary underline underline-offset-4 hover:no-underline">
+                            Terms and Conditions
+                          </Link>{" "}
+                          of Shoppie. By signing up, you confirm that all information provided is accurate.
+                        </label>
+                      </div>
+                      <Button type="submit" className="w-full" disabled={isLoading || !agreedToTerms}>
                         {isLoading ? "Creating account..." : "Sign up"}
                       </Button>
                     </div>
