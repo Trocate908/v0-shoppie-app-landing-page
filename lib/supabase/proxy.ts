@@ -42,7 +42,14 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  if (user && (request.nextUrl.pathname === "/vendor/login" || request.nextUrl.pathname === "/vendor/signup")) {
+  // Allow logged-in users to visit /vendor/login when adding another account
+  const isAddingAccount = request.nextUrl.searchParams.get("add_account") === "1"
+
+  if (
+    user &&
+    !isAddingAccount &&
+    (request.nextUrl.pathname === "/vendor/login" || request.nextUrl.pathname === "/vendor/signup")
+  ) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/vendor/dashboard"
     return NextResponse.redirect(redirectUrl)
