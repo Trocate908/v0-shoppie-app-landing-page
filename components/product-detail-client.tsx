@@ -15,6 +15,7 @@ import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
 import { VerificationBadge } from "@/components/verification-badge"
 import ProductCarousel from "@/components/product-carousel"
+import { useRecentlyViewed } from "@/hooks/use-recently-viewed"
 
 interface Location {
   id: string
@@ -52,6 +53,7 @@ interface ProductDetailClientProps {
 export default function ProductDetailClient({ product, relatedProducts }: ProductDetailClientProps) {
   const router = useRouter()
   const [hasTracked, setHasTracked] = useState(false)
+  const { addProduct } = useRecentlyViewed()
 
   // Track product view on mount
   useEffect(() => {
@@ -67,7 +69,15 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
       }
       trackView()
     }
-  }, [product.id, hasTracked])
+    // Save to recently viewed for offline access
+    addProduct({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      image_url: product.image_url,
+      shop_name: product.vendor.shop_name,
+    })
+  }, [product.id, hasTracked, addProduct, product])
 
   return (
     <>

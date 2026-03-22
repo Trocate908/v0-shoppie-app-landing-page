@@ -4,6 +4,9 @@ import { Geist, Geist_Mono } from "next/font/google"
 import { Toaster } from "@/components/ui/toaster"
 import { ThemeProvider } from "@/components/theme-provider"
 import { WebVitals } from "./web-vitals"
+import { PwaProvider } from "@/components/pwa-provider"
+import OfflineBar from "@/components/offline-bar"
+import InstallBanner from "@/components/install-banner"
 import "./globals.css"
 
 const _geist = Geist({ 
@@ -29,7 +32,29 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: "/favicon.ico",
-    apple: "/logo.png",
+    apple: "/icons/icon-192x192.png",
+    shortcut: "/icons/icon-192x192.png",
+  },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "ShoppieApp",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  openGraph: {
+    type: "website",
+    siteName: "ShoppieApp",
+    title: "ShoppieApp - Find Local Products Near You",
+    description: "Connect with local vendors and discover products in your area",
+    url: BASE_URL,
+  },
+  twitter: {
+    card: "summary",
+    title: "ShoppieApp",
+    description: "Connect with local vendors and discover products in your area",
   },
   verification: {
     google: "kW0Ebp18QnxnqAPBGR1GxJzandt0F6vrZZ8C4wdbvOQ",
@@ -45,8 +70,8 @@ export const viewport: Viewport = {
   maximumScale: 5,
   userScalable: true,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "white" },
-    { media: "(prefers-color-scheme: dark)", color: "black" },
+    { media: "(prefers-color-scheme: light)", color: "#2563eb" },
+    { media: "(prefers-color-scheme: dark)", color: "#1d4ed8" },
   ],
 }
 
@@ -57,11 +82,25 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`font-sans antialiased`}>
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="ShoppieApp" />
+        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        <meta name="msapplication-TileImage" content="/icons/icon-192x192.png" />
+        <meta name="msapplication-TileColor" content="#2563eb" />
+      </head>
+      <body className="font-sans antialiased">
         <ThemeProvider>
-          <WebVitals />
-          {children}
-          <Toaster />
+          <PwaProvider>
+            <WebVitals />
+            <OfflineBar />
+            {children}
+            <InstallBanner />
+            <Toaster />
+          </PwaProvider>
         </ThemeProvider>
       </body>
     </html>

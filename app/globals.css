@@ -187,5 +187,17 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* PWA: Prevent text selection bounce on iOS */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    overscroll-behavior-y: contain;
+  }
+  /* PWA: Smooth page transitions */
+  html {
+    scroll-behavior: smooth;
+  }
+  /* PWA: App-like button feel */
+  button, a {
+    -webkit-tap-highlight-color: transparent;
   }
 }
