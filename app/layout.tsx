@@ -31,9 +31,9 @@ export const metadata: Metadata = {
     canonical: "/",
   },
   icons: {
-    icon: "/favicon.ico",
-    apple: "/icons/icon-192x192.png",
-    shortcut: "/icons/icon-192x192.png",
+    icon: "/logo.png",
+    apple: "/logo.png",
+    shortcut: "/logo.png",
   },
   manifest: "/manifest.json",
   appleWebApp: {
@@ -70,8 +70,8 @@ export const viewport: Viewport = {
   maximumScale: 5,
   userScalable: true,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#2563eb" },
-    { media: "(prefers-color-scheme: dark)", color: "#1d4ed8" },
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#ffffff" },
   ],
 }
 
@@ -88,9 +88,9 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="ShoppieApp" />
-        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-        <meta name="msapplication-TileImage" content="/icons/icon-192x192.png" />
-        <meta name="msapplication-TileColor" content="#2563eb" />
+        <link rel="apple-touch-icon" href="/logo.png" />
+        <meta name="msapplication-TileImage" content="/logo.png" />
+        <meta name="msapplication-TileColor" content="#ffffff" />
       </head>
       <body className="font-sans antialiased">
         <ThemeProvider>
