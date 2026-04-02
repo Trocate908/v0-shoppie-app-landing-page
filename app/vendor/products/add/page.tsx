@@ -16,7 +16,7 @@ export default async function AddProductPage() {
   // Fetch vendor data
   const { data: vendor } = await supabase
     .from("vendors")
-    .select("id, shop_name, is_verified")
+    .select("id, shop_name, is_verified, whatsapp_number")
     .eq("user_id", user.id)
     .single()
 
@@ -24,5 +24,12 @@ export default async function AddProductPage() {
     redirect("/vendor/signup")
   }
 
-  return <AddProductForm vendorId={vendor.id} shopName={vendor.shop_name} isVerified={vendor.is_verified || false} />
+  return (
+    <AddProductForm
+      vendorId={vendor.id}
+      shopName={vendor.shop_name}
+      isVerified={vendor.is_verified || false}
+      hasWhatsapp={!!vendor.whatsapp_number}
+    />
+  )
 }

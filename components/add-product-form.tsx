@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Upload, Loader2, X, Shield, Images, Camera } from "lucide-react"
+import { ArrowLeft, Upload, Loader2, X, Shield, Images, Camera, MessageCircle } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
@@ -24,6 +24,7 @@ type AddProductFormProps = {
   vendorId: string
   shopName: string
   isVerified: boolean
+  hasWhatsapp: boolean
 }
 
 const PRODUCT_CATEGORIES = [
@@ -40,7 +41,7 @@ const PRODUCT_CATEGORIES = [
   "Other",
 ]
 
-export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFormProps) {
+export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: AddProductFormProps) {
   const router = useRouter()
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -51,6 +52,7 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
   const [cameraOpen, setCameraOpen] = useState(false)
   const [currentImageSrc, setCurrentImageSrc] = useState<string>("")
   const [currentFileName, setCurrentFileName] = useState<string>("")
+  const [whatsappNumber, setWhatsappNumber] = useState("")
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -147,6 +149,17 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
     e.preventDefault()
     setIsSubmitting(true)
 
+    // Validate WhatsApp number if provided
+    if (!hasWhatsapp && whatsappNumber && !/^\+?[1-9]\d{1,14}$/.test(whatsappNumber.replace(/\s/g, ""))) {
+      toast({
+        title: "Invalid WhatsApp number",
+        description: "Please enter a valid number with country code (e.g., +265991234567)",
+        variant: "destructive",
+      })
+      setIsSubmitting(false)
+      return
+    }
+
     const supabase = createClient()
 
     try {
@@ -184,6 +197,14 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
 
         const cloudinaryData = await cloudinaryResponse.json()
         imageUrls.push(cloudinaryData.secure_url)
+      }
+
+      // Save WhatsApp number to vendor profile if not set yet
+      if (!hasWhatsapp && whatsappNumber.trim()) {
+        await supabase
+          .from("vendors")
+          .update({ whatsapp_number: whatsappNumber.trim() })
+          .eq("id", vendorId)
       }
 
       const { error: insertError } = await supabase.from("products").insert({
@@ -408,6 +429,29 @@ export function AddProductForm({ vendorId, shopName, isVerified }: AddProductFor
                   )}
                 </div>
               </div>
+
+              {/* WhatsApp number — only shown if not already set */}
+              {!hasWhatsapp && (
+                <div className="space-y-2 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950/30">
+                  <div className="flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    <Label htmlFor="whatsapp" className="text-green-700 dark:text-green-400 font-medium">
+                      Add WhatsApp Number
+                    </Label>
+                  </div>
+                  <Input
+                    id="whatsapp"
+                    type="tel"
+                    value={whatsappNumber}
+                    onChange={(e) => setWhatsappNumber(e.target.value)}
+                    placeholder="+265991234567"
+                    className="border-green-200 dark:border-green-900"
+                  />
+                  <p className="text-xs text-green-700 dark:text-green-400">
+                    Include your country code. Buyers will use this to contact you directly. Once saved, it will apply to all your products automatically.
+                  </p>
+                </div>
+              )}
 
               <div className="flex items-center justify-between rounded-lg border border-border p-4">
                 <div className="space-y-0.5">
