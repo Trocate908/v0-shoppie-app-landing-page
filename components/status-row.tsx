@@ -58,7 +58,10 @@ export default function StatusRow({
   const [progress, setProgress] = useState(0)
 
   useEffect(() => {
-    fetchStatuses()
+    // Purge expired statuses + their storage files before rendering
+    fetch("/api/cleanup-statuses", { method: "POST" }).finally(() => {
+      fetchStatuses()
+    })
   }, [])
 
   async function fetchStatuses() {
