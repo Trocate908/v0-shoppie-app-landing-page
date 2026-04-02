@@ -1,6 +1,6 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Geist, Geist_Mono, Dancing_Script } from "next/font/google"
 import { Toaster } from "@/components/ui/toaster"
 import { ThemeProvider } from "@/components/theme-provider"
 import { WebVitals } from "./web-vitals"
@@ -18,6 +18,12 @@ const _geistMono = Geist_Mono({
   subsets: ["latin"],
   display: "swap",
   preload: true,
+})
+const _dancingScript = Dancing_Script({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-dancing",
+})
 })
 
 const BASE_URL = "https://shoppieapp.co.zw"

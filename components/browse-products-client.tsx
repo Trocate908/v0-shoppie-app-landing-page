@@ -13,9 +13,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Store, MapPin, Filter, Search, X, DollarSign, BadgeCheck, Locate, Loader2 } from "lucide-react"
+import { Store, MapPin, Filter, X, DollarSign, BadgeCheck, Locate, Loader2, Menu } from "lucide-react"
 import Link from "next/link"
 import WhatsAppButton from "@/components/whatsapp-button"
 import FavoriteButton from "@/components/favorite-button"
@@ -26,6 +33,7 @@ import { useRouter } from "next/navigation"
 import { VerificationBadge } from "@/components/verification-badge"
 import ProductCarousel from "./product-carousel"
 import SearchBox from "@/components/search-box"
+import StatusRow from "@/components/status-row"
 
 interface Location {
   id: string
@@ -60,20 +68,6 @@ interface BrowseProductsClientProps {
   visitorCountry: string | null
 }
 
-const PRODUCT_CATEGORIES = [
-  "Electronics",
-  "Fashion",
-  "Food & Beverages",
-  "Home & Garden",
-  "Health & Beauty",
-  "Sports & Outdoors",
-  "Toys & Games",
-  "Books & Media",
-  "Automotive",
-  "Services",
-  "Other",
-]
-
 export default function BrowseProductsClient({
   products: initialProducts,
   locations,
@@ -92,8 +86,8 @@ export default function BrowseProductsClient({
   const [minPrice, setMinPrice] = useState<string>("")
   const [maxPrice, setMaxPrice] = useState<string>("")
   const [filterDialogOpen, setFilterDialogOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
-  // Detected visitor country (from prop or auto-detected)
   const [detectedCountry, setDetectedCountry] = useState<string | null>(initialVisitorCountry)
   const [geoStatus, setGeoStatus] = useState<"idle" | "detecting" | "success" | "error">("idle")
 
@@ -102,6 +96,29 @@ export default function BrowseProductsClient({
   )
 
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false)
+
+  // Current logged-in vendor info for StatusRow
+  const [currentVendor, setCurrentVendor] = useState<{
+    id: string
+    shop_name: string
+    is_verified: boolean
+    profile_picture_url?: string | null
+  } | null>(null)
+
+  useEffect(() => {
+    async function fetchCurrentVendor() {
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from("vendors")
+        .select("id, shop_name, is_verified, profile_picture_url")
+        .eq("user_id", user.id)
+        .single()
+      if (data) setCurrentVendor(data)
+    }
+    fetchCurrentVendor()
+  }, [])
 
   // Auto-detect country on mount using browser Geolocation + reverse geocoding
   useEffect(() => {
@@ -337,255 +354,242 @@ export default function BrowseProductsClient({
         <div className="mx-auto max-w-7xl">
           {/* Location detection happens silently in the background */}
 
-          {/* Search and Filter Bar */}
-          <div className="mb-6 flex flex-col gap-3 sm:flex-row">
-            <SearchBox
-              value={searchQuery}
-              onChange={setSearchQuery}
-              suggestions={searchSuggestions}
-              placeholder="Search products, shops, categories..."
-            />
+          {/* Search and Sort Bar */}
+          <div className="mb-4 flex gap-2">
+            <div className="flex-1">
+              <SearchBox
+                value={searchQuery}
+                onChange={setSearchQuery}
+                suggestions={searchSuggestions}
+                placeholder="Search products, shops, categories..."
+              />
+            </div>
 
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="newest">Newest First</SelectItem>
-                <SelectItem value="name">Name (A-Z)</SelectItem>
-                <SelectItem value="price-low">Price: Low to High</SelectItem>
-                <SelectItem value="price-high">Price: High to Low</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2 shrink-0">
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-[140px] h-10">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest">Newest First</SelectItem>
+                  <SelectItem value="name">Name (A-Z)</SelectItem>
+                  <SelectItem value="price-low">Price: Low to High</SelectItem>
+                  <SelectItem value="price-high">Price: High to Low</SelectItem>
+                </SelectContent>
+              </Select>
 
-            {/* Verified Only toggle button for trust filter */}
-            <Button
-              variant={showVerifiedOnly ? "default" : "outline"}
-              className="gap-2"
-              onClick={() => setShowVerifiedOnly(!showVerifiedOnly)}
-            >
-              <BadgeCheck className="h-4 w-4" />
-              {showVerifiedOnly ? "Showing Verified" : "Verified Only"}
-            </Button>
-
-            {/* Location Filter Button */}
-            <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="gap-2 bg-transparent">
-                  <MapPin className="h-4 w-4" />
-                  {selectedLocationData ? "Change Location" : "Nearby Products"}
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Select Your Location</DialogTitle>
-                  <DialogDescription>Choose your country, city, and market to see nearby products</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 pt-4">
-                  {/* Auto-detect button */}
-                  <Button
-                    variant="outline"
-                    className="w-full gap-2"
-                    disabled={geoStatus === "detecting"}
-                    onClick={() => {
-                      if (!navigator.geolocation) return
-                      setGeoStatus("detecting")
-                      navigator.geolocation.getCurrentPosition(
-                        async (pos) => {
-                          try {
-                            const { latitude, longitude } = pos.coords
-                            const res = await fetch(
-                              `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
-                              { headers: { "Accept-Language": "en" } }
-                            )
-                            if (!res.ok) throw new Error()
-                            const data = await res.json()
-                            const country: string = data?.address?.country ?? ""
-                            const city: string = data?.address?.city ?? data?.address?.town ?? data?.address?.state ?? ""
-                            if (country) {
-                              setDetectedCountry(country)
-                              setSelectedCurrency(getCurrencyForCountry(country))
-                              setSelectedCountry(country)
-                              if (city) setSelectedCity(city)
-                              setGeoStatus("success")
-                            } else {
-                              setGeoStatus("error")
-                            }
-                          } catch {
-                            setGeoStatus("error")
-                          }
-                        },
-                        () => setGeoStatus("error"),
-                        { timeout: 8000 }
-                      )
-                    }}
-                  >
-                    {geoStatus === "detecting" ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" /> Detecting...</>
-                    ) : (
-                      <><Locate className="h-4 w-4" /> Use My Current Location</>
+              {/* Single Menu button replacing the 3 buttons */}
+              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="h-10 w-10 relative shrink-0">
+                    <Menu className="h-4 w-4" />
+                    {activeFiltersCount > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-white font-bold">
+                        {activeFiltersCount}
+                      </span>
                     )}
                   </Button>
-                  <div className="relative flex items-center">
-                    <div className="flex-1 border-t border-border" />
-                    <span className="mx-3 text-xs text-muted-foreground">or select manually</span>
-                    <div className="flex-1 border-t border-border" />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-sm font-medium">Country</label>
-                    <Select
-                      value={selectedCountry}
-                      onValueChange={(val) => {
-                        setSelectedCountry(val)
-                        setSelectedCity("")
-                        setSelectedLocation("")
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select country" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {countries.map((country) => (
-                          <SelectItem key={country} value={country}>
-                            {country}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 p-3 space-y-3">
+                  <DropdownMenuLabel className="px-0 pb-1">Filter Options</DropdownMenuLabel>
+                  <DropdownMenuSeparator className="-mx-1" />
 
-                  {selectedCountry && (
-                    <div>
-                      <label className="mb-2 block text-sm font-medium">City</label>
-                      <Select
-                        value={selectedCity}
-                        onValueChange={(val) => {
-                          setSelectedCity(val)
-                          setSelectedLocation("")
-                        }}
+                  {/* Verified Only */}
+                  <button
+                    onClick={() => setShowVerifiedOnly(!showVerifiedOnly)}
+                    className={`w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
+                      ${showVerifiedOnly ? "bg-primary text-primary-foreground" : "border border-border hover:bg-muted"}`}
+                  >
+                    <BadgeCheck className="h-4 w-4" />
+                    {showVerifiedOnly ? "Showing Verified" : "Verified Only"}
+                  </button>
+
+                  {/* Nearby Products */}
+                  <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
+                    <DialogTrigger asChild>
+                      <button
+                        className={`w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors border
+                          ${selectedLocationData ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
                       >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select city" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {cities.map((city) => (
-                            <SelectItem key={city} value={city}>
-                              {city}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
+                        <MapPin className="h-4 w-4" />
+                        {selectedLocationData ? `${selectedLocationData.city}` : "Nearby Products"}
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Select Your Location</DialogTitle>
+                        <DialogDescription>Choose your country, city, and market to see nearby products</DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-4">
+                        <Button
+                          variant="outline"
+                          className="w-full gap-2"
+                          disabled={geoStatus === "detecting"}
+                          onClick={() => {
+                            if (!navigator.geolocation) return
+                            setGeoStatus("detecting")
+                            navigator.geolocation.getCurrentPosition(
+                              async (pos) => {
+                                try {
+                                  const { latitude, longitude } = pos.coords
+                                  const res = await fetch(
+                                    `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+                                    { headers: { "Accept-Language": "en" } }
+                                  )
+                                  if (!res.ok) throw new Error()
+                                  const data = await res.json()
+                                  const country: string = data?.address?.country ?? ""
+                                  const city: string = data?.address?.city ?? data?.address?.town ?? data?.address?.state ?? ""
+                                  if (country) {
+                                    setDetectedCountry(country)
+                                    setSelectedCurrency(getCurrencyForCountry(country))
+                                    setSelectedCountry(country)
+                                    if (city) setSelectedCity(city)
+                                    setGeoStatus("success")
+                                  } else {
+                                    setGeoStatus("error")
+                                  }
+                                } catch {
+                                  setGeoStatus("error")
+                                }
+                              },
+                              () => setGeoStatus("error"),
+                              { timeout: 8000 }
+                            )
+                          }}
+                        >
+                          {geoStatus === "detecting" ? (
+                            <><Loader2 className="h-4 w-4 animate-spin" /> Detecting...</>
+                          ) : (
+                            <><Locate className="h-4 w-4" /> Use My Current Location</>
+                          )}
+                        </Button>
+                        <div className="relative flex items-center">
+                          <div className="flex-1 border-t border-border" />
+                          <span className="mx-3 text-xs text-muted-foreground">or select manually</span>
+                          <div className="flex-1 border-t border-border" />
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-sm font-medium">Country</label>
+                          <Select
+                            value={selectedCountry}
+                            onValueChange={(val) => { setSelectedCountry(val); setSelectedCity(""); setSelectedLocation("") }}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
+                            <SelectContent>
+                              {countries.map((country) => (
+                                <SelectItem key={country} value={country}>{country}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {selectedCountry && (
+                          <div>
+                            <label className="mb-2 block text-sm font-medium">City</label>
+                            <Select
+                              value={selectedCity}
+                              onValueChange={(val) => { setSelectedCity(val); setSelectedLocation("") }}
+                            >
+                              <SelectTrigger><SelectValue placeholder="Select city" /></SelectTrigger>
+                              <SelectContent>
+                                {cities.map((city) => (
+                                  <SelectItem key={city} value={city}>{city}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        {selectedCity && (
+                          <div>
+                            <label className="mb-2 block text-sm font-medium">Market</label>
+                            <Select value={selectedLocation} onValueChange={setSelectedLocation}>
+                              <SelectTrigger><SelectValue placeholder="Select market" /></SelectTrigger>
+                              <SelectContent>
+                                {markets.map((market) => (
+                                  <SelectItem key={market.id} value={market.id}>{market.market_name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <Button onClick={handleLocationSelect} disabled={!selectedLocation} className="w-full">
+                          Apply Filter
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
 
-                  {selectedCity && (
-                    <div>
-                      <label className="mb-2 block text-sm font-medium">Market</label>
-                      <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select market" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {markets.map((market) => (
-                            <SelectItem key={market.id} value={market.id}>
-                              {market.market_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
+                  {/* Filters */}
+                  <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
+                    <DialogTrigger asChild>
+                      <button className="w-full flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-sm font-medium hover:bg-muted transition-colors">
+                        <Filter className="h-4 w-4" />
+                        Filters
+                        {(selectedCategory || minPrice || maxPrice) && (
+                          <Badge variant="destructive" className="ml-auto h-5 px-1.5 text-[10px]">
+                            {[selectedCategory, minPrice, maxPrice].filter(Boolean).length}
+                          </Badge>
+                        )}
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Filter Products</DialogTitle>
+                        <DialogDescription>Refine your search with these filters</DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-4">
+                        <div>
+                          <Label className="mb-2">Category</Label>
+                          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="All categories" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All categories</SelectItem>
+                              {PRODUCT_CATEGORIES.map((category) => (
+                                <SelectItem key={category} value={category}>{category}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-3">
+                          <Label>Price Range (USD)</Label>
+                          <div className="flex gap-2">
+                            <Input type="number" placeholder="Min" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} min="0" step="0.01" />
+                            <Input type="number" placeholder="Max" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} min="0" step="0.01" />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          <Button onClick={() => setFilterDialogOpen(false)} className="flex-1">Apply Filters</Button>
+                          <Button variant="outline" onClick={() => { setSelectedCategory(""); setMinPrice(""); setMaxPrice("") }} className="flex-1">Clear</Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
 
-                  <Button onClick={handleLocationSelect} disabled={!selectedLocation} className="w-full">
-                    Apply Filter
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="gap-2 bg-transparent relative">
-                  <Filter className="h-4 w-4" />
-                  Filters
                   {activeFiltersCount > 0 && (
-                    <Badge variant="destructive" className="absolute -right-2 -top-2 h-5 w-5 rounded-full p-0 text-xs">
-                      {activeFiltersCount}
-                    </Badge>
+                    <>
+                      <DropdownMenuSeparator className="-mx-1" />
+                      <button
+                        onClick={clearAllFilters}
+                        className="w-full text-xs text-destructive hover:underline text-center"
+                      >
+                        Clear all filters
+                      </button>
+                    </>
                   )}
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Filter Products</DialogTitle>
-                  <DialogDescription>Refine your search with these filters</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 pt-4">
-                  {/* Category Filter */}
-                  <div>
-                    <Label className="mb-2">Category</Label>
-                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="All categories" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All categories</SelectItem>
-                        {PRODUCT_CATEGORIES.map((category) => (
-                          <SelectItem key={category} value={category}>
-                            {category}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Price Range */}
-                  <div className="space-y-3">
-                    <Label>Price Range (USD)</Label>
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <Input
-                          type="number"
-                          placeholder="Min"
-                          value={minPrice}
-                          onChange={(e) => setMinPrice(e.target.value)}
-                          min="0"
-                          step="0.01"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <Input
-                          type="number"
-                          placeholder="Max"
-                          value={maxPrice}
-                          onChange={(e) => setMaxPrice(e.target.value)}
-                          min="0"
-                          step="0.01"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 pt-2">
-                    <Button onClick={() => setFilterDialogOpen(false)} className="flex-1">
-                      Apply Filters
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setSelectedCategory("")
-                        setMinPrice("")
-                        setMaxPrice("")
-                      }}
-                      className="flex-1"
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
+
+          {/* Status Row */}
+          <StatusRow
+            currentVendorId={currentVendor?.id ?? null}
+            currentVendorName={currentVendor?.shop_name ?? null}
+            currentVendorIsVerified={currentVendor?.is_verified ?? false}
+            currentVendorProfilePic={currentVendor?.profile_picture_url ?? null}
+          />
 
           {/* Active Filters */}
           {activeFiltersCount > 0 && (
@@ -659,6 +663,7 @@ export default function BrowseProductsClient({
           )}
 
           {/* Products Grid */}
+          <h2 className="mb-3 font-serif text-2xl italic text-primary">Explore</h2>
           {filteredProducts.length === 0 ? (
             <div className="flex min-h-[400px] items-center justify-center">
               <div className="text-center">
