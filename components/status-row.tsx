@@ -141,7 +141,7 @@ export default function StatusRow({
 
       if (mediaType !== "text" && file) {
         const ext = file.name.split(".").pop()
-        const path = `statuses/${currentVendorId}/${Date.now()}.${ext}`
+        const path = `${currentVendorId}/statuses/${Date.now()}.${ext}`
         const { error: upErr } = await supabase.storage
           .from("product-images")
           .upload(path, file, { upsert: true })
