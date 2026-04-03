@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle } from "lucide-react"
+import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil } from "lucide-react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -66,6 +66,14 @@ export default function StatusRow({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const progressRef = useRef<NodeJS.Timeout | null>(null)
   const [storyProgress, setStoryProgress] = useState(0)
+
+  // Edit caption state
+  const [editCaptionOpen, setEditCaptionOpen] = useState(false)
+  const [editCaptionValue, setEditCaptionValue] = useState("")
+  const [editTextValue, setEditTextValue] = useState("")
+  const [editSaving, setEditSaving] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // Background upload indicator
   const [bgUpload, setBgUpload] = useState<BackgroundUpload | null>(null)
@@ -133,7 +141,7 @@ export default function StatusRow({
 
       if (mediaType !== "text" && file) {
         const ext = file.name.split(".").pop()
-        const path = `statuses/${currentVendorId}/${Date.now()}.${ext}`
+        const path = `${currentVendorId}/statuses/${Date.now()}.${ext}`
         const { error: upErr } = await supabase.storage
           .from("product-images")
           .upload(path, file, { upsert: true })
@@ -189,6 +197,53 @@ export default function StatusRow({
   async function incrementViewCount(statusId: string) {
     const supabase = createBrowserClient()
     await supabase.rpc("increment_status_view_count", { status_id: statusId })
+  }
+
+  async function handleDeleteStatus() {
+    if (!current) return
+    setDeleting(true)
+    const supabase = createBrowserClient()
+    await supabase.from("shop_statuses").delete().eq("id", current.id)
+    setDeleting(false)
+    setDeleteConfirmOpen(false)
+    // Remove deleted status from viewer
+    const updated = viewingStatuses.filter((s) => s.id !== current.id)
+    if (updated.length === 0) {
+      setViewOpen(false)
+    } else {
+      setViewingStatuses(updated)
+      setViewIndex((i) => Math.min(i, updated.length - 1))
+    }
+    fetchStatuses()
+  }
+
+  async function handleEditCaption() {
+    if (!current) return
+    setEditSaving(true)
+    const supabase = createBrowserClient()
+    const updates: Record<string, string | null> = {
+      caption: editCaptionValue.trim() || null,
+    }
+    if (current.media_type === "text") {
+      updates.text_content = editTextValue.trim() || null
+    }
+    const { error } = await supabase
+      .from("shop_statuses")
+      .update(updates)
+      .eq("id", current.id)
+    setEditSaving(false)
+    if (!error) {
+      setEditCaptionOpen(false)
+      // Update local state immediately
+      setViewingStatuses((prev) =>
+        prev.map((s) =>
+          s.id === current.id
+            ? { ...s, caption: updates.caption ?? null, text_content: updates.text_content !== undefined ? (updates.text_content ?? null) : s.text_content }
+            : s
+        )
+      )
+      fetchStatuses()
+    }
   }
 
   function startProgress() {
@@ -366,20 +421,59 @@ export default function StatusRow({
 
               {/* Vendor info */}
               <div className="absolute top-6 left-0 right-0 z-20 flex items-center gap-2 px-3 py-2">
-                <div className="h-8 w-8 rounded-full overflow-hidden bg-white/20 flex items-center justify-center">
+                <div className="h-8 w-8 rounded-full overflow-hidden bg-white/20 flex items-center justify-center shrink-0">
                   {current.vendor.profile_picture_url ? (
                     <img src={current.vendor.profile_picture_url} className="h-full w-full object-cover" alt="" />
                   ) : (
                     <span className="text-sm font-bold text-white">{current.vendor.shop_name[0]}</span>
                   )}
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-sm font-medium text-white">{current.vendor.shop_name}</span>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-sm font-medium text-white truncate">{current.vendor.shop_name}</span>
                   {current.vendor.is_verified && <VerificationBadge isVerified size="xs" showTooltip={false} />}
                 </div>
-                <button onClick={() => setViewOpen(false)} className="ml-auto text-white/80 hover:text-white">
-                  <X className="h-5 w-5" />
-                </button>
+                <div className="ml-auto flex items-center gap-2">
+                  {/* View count — only shown to status owner */}
+                  {current.vendor_id === currentVendorId && (
+                    <div className="flex items-center gap-1 bg-black/40 rounded-full px-2 py-0.5">
+                      <Eye className="h-3.5 w-3.5 text-white" />
+                      <span className="text-xs text-white font-medium">{current.view_count ?? 0}</span>
+                    </div>
+                  )}
+                  {/* Edit button — owner only */}
+                  {current.vendor_id === currentVendorId && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (progressRef.current) clearInterval(progressRef.current)
+                        setEditCaptionValue(current.caption ?? "")
+                        setEditTextValue(current.text_content ?? "")
+                        setEditCaptionOpen(true)
+                      }}
+                      className="p-1.5 rounded-full bg-black/40 text-white/90 hover:text-white hover:bg-black/60 transition-colors"
+                      aria-label="Edit status"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {/* Delete button — owner only */}
+                  {current.vendor_id === currentVendorId && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (progressRef.current) clearInterval(progressRef.current)
+                        setDeleteConfirmOpen(true)
+                      }}
+                      className="p-1.5 rounded-full bg-black/40 text-white/90 hover:text-red-400 hover:bg-black/60 transition-colors"
+                      aria-label="Delete status"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <button onClick={() => setViewOpen(false)} className="p-1.5 text-white/80 hover:text-white">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Content */}
@@ -401,14 +495,6 @@ export default function StatusRow({
               {current.caption && (
                 <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/70 px-4 py-3">
                   <p className="text-sm text-white">{current.caption}</p>
-                </div>
-              )}
-
-              {/* View count — only shown to the status owner */}
-              {current.vendor_id === currentVendorId && (
-                <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1 bg-black/50 rounded-full px-2 py-1">
-                  <Eye className="h-3.5 w-3.5 text-white" />
-                  <span className="text-xs text-white font-medium">{current.view_count ?? 0}</span>
                 </div>
               )}
 
@@ -468,6 +554,64 @@ export default function StatusRow({
             >
               Cancel
             </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Caption / Text Dialog */}
+      <Dialog open={editCaptionOpen} onOpenChange={(o) => { setEditCaptionOpen(o); if (!o && viewOpen) startProgress() }}>
+        <DialogContent className="max-w-xs">
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold">Edit Status</h3>
+            {viewingStatuses[viewIndex]?.media_type === "text" && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Text content</label>
+                <Textarea
+                  value={editTextValue}
+                  onChange={(e) => setEditTextValue(e.target.value)}
+                  rows={3}
+                  maxLength={280}
+                  placeholder="Status text..."
+                />
+              </div>
+            )}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Caption</label>
+              <input
+                type="text"
+                value={editCaptionValue}
+                onChange={(e) => setEditCaptionValue(e.target.value)}
+                maxLength={120}
+                placeholder="Add a caption..."
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setEditCaptionOpen(false)} disabled={editSaving}>
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={handleEditCaption} disabled={editSaving}>
+                {editSaving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirm Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={(o) => { setDeleteConfirmOpen(o); if (!o && viewOpen) startProgress() }}>
+        <DialogContent className="max-w-xs">
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold">Delete Status</h3>
+            <p className="text-sm text-muted-foreground">This status will be permanently deleted and cannot be recovered.</p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button variant="destructive" className="flex-1" onClick={handleDeleteStatus} disabled={deleting}>
+                {deleting ? "Deleting..." : "Delete"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
