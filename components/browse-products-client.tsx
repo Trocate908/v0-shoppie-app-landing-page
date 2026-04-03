@@ -585,12 +585,17 @@ export default function BrowseProductsClient({
           </div>
 
           {/* Status Row */}
-          <StatusRow
-            currentVendorId={currentVendor?.id ?? null}
-            currentVendorName={currentVendor?.shop_name ?? null}
-            currentVendorIsVerified={currentVendor?.is_verified ?? false}
-            currentVendorProfilePic={currentVendor?.profile_picture_url ?? null}
-          />
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Shop Updates
+            </p>
+            <StatusRow
+              currentVendorId={currentVendor?.id ?? null}
+              currentVendorName={currentVendor?.shop_name ?? null}
+              currentVendorIsVerified={currentVendor?.is_verified ?? false}
+              currentVendorProfilePic={currentVendor?.profile_picture_url ?? null}
+            />
+          </div>
 
           {/* Active Filters */}
           {activeFiltersCount > 0 && (
