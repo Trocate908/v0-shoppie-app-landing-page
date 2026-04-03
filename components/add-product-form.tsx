@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast"
 import { ImageCropperDialog } from "@/components/image-cropper-dialog"
 import { PexelsImagePickerDialog } from "@/components/pexels-image-picker-dialog"
 import { CameraDialog } from "@/components/camera-dialog"
+import { PRODUCT_CATEGORIES } from "@/lib/constants"
 
 type AddProductFormProps = {
   vendorId: string
@@ -26,20 +27,6 @@ type AddProductFormProps = {
   isVerified: boolean
   hasWhatsapp: boolean
 }
-
-const PRODUCT_CATEGORIES = [
-  "Electronics",
-  "Fashion",
-  "Food & Beverages",
-  "Home & Garden",
-  "Health & Beauty",
-  "Sports & Outdoors",
-  "Toys & Games",
-  "Books & Media",
-  "Automotive",
-  "Services",
-  "Other",
-]
 
 export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: AddProductFormProps) {
   const router = useRouter()
