@@ -24,7 +24,6 @@ const _dancingScript = Dancing_Script({
   display: "swap",
   variable: "--font-dancing",
 })
-})
 
 const BASE_URL = "https://shoppieapp.co.zw"
 
