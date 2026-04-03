@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { Eye, Package, LogOut, Plus, Settings, Trash2, ArrowLeft, Moon, Sun, User } from "lucide-react"
+import { Eye, Package, LogOut, Plus, Settings, Trash2, ArrowLeft, Moon, Sun, User, Radio } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
 import {
@@ -28,6 +28,7 @@ import { VerificationBadge } from "@/components/verification-badge"
 import ShopShareButton from "@/components/shop-share-button"
 import { AccountSwitcherSheet } from "@/components/account-switcher-sheet"
 import { saveAccount, updateAccountTokens, setActiveAccountId } from "@/lib/account-switcher"
+import StatusRow from "@/components/status-row"
 
 type VendorData = {
   id: string
@@ -282,6 +283,25 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount,
 
               return null
             })()}
+
+          {/* Shop Status Updates Row */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Radio className="h-4 w-4 text-primary" />
+                <CardTitle className="text-base">Shop Updates</CardTitle>
+              </div>
+              <CardDescription>Post photo, video, or text updates visible to customers for 24 hours. Tap your avatar to post.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <StatusRow
+                currentVendorId={vendor.id}
+                currentVendorName={vendor.shop_name}
+                currentVendorIsVerified={vendor.is_verified ?? false}
+                currentVendorProfilePic={vendor.profile_picture_url ?? null}
+              />
+            </CardContent>
+          </Card>
 
           {/* Shop Status Card */}
           <Card>
