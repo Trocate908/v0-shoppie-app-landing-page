@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle } from "lucide-react"
+import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle } from "lucide-react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,7 @@ interface VendorStatus {
   caption: string | null
   created_at: string
   expires_at: string
+  view_count: number
   vendor: {
     id: string
     shop_name: string
@@ -53,6 +54,7 @@ export default function StatusRow({
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [viewOpen, setViewOpen] = useState(false)
+  const [myActionOpen, setMyActionOpen] = useState(false)
   const [viewingStatuses, setViewingStatuses] = useState<VendorStatus[]>([])
   const [viewIndex, setViewIndex] = useState(0)
   const [uploadType, setUploadType] = useState<"image" | "video" | "text" | null>(null)
@@ -178,6 +180,15 @@ export default function StatusRow({
     setViewIndex(0)
     setViewOpen(true)
     startProgress()
+    // Increment view count for first status if it belongs to another vendor
+    if (group[0].vendor_id !== currentVendorId) {
+      incrementViewCount(group[0].id)
+    }
+  }
+
+  async function incrementViewCount(statusId: string) {
+    const supabase = createBrowserClient()
+    await supabase.rpc("increment_status_view_count", { status_id: statusId })
   }
 
   function startProgress() {
@@ -194,7 +205,15 @@ export default function StatusRow({
   useEffect(() => {
     if (storyProgress >= 100) {
       setViewIndex((i) => {
-        if (i < viewingStatuses.length - 1) { startProgress(); return i + 1 }
+        if (i < viewingStatuses.length - 1) {
+          const nextIndex = i + 1
+          // Increment view on the next status if it belongs to another vendor
+          if (viewingStatuses[nextIndex]?.vendor_id !== currentVendorId) {
+            incrementViewCount(viewingStatuses[nextIndex].id)
+          }
+          startProgress()
+          return nextIndex
+        }
         setViewOpen(false)
         return i
       })
@@ -228,7 +247,7 @@ export default function StatusRow({
           {/* My Store avatar */}
           {currentVendorId && (
             <button
-              onClick={() => myStatuses.length > 0 ? openViewer(myStatuses) : setCreateOpen(true)}
+              onClick={() => myStatuses.length > 0 ? setMyActionOpen(true) : setCreateOpen(true)}
               className="flex flex-col items-center gap-1 shrink-0"
             >
               <div className="relative">
@@ -385,6 +404,14 @@ export default function StatusRow({
                 </div>
               )}
 
+              {/* View count — only shown to the status owner */}
+              {current.vendor_id === currentVendorId && (
+                <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1 bg-black/50 rounded-full px-2 py-1">
+                  <Eye className="h-3.5 w-3.5 text-white" />
+                  <span className="text-xs text-white font-medium">{current.view_count ?? 0}</span>
+                </div>
+              )}
+
               {/* Tap zones */}
               <button
                 className="absolute left-0 top-0 h-full w-1/3 z-10"
@@ -393,12 +420,55 @@ export default function StatusRow({
               <button
                 className="absolute right-0 top-0 h-full w-1/3 z-10"
                 onClick={() => {
-                  if (viewIndex < viewingStatuses.length - 1) { setViewIndex(v => v + 1); startProgress() }
-                  else setViewOpen(false)
+                  if (viewIndex < viewingStatuses.length - 1) {
+                    const next = viewIndex + 1
+                    if (viewingStatuses[next]?.vendor_id !== currentVendorId) {
+                      incrementViewCount(viewingStatuses[next].id)
+                    }
+                    setViewIndex(next)
+                    startProgress()
+                  } else {
+                    setViewOpen(false)
+                  }
                 }}
               />
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* My Store Action Sheet */}
+      <Dialog open={myActionOpen} onOpenChange={setMyActionOpen}>
+        <DialogContent className="max-w-xs p-0 overflow-hidden rounded-2xl">
+          <div className="p-5 space-y-1">
+            <h3 className="text-sm font-semibold text-center mb-4">Shop Updates</h3>
+            <button
+              onClick={() => { setMyActionOpen(false); openViewer(myStatuses) }}
+              className="flex items-center gap-3 w-full rounded-xl px-4 py-3 hover:bg-muted transition-colors text-left"
+            >
+              <Eye className="h-5 w-5 text-primary shrink-0" />
+              <div>
+                <p className="text-sm font-medium">View my status</p>
+                <p className="text-xs text-muted-foreground">{myStatuses.length} update{myStatuses.length !== 1 ? "s" : ""} active</p>
+              </div>
+            </button>
+            <button
+              onClick={() => { setMyActionOpen(false); setCreateOpen(true) }}
+              className="flex items-center gap-3 w-full rounded-xl px-4 py-3 hover:bg-muted transition-colors text-left"
+            >
+              <PlusCircle className="h-5 w-5 text-primary shrink-0" />
+              <div>
+                <p className="text-sm font-medium">Add a status</p>
+                <p className="text-xs text-muted-foreground">Photo, video, or text — visible for 24 hrs</p>
+              </div>
+            </button>
+            <button
+              onClick={() => setMyActionOpen(false)}
+              className="w-full text-center text-sm text-muted-foreground py-2 mt-1 hover:text-foreground transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
 
