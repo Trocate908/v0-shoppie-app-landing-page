@@ -25,16 +25,15 @@ export async function POST() {
     }
 
     // Step 2: Extract storage paths from media_urls (only image/video — text has no file)
+    // Files are stored in the "product-images" bucket under {vendorId}/statuses/{filename}
+    // Full URL: https://<project>.supabase.co/storage/v1/object/public/product-images/{vendorId}/statuses/{filename}
     const storagePaths: string[] = expired
       .filter((s) => s.media_type !== "text" && s.media_url)
       .map((s) => {
-        // media_url is a full public URL like:
-        // https://<project>.supabase.co/storage/v1/object/public/statuses/<path>
-        // We need just the path after the bucket name: <path>
         try {
           const url = new URL(s.media_url)
-          // pathname: /storage/v1/object/public/statuses/<path...>
-          const parts = url.pathname.split("/statuses/")
+          // pathname: /storage/v1/object/public/product-images/<path...>
+          const parts = url.pathname.split("/product-images/")
           return parts.length > 1 ? decodeURIComponent(parts[1]) : null
         } catch {
           return null
@@ -46,7 +45,7 @@ export async function POST() {
     let storageDeletedCount = 0
     if (storagePaths.length > 0) {
       const { data: storageResult, error: storageError } = await serviceClient.storage
-        .from("statuses")
+        .from("product-images")
         .remove(storagePaths)
 
       if (storageError) {
