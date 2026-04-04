@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
-import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil, Crop, RotateCcw, Check } from "lucide-react"
+import { useState, useRef, useEffect } from "react"
+import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil } from "lucide-react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -543,12 +543,6 @@ export default function StatusRow({
   // Viewer state
   const progressRef = useRef<NodeJS.Timeout | null>(null)
   const [storyProgress, setStoryProgress] = useState(0)
-  const [paused, setPaused] = useState(false)
-  const pausedRef = useRef(false)
-  const [mediaLoading, setMediaLoading] = useState(false)
-  // For video-driven advancement
-  const isVideoRef = useRef(false)
-  const videoRef = useRef<HTMLVideoElement | null>(null)
 
   // Edit / delete state
   const [editCaptionOpen, setEditCaptionOpen] = useState(false)
@@ -700,13 +694,8 @@ export default function StatusRow({
     setViewingStatuses(group)
     setViewIndex(0)
     setViewOpen(true)
-    setMediaLoading(true)
-    setPaused(false)
-    pausedRef.current = false
-    const isVid = group[0]?.media_type === "video"
-    isVideoRef.current = isVid
-    if (!isVid) startProgress()
-    else { setStoryProgress(0); if (progressRef.current) clearInterval(progressRef.current) }
+    startProgress()
+    // Increment view count for first status if it belongs to another vendor
     if (group[0].vendor_id !== currentVendorId) {
       incrementViewCount(group[0].id)
     }
@@ -766,7 +755,6 @@ export default function StatusRow({
     setStoryProgress(0)
     if (progressRef.current) clearInterval(progressRef.current)
     progressRef.current = setInterval(() => {
-      if (pausedRef.current) return
       setStoryProgress((p) => {
         if (p >= 100) { clearInterval(progressRef.current!); return 100 }
         return p + 2
@@ -774,24 +762,21 @@ export default function StatusRow({
     }, 100)
   }
 
-  const handlePauseStart = useCallback(() => {
-    pausedRef.current = true
-    setPaused(true)
-    // Pause video element if present
-    if (videoRef.current) videoRef.current.pause()
-  }, [])
-
-  const handlePauseEnd = useCallback(() => {
-    pausedRef.current = false
-    setPaused(false)
-    // Resume video if present
-    if (videoRef.current) videoRef.current.play().catch(() => {})
-  }, [])
-
-  // Advance on progress completion (for image/text statuses)
   useEffect(() => {
-    if (storyProgress >= 100 && !isVideoRef.current) {
-      advanceTo(viewIndex + 1)
+    if (storyProgress >= 100) {
+      setViewIndex((i) => {
+        if (i < viewingStatuses.length - 1) {
+          const nextIndex = i + 1
+          // Increment view on the next status if it belongs to another vendor
+          if (viewingStatuses[nextIndex]?.vendor_id !== currentVendorId) {
+            incrementViewCount(viewingStatuses[nextIndex].id)
+          }
+          startProgress()
+          return nextIndex
+        }
+        setViewOpen(false)
+        return i
+      })
     }
   }, [storyProgress])
 
@@ -942,25 +927,11 @@ export default function StatusRow({
         </div>
       )}
 
-      {/* ── Status Viewer ─────────────────────────────────────────── */}
-      <Dialog
-        open={viewOpen}
-        onOpenChange={(o) => {
-          setViewOpen(o)
-          setPaused(false)
-          pausedRef.current = false
-          if (!o && progressRef.current) clearInterval(progressRef.current)
-        }}
-      >
+      {/* Status Viewer Dialog */}
+      <Dialog open={viewOpen} onOpenChange={(o) => { setViewOpen(o); if (!o && progressRef.current) clearInterval(progressRef.current) }}>
         <DialogContent className="max-w-sm p-0 overflow-hidden rounded-2xl bg-black border-0">
           {current && (
-            <div
-              className="relative flex flex-col h-[72vh] select-none"
-              onPointerDown={handlePauseStart}
-              onPointerUp={handlePauseEnd}
-              onPointerLeave={handlePauseEnd}
-              onContextMenu={(e) => e.preventDefault()}
-            >
+            <div className="relative flex flex-col h-[70vh]">
               {/* Progress bars */}
               <div className="absolute top-0 left-0 right-0 z-20 flex gap-1 p-2 pt-2.5">
                 {viewingStatuses.map((s, i) => (
@@ -1000,7 +971,6 @@ export default function StatusRow({
                   )}
                   {current.vendor_id === currentVendorId && (
                     <button
-                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (progressRef.current) clearInterval(progressRef.current)
@@ -1016,7 +986,6 @@ export default function StatusRow({
                   )}
                   {current.vendor_id === currentVendorId && (
                     <button
-                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (progressRef.current) clearInterval(progressRef.current)
@@ -1028,88 +997,25 @@ export default function StatusRow({
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
-                  <button
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={() => setViewOpen(false)}
-                    className="p-1.5 text-white/80 hover:text-white"
-                  >
+                  <button onClick={() => setViewOpen(false)} className="p-1.5 text-white/80 hover:text-white">
                     <X className="h-5 w-5" />
                   </button>
                 </div>
               </div>
 
-              {/* Media area */}
-              <div className="flex-1 flex items-center justify-center relative bg-black overflow-hidden">
-
-                {/* Circle loading spinner */}
-                {mediaLoading && current.media_type !== "text" && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-black">
-                    <svg className="h-14 w-14 animate-spin" viewBox="0 0 56 56" fill="none">
-                      <circle cx="28" cy="28" r="23" stroke="rgba(255,255,255,0.15)" strokeWidth="4" />
-                      <circle
-                        cx="28" cy="28" r="23"
-                        stroke="white"
-                        strokeWidth="4"
-                        strokeLinecap="round"
-                        strokeDasharray="36 108"
-                        strokeDashoffset="0"
-                      />
-                    </svg>
-                  </div>
-                )}
-
+              {/* Content */}
+              <div className="flex-1 flex items-center justify-center">
                 {current.media_type === "image" && (
-                  <img
-                    src={current.media_url}
-                    alt={current.caption ?? "Status image"}
-                    className="w-full h-full object-contain"
-                    style={{ maxHeight: "calc(72vh - 100px)" }}
-                    onLoad={() => setMediaLoading(false)}
-                    onError={() => setMediaLoading(false)}
-                  />
+                  <img src={current.media_url} alt={current.caption ?? ""} className="w-full h-full object-cover" />
                 )}
 
                 {current.media_type === "video" && (
-                  <video
-                    key={current.id}
-                    ref={videoRef}
-                    src={current.media_url}
-                    autoPlay
-                    muted
-                    playsInline
-                    className="w-full h-full object-contain"
-                    style={{ maxHeight: "calc(72vh - 100px)" }}
-                    onCanPlay={() => {
-                      setMediaLoading(false)
-                      // Reset storyProgress to 0; we'll drive it from timeupdate
-                      setStoryProgress(0)
-                    }}
-                    onTimeUpdate={(e) => {
-                      const vid = e.currentTarget
-                      if (vid.duration && !pausedRef.current) {
-                        setStoryProgress(Math.round((vid.currentTime / vid.duration) * 100))
-                      }
-                    }}
-                    onEnded={handleVideoEnded}
-                    onError={() => setMediaLoading(false)}
-                  />
+                  <video src={current.media_url} autoPlay muted loop className="w-full h-full object-cover" />
                 )}
 
                 {current.media_type === "text" && (
                   <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-primary/80 to-primary p-6">
                     <p className="text-center text-xl font-semibold text-white leading-relaxed">{current.text_content}</p>
-                  </div>
-                )}
-
-                {/* Paused overlay */}
-                {paused && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-                    <div className="bg-black/50 rounded-full p-4">
-                      <svg className="h-9 w-9 text-white" viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="6" y="4" width="4" height="16" rx="1.5" />
-                        <rect x="14" y="4" width="4" height="16" rx="1.5" />
-                      </svg>
-                    </div>
                   </div>
                 )}
               </div>
@@ -1125,15 +1031,20 @@ export default function StatusRow({
               <button
                 aria-label="Previous"
                 className="absolute left-0 top-0 h-full w-1/3 z-10"
-                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => { if (viewIndex > 0) { setViewIndex(v => v - 1); startProgress() } }}
+              />
+              <button
+                className="absolute right-0 top-0 h-full w-1/3 z-10"
                 onClick={() => {
-                  if (viewIndex > 0) {
-                    setViewIndex(viewIndex - 1)
-                    setMediaLoading(true)
-                    const isVid = viewingStatuses[viewIndex - 1]?.media_type === "video"
-                    isVideoRef.current = isVid
-                    if (!isVid) startProgress()
-                    else { setStoryProgress(0); if (progressRef.current) clearInterval(progressRef.current) }
+                  if (viewIndex < viewingStatuses.length - 1) {
+                    const next = viewIndex + 1
+                    if (viewingStatuses[next]?.vendor_id !== currentVendorId) {
+                      incrementViewCount(viewingStatuses[next].id)
+                    }
+                    setViewIndex(next)
+                    startProgress()
+                  } else {
+                    setViewOpen(false)
                   }
                 }}
               />
