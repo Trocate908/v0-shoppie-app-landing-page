@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil } from "lucide-react"
+import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil, Volume2, VolumeX } from "lucide-react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { VerificationBadge } from "@/components/verification-badge"
+import { VideoTrimmer } from "@/components/video-trimmer"
 
 interface VendorStatus {
   id: string
@@ -18,6 +19,7 @@ interface VendorStatus {
   created_at: string
   expires_at: string
   view_count: number
+  video_duration_seconds?: number | null
   vendor: {
     id: string
     shop_name: string
@@ -542,7 +544,12 @@ export default function StatusRow({
 
   // Viewer state
   const progressRef = useRef<NodeJS.Timeout | null>(null)
+  const videoViewerRef = useRef<HTMLVideoElement>(null)
+  const [isMuted, setIsMuted] = useState(false)
   const [storyProgress, setStoryProgress] = useState(0)
+  const [isPaused, setIsPaused] = useState(false)
+  const isPausedRef = useRef(false)
+  const [mediaLoaded, setMediaLoaded] = useState(false)
 
   // Edit / delete state
   const [editCaptionOpen, setEditCaptionOpen] = useState(false)
@@ -646,6 +653,9 @@ export default function StatusRow({
         media_type: mediaType,
         text_content: mediaType === "text" ? text : null,
         caption: cap || null,
+        ...(mediaType === "video" && videoDurationSeconds !== null
+          ? { video_duration_seconds: videoDurationSeconds }
+          : {}),
       })
       if (insertErr) throw insertErr
 
@@ -694,7 +704,7 @@ export default function StatusRow({
     setViewingStatuses(group)
     setViewIndex(0)
     setViewOpen(true)
-    startProgress()
+    startProgressForStatus(group[0])
     // Increment view count for first status if it belongs to another vendor
     if (group[0].vendor_id !== currentVendorId) {
       incrementViewCount(group[0].id)
@@ -751,15 +761,41 @@ export default function StatusRow({
     }
   }
 
-  function startProgress() {
+  function startProgress(durationMs: number = 5000) {
     setStoryProgress(0)
+    setMediaLoaded(false)
     if (progressRef.current) clearInterval(progressRef.current)
+    const step = (100 / durationMs) * 100 // percent per 100ms tick
     progressRef.current = setInterval(() => {
+      if (isPausedRef.current) return
       setStoryProgress((p) => {
         if (p >= 100) { clearInterval(progressRef.current!); return 100 }
-        return p + 2
+        return Math.min(p + step, 100)
       })
     }, 100)
+  }
+
+  function startProgressForStatus(status: VendorStatus) {
+    // Use actual video duration if known, else 5s for image/text
+    const dur =
+      status.media_type === "video"
+        ? (status.video_duration_seconds ?? MAX_VIDEO_DURATION) * 1000
+        : 5000
+    startProgress(dur)
+  }
+
+  function pauseProgress() {
+    isPausedRef.current = true
+    setIsPaused(true)
+    videoViewerRef.current?.pause()
+  }
+
+  function resumeProgress() {
+    isPausedRef.current = false
+    setIsPaused(false)
+    if (videoViewerRef.current && mediaLoaded) {
+      videoViewerRef.current.play().catch(() => {})
+    }
   }
 
   useEffect(() => {
@@ -767,11 +803,10 @@ export default function StatusRow({
       setViewIndex((i) => {
         if (i < viewingStatuses.length - 1) {
           const nextIndex = i + 1
-          // Increment view on the next status if it belongs to another vendor
           if (viewingStatuses[nextIndex]?.vendor_id !== currentVendorId) {
             incrementViewCount(viewingStatuses[nextIndex].id)
           }
-          startProgress()
+          startProgressForStatus(viewingStatuses[nextIndex])
           return nextIndex
         }
         setViewOpen(false)
@@ -803,6 +838,10 @@ export default function StatusRow({
     if (paused) videoRef.current.pause()
     else videoRef.current.play().catch(() => {})
   }, [paused])
+
+  useEffect(() => {
+    setMediaLoaded(false)
+  }, [viewIndex, current?.id])
 
   useEffect(() => {
     return () => {
@@ -931,7 +970,12 @@ export default function StatusRow({
       <Dialog open={viewOpen} onOpenChange={(o) => { setViewOpen(o); if (!o && progressRef.current) clearInterval(progressRef.current) }}>
         <DialogContent className="max-w-sm p-0 overflow-hidden rounded-2xl bg-black border-0">
           {current && (
-            <div className="relative flex flex-col h-[70vh]">
+            <div
+              className="relative flex flex-col h-[78vh] select-none"
+              onPointerDown={() => pauseProgress()}
+              onPointerUp={() => resumeProgress()}
+              onPointerLeave={() => resumeProgress()}
+            >
               {/* Progress bars */}
               <div className="absolute top-0 left-0 right-0 z-20 flex gap-1 p-2 pt-2.5">
                 {viewingStatuses.map((s, i) => (
@@ -971,6 +1015,7 @@ export default function StatusRow({
                   )}
                   {current.vendor_id === currentVendorId && (
                     <button
+                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (progressRef.current) clearInterval(progressRef.current)
@@ -986,6 +1031,7 @@ export default function StatusRow({
                   )}
                   {current.vendor_id === currentVendorId && (
                     <button
+                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (progressRef.current) clearInterval(progressRef.current)
@@ -997,20 +1043,64 @@ export default function StatusRow({
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
-                  <button onClick={() => setViewOpen(false)} className="p-1.5 text-white/80 hover:text-white">
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => setViewOpen(false)}
+                    className="p-1.5 text-white/80 hover:text-white"
+                  >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
               </div>
 
-              {/* Content */}
-              <div className="flex-1 flex items-center justify-center">
+              {/* Media content */}
+              <div className="flex-1 flex items-center justify-center overflow-hidden bg-black relative">
+
+                {/* Circle loading spinner — shown while media loads */}
+                {!mediaLoaded && current.media_type !== "text" && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-black">
+                    <svg className="h-14 w-14 -rotate-90" viewBox="0 0 56 56">
+                      {/* Track */}
+                      <circle cx="28" cy="28" r="22" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="3" />
+                      {/* Spinner arc */}
+                      <circle
+                        cx="28" cy="28" r="22"
+                        fill="none"
+                        stroke="white"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeDasharray="138.2"
+                        strokeDashoffset="103.7"
+                        className="origin-center animate-spin"
+                        style={{ animationDuration: "900ms" }}
+                      />
+                    </svg>
+                  </div>
+                )}
+
                 {current.media_type === "image" && (
-                  <img src={current.media_url} alt={current.caption ?? ""} className="w-full h-full object-cover" />
+                  <img
+                    key={current.id}
+                    src={current.media_url}
+                    alt={current.caption ?? ""}
+                    className={`max-w-full max-h-full object-contain transition-opacity duration-300 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
+                    onLoad={() => setMediaLoaded(true)}
+                    draggable={false}
+                  />
                 )}
 
                 {current.media_type === "video" && (
-                  <video src={current.media_url} autoPlay muted loop className="w-full h-full object-cover" />
+                  <video
+                    key={current.id}
+                    ref={videoViewerRef}
+                    src={current.media_url}
+                    autoPlay
+                    muted={isMuted}
+                    playsInline
+                    className={`max-w-full max-h-full object-contain transition-opacity duration-300 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
+                    onCanPlay={() => setMediaLoaded(true)}
+                    draggable={false}
+                  />
                 )}
 
                 {current.media_type === "text" && (
@@ -1031,10 +1121,17 @@ export default function StatusRow({
               <button
                 aria-label="Previous"
                 className="absolute left-0 top-0 h-full w-1/3 z-10"
-                onClick={() => { if (viewIndex > 0) { setViewIndex(v => v - 1); startProgress() } }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => {
+                  if (viewIndex > 0) {
+                    setViewIndex(v => v - 1)
+                    startProgressForStatus(viewingStatuses[viewIndex - 1])
+                  }
+                }}
               />
               <button
                 className="absolute right-0 top-0 h-full w-1/3 z-10"
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => {
                   if (viewIndex < viewingStatuses.length - 1) {
                     const next = viewIndex + 1
@@ -1042,7 +1139,7 @@ export default function StatusRow({
                       incrementViewCount(viewingStatuses[next].id)
                     }
                     setViewIndex(next)
-                    startProgress()
+                    startProgressForStatus(viewingStatuses[next])
                   } else {
                     setViewOpen(false)
                   }
