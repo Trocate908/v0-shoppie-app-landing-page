@@ -301,6 +301,7 @@ export default function StatusRow({
   const [trimMode, setTrimMode] = useState(false)
   const [trimmedVideoBlob, setTrimmedVideoBlob] = useState<Blob | null>(null)
   const [trimmedVideoUrl, setTrimmedVideoUrl] = useState<string | null>(null)
+  const [videoDurationSeconds, setVideoDurationSeconds] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Viewer state
@@ -359,6 +360,7 @@ export default function StatusRow({
     setTrimMode(false)
     setTrimmedVideoBlob(null)
     setTrimmedVideoUrl(null)
+    setVideoDurationSeconds(null)
     setError(null)
   }
 
@@ -1043,12 +1045,14 @@ export default function StatusRow({
             )}
 
             {/* Step 1b: trim (video only) */}
-            {uploadType === "video" && trimMode && previewUrl && (
+            {uploadType === "video" && trimMode && previewUrl && selectedFile && (
               <VideoTrimmer
-                src={previewUrl}
-                onConfirm={(blob, url) => {
-                  setTrimmedVideoBlob(blob)
+                file={selectedFile}
+                previewUrl={previewUrl}
+                onConfirm={(trimmedFile, url, start, end) => {
+                  setTrimmedVideoBlob(trimmedFile)
                   setTrimmedVideoUrl(url)
+                  setVideoDurationSeconds(Math.round(end - start))
                   setTrimMode(false)
                 }}
                 onCancel={() => setTrimMode(false)}
