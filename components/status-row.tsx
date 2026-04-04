@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil } from "lucide-react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
@@ -66,9 +66,6 @@ export default function StatusRow({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const progressRef = useRef<NodeJS.Timeout | null>(null)
   const [storyProgress, setStoryProgress] = useState(0)
-  const [paused, setPaused] = useState(false)
-  const [mediaLoading, setMediaLoading] = useState(false)
-  const pausedRef = useRef(false)
 
   // Edit caption state
   const [editCaptionOpen, setEditCaptionOpen] = useState(false)
@@ -190,9 +187,6 @@ export default function StatusRow({
     setViewingStatuses(group)
     setViewIndex(0)
     setViewOpen(true)
-    setMediaLoading(true)
-    setPaused(false)
-    pausedRef.current = false
     startProgress()
     // Increment view count for first status if it belongs to another vendor
     if (group[0].vendor_id !== currentVendorId) {
@@ -256,7 +250,6 @@ export default function StatusRow({
     setStoryProgress(0)
     if (progressRef.current) clearInterval(progressRef.current)
     progressRef.current = setInterval(() => {
-      if (pausedRef.current) return
       setStoryProgress((p) => {
         if (p >= 100) { clearInterval(progressRef.current!); return 100 }
         return p + 2
@@ -264,25 +257,15 @@ export default function StatusRow({
     }, 100)
   }
 
-  const handlePauseStart = useCallback(() => {
-    pausedRef.current = true
-    setPaused(true)
-  }, [])
-
-  const handlePauseEnd = useCallback(() => {
-    pausedRef.current = false
-    setPaused(false)
-  }, [])
-
   useEffect(() => {
     if (storyProgress >= 100) {
       setViewIndex((i) => {
         if (i < viewingStatuses.length - 1) {
           const nextIndex = i + 1
+          // Increment view on the next status if it belongs to another vendor
           if (viewingStatuses[nextIndex]?.vendor_id !== currentVendorId) {
             incrementViewCount(viewingStatuses[nextIndex].id)
           }
-          setMediaLoading(true)
           startProgress()
           return nextIndex
         }
@@ -420,16 +403,10 @@ export default function StatusRow({
       )}
 
       {/* Status Viewer Dialog */}
-      <Dialog open={viewOpen} onOpenChange={(o) => { setViewOpen(o); setPaused(false); pausedRef.current = false; if (!o && progressRef.current) clearInterval(progressRef.current) }}>
+      <Dialog open={viewOpen} onOpenChange={(o) => { setViewOpen(o); if (!o && progressRef.current) clearInterval(progressRef.current) }}>
         <DialogContent className="max-w-sm p-0 overflow-hidden rounded-2xl bg-black border-0">
           {current && (
-            <div
-              className="relative flex flex-col h-[70vh] select-none"
-              onPointerDown={handlePauseStart}
-              onPointerUp={handlePauseEnd}
-              onPointerLeave={handlePauseEnd}
-              onContextMenu={(e) => e.preventDefault()}
-            >
+            <div className="relative flex flex-col h-[70vh]">
               {/* Progress bars */}
               <div className="absolute top-0 left-0 right-0 z-20 flex gap-1 p-2">
                 {viewingStatuses.map((_, i) => (
@@ -466,7 +443,6 @@ export default function StatusRow({
                   {/* Edit button — owner only */}
                   {current.vendor_id === currentVendorId && (
                     <button
-                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (progressRef.current) clearInterval(progressRef.current)
@@ -483,7 +459,6 @@ export default function StatusRow({
                   {/* Delete button — owner only */}
                   {current.vendor_id === currentVendorId && (
                     <button
-                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (progressRef.current) clearInterval(progressRef.current)
@@ -495,72 +470,23 @@ export default function StatusRow({
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
-                  <button
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={() => setViewOpen(false)}
-                    className="p-1.5 text-white/80 hover:text-white"
-                  >
+                  <button onClick={() => setViewOpen(false)} className="p-1.5 text-white/80 hover:text-white">
                     <X className="h-5 w-5" />
                   </button>
                 </div>
               </div>
 
               {/* Content */}
-              <div className="flex-1 flex items-center justify-center relative overflow-hidden">
-                {/* Circle loading spinner */}
-                {mediaLoading && current.media_type !== "text" && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60">
-                    <svg className="h-12 w-12 animate-spin" viewBox="0 0 48 48" fill="none">
-                      <circle cx="24" cy="24" r="20" stroke="rgba(255,255,255,0.2)" strokeWidth="4" />
-                      <circle
-                        cx="24" cy="24" r="20"
-                        stroke="white"
-                        strokeWidth="4"
-                        strokeLinecap="round"
-                        strokeDasharray="31.4 94.2"
-                        strokeDashoffset="0"
-                      />
-                    </svg>
-                  </div>
-                )}
+              <div className="flex-1 flex items-center justify-center">
                 {current.media_type === "image" && (
-                  <img
-                    src={current.media_url}
-                    alt={current.caption ?? ""}
-                    className="max-w-full max-h-full w-full object-contain"
-                    style={{ maxHeight: "calc(70vh - 80px)" }}
-                    onLoad={() => setMediaLoading(false)}
-                    onError={() => setMediaLoading(false)}
-                  />
+                  <img src={current.media_url} alt={current.caption ?? ""} className="w-full h-full object-cover" />
                 )}
                 {current.media_type === "video" && (
-                  <video
-                    src={current.media_url}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    className="max-w-full max-h-full w-full object-contain"
-                    style={{ maxHeight: "calc(70vh - 80px)" }}
-                    onCanPlay={() => setMediaLoading(false)}
-                    onError={() => setMediaLoading(false)}
-                  />
+                  <video src={current.media_url} autoPlay muted loop className="w-full h-full object-cover" />
                 )}
                 {current.media_type === "text" && (
                   <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-primary/80 to-primary p-6">
                     <p className="text-center text-xl font-semibold text-white">{current.text_content}</p>
-                  </div>
-                )}
-
-                {/* Paused indicator */}
-                {paused && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-                    <div className="bg-black/40 rounded-full p-3">
-                      <svg className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="6" y="4" width="4" height="16" rx="1" />
-                        <rect x="14" y="4" width="4" height="16" rx="1" />
-                      </svg>
-                    </div>
                   </div>
                 )}
               </div>
@@ -575,12 +501,10 @@ export default function StatusRow({
               {/* Tap zones */}
               <button
                 className="absolute left-0 top-0 h-full w-1/3 z-10"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => { if (viewIndex > 0) { setViewIndex(v => v - 1); setMediaLoading(true); startProgress() } }}
+                onClick={() => { if (viewIndex > 0) { setViewIndex(v => v - 1); startProgress() } }}
               />
               <button
                 className="absolute right-0 top-0 h-full w-1/3 z-10"
-                onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => {
                   if (viewIndex < viewingStatuses.length - 1) {
                     const next = viewIndex + 1
@@ -588,7 +512,6 @@ export default function StatusRow({
                       incrementViewCount(viewingStatuses[next].id)
                     }
                     setViewIndex(next)
-                    setMediaLoading(true)
                     startProgress()
                   } else {
                     setViewOpen(false)
