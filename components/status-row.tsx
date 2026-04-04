@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil } from "lucide-react"
+import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil, Volume2, VolumeX } from "lucide-react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { VerificationBadge } from "@/components/verification-badge"
+import { VideoTrimmer } from "@/components/video-trimmer"
 
 interface VendorStatus {
   id: string
@@ -18,6 +19,7 @@ interface VendorStatus {
   created_at: string
   expires_at: string
   view_count: number
+  video_duration_seconds?: number | null
   vendor: {
     id: string
     shop_name: string
@@ -42,7 +44,8 @@ interface StatusRowProps {
   currentVendorProfilePic?: string | null
 }
 
-const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2 MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB (trimmer handles final size)
+const MAX_VIDEO_DURATION = 15 // seconds
 
 export default function StatusRow({
   currentVendorId,
@@ -63,8 +66,14 @@ export default function StatusRow({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [showTrimmer, setShowTrimmer] = useState(false)
+  const [trimmedFile, setTrimmedFile] = useState<File | null>(null)
+  const [trimmedUrl, setTrimmedUrl] = useState<string | null>(null)
+  const [videoDurationSeconds, setVideoDurationSeconds] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const progressRef = useRef<NodeJS.Timeout | null>(null)
+  const videoViewerRef = useRef<HTMLVideoElement>(null)
+  const [isMuted, setIsMuted] = useState(false)
   const [storyProgress, setStoryProgress] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const isPausedRef = useRef(false)
@@ -111,6 +120,10 @@ export default function StatusRow({
     setCaption("")
     setSelectedFile(null)
     setPreviewUrl(null)
+    setTrimmedFile(null)
+    setTrimmedUrl(null)
+    setShowTrimmer(false)
+    setVideoDurationSeconds(null)
     setError(null)
   }
 
@@ -119,7 +132,8 @@ export default function StatusRow({
     if (!currentVendorId) return
 
     const mediaType = uploadType!
-    const file = selectedFile
+    // Use trimmed file for video if available, else selected file
+    const file = mediaType === "video" ? (trimmedFile ?? selectedFile) : selectedFile
     const text = textContent.trim()
     const cap = caption.trim()
 
@@ -159,6 +173,9 @@ export default function StatusRow({
         media_type: mediaType,
         text_content: mediaType === "text" ? text : null,
         caption: cap || null,
+        ...(mediaType === "video" && videoDurationSeconds !== null
+          ? { video_duration_seconds: videoDurationSeconds }
+          : {}),
       })
       if (insertErr) throw insertErr
 
@@ -190,7 +207,7 @@ export default function StatusRow({
     setViewingStatuses(group)
     setViewIndex(0)
     setViewOpen(true)
-    startProgress()
+    startProgressForStatus(group[0])
     // Increment view count for first status if it belongs to another vendor
     if (group[0].vendor_id !== currentVendorId) {
       incrementViewCount(group[0].id)
@@ -249,27 +266,41 @@ export default function StatusRow({
     }
   }
 
-  function startProgress() {
+  function startProgress(durationMs: number = 5000) {
     setStoryProgress(0)
     setMediaLoaded(false)
     if (progressRef.current) clearInterval(progressRef.current)
+    const step = (100 / durationMs) * 100 // percent per 100ms tick
     progressRef.current = setInterval(() => {
       if (isPausedRef.current) return
       setStoryProgress((p) => {
         if (p >= 100) { clearInterval(progressRef.current!); return 100 }
-        return p + 2
+        return Math.min(p + step, 100)
       })
     }, 100)
+  }
+
+  function startProgressForStatus(status: VendorStatus) {
+    // Use actual video duration if known, else 5s for image/text
+    const dur =
+      status.media_type === "video"
+        ? (status.video_duration_seconds ?? MAX_VIDEO_DURATION) * 1000
+        : 5000
+    startProgress(dur)
   }
 
   function pauseProgress() {
     isPausedRef.current = true
     setIsPaused(true)
+    videoViewerRef.current?.pause()
   }
 
   function resumeProgress() {
     isPausedRef.current = false
     setIsPaused(false)
+    if (videoViewerRef.current && mediaLoaded) {
+      videoViewerRef.current.play().catch(() => {})
+    }
   }
 
   useEffect(() => {
@@ -277,11 +308,10 @@ export default function StatusRow({
       setViewIndex((i) => {
         if (i < viewingStatuses.length - 1) {
           const nextIndex = i + 1
-          // Increment view on the next status if it belongs to another vendor
           if (viewingStatuses[nextIndex]?.vendor_id !== currentVendorId) {
             incrementViewCount(viewingStatuses[nextIndex].id)
           }
-          startProgress()
+          startProgressForStatus(viewingStatuses[nextIndex])
           return nextIndex
         }
         setViewOpen(false)
@@ -304,10 +334,17 @@ export default function StatusRow({
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > MAX_FILE_SIZE) { setError("File must be under 2 MB"); return }
+    if (file.size > MAX_FILE_SIZE) { setError("File must be under 50 MB"); return }
     setError(null)
     setSelectedFile(file)
-    setPreviewUrl(URL.createObjectURL(file))
+    const url = URL.createObjectURL(file)
+    setPreviewUrl(url)
+    // For videos, always open the trimmer
+    if (uploadType === "video") {
+      setTrimmedFile(null)
+      setTrimmedUrl(null)
+      setShowTrimmer(true)
+    }
   }
 
   const current = viewingStatuses[viewIndex]
@@ -457,6 +494,17 @@ export default function StatusRow({
                   {current.vendor.is_verified && <VerificationBadge isVerified size="xs" showTooltip={false} />}
                 </div>
                 <div className="ml-auto flex items-center gap-2">
+                  {/* Mute/unmute — only for video statuses */}
+                  {current.media_type === "video" && (
+                    <button
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); setIsMuted((m) => !m) }}
+                      className="p-1.5 rounded-full bg-black/40 text-white/90 hover:text-white hover:bg-black/60 transition-colors"
+                      aria-label={isMuted ? "Unmute" : "Mute"}
+                    >
+                      {isMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                    </button>
+                  )}
                   {/* View count — only shown to status owner */}
                   {current.vendor_id === currentVendorId && (
                     <div className="flex items-center gap-1 bg-black/40 rounded-full px-2 py-0.5">
@@ -544,10 +592,10 @@ export default function StatusRow({
                 {current.media_type === "video" && (
                   <video
                     key={current.id}
+                    ref={videoViewerRef}
                     src={current.media_url}
                     autoPlay
-                    muted
-                    loop
+                    muted={isMuted}
                     playsInline
                     className={`max-w-full max-h-full object-contain transition-opacity duration-300 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
                     onCanPlay={() => setMediaLoaded(true)}
@@ -581,7 +629,12 @@ export default function StatusRow({
               <button
                 className="absolute left-0 top-0 h-full w-1/3 z-10"
                 onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => { if (viewIndex > 0) { setViewIndex(v => v - 1); startProgress() } }}
+                onClick={() => {
+                  if (viewIndex > 0) {
+                    setViewIndex(v => v - 1)
+                    startProgressForStatus(viewingStatuses[viewIndex - 1])
+                  }
+                }}
               />
               <button
                 className="absolute right-0 top-0 h-full w-1/3 z-10"
@@ -593,7 +646,7 @@ export default function StatusRow({
                       incrementViewCount(viewingStatuses[next].id)
                     }
                     setViewIndex(next)
-                    startProgress()
+                    startProgressForStatus(viewingStatuses[next])
                   } else {
                     setViewOpen(false)
                   }
@@ -727,6 +780,25 @@ export default function StatusRow({
                   <span className="text-xs">Text</span>
                 </button>
               </div>
+            ) : showTrimmer && selectedFile && previewUrl ? (
+              /* Video Trimmer step */
+              <VideoTrimmer
+                file={selectedFile}
+                previewUrl={previewUrl}
+                onConfirm={(tf, tu, _start, end) => {
+                  setTrimmedFile(tf)
+                  setTrimmedUrl(tu)
+                  setVideoDurationSeconds(Math.round(end - _start))
+                  setShowTrimmer(false)
+                }}
+                onCancel={() => {
+                  setSelectedFile(null)
+                  setPreviewUrl(null)
+                  setTrimmedFile(null)
+                  setTrimmedUrl(null)
+                  setShowTrimmer(false)
+                }}
+              />
             ) : (
               <div className="space-y-3">
                 {uploadType === "text" ? (
@@ -737,18 +809,44 @@ export default function StatusRow({
                     rows={4}
                     maxLength={280}
                   />
-                ) : previewUrl ? (
-                  <div className="relative rounded-xl overflow-hidden aspect-square bg-muted">
+                ) : (trimmedUrl ?? previewUrl) ? (
+                  <div className="relative rounded-xl overflow-hidden aspect-video bg-muted">
                     {uploadType === "image"
-                      ? <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                      : <video src={previewUrl} controls className="w-full h-full object-cover" />
+                      ? <img src={trimmedUrl ?? previewUrl!} alt="Preview" className="w-full h-full object-contain" />
+                      : (
+                        <video
+                          src={trimmedUrl ?? previewUrl!}
+                          controls
+                          className="w-full h-full object-contain"
+                        />
+                      )
                     }
                     <button
-                      onClick={() => { setSelectedFile(null); setPreviewUrl(null) }}
+                      onClick={() => {
+                        setSelectedFile(null)
+                        setPreviewUrl(null)
+                        setTrimmedFile(null)
+                        setTrimmedUrl(null)
+                        setShowTrimmer(false)
+                        setVideoDurationSeconds(null)
+                      }}
                       className="absolute top-2 right-2 bg-black/50 rounded-full p-1 text-white"
                     >
                       <X className="h-4 w-4" />
                     </button>
+                    {uploadType === "video" && videoDurationSeconds !== null && (
+                      <div className="absolute bottom-2 left-2 bg-black/60 rounded-full px-2 py-0.5 text-[10px] text-white font-medium">
+                        {videoDurationSeconds}s
+                      </div>
+                    )}
+                    {uploadType === "video" && (
+                      <button
+                        onClick={() => setShowTrimmer(true)}
+                        className="absolute bottom-2 right-2 bg-black/60 rounded-full px-2 py-1 text-[10px] text-white flex items-center gap-1"
+                      >
+                        <Video className="h-3 w-3" /> Re-trim
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div
@@ -759,7 +857,9 @@ export default function StatusRow({
                       ? <ImageIcon className="h-8 w-8 text-muted-foreground" />
                       : <Video className="h-8 w-8 text-muted-foreground" />
                     }
-                    <span className="text-xs text-muted-foreground">Tap to select (max 2 MB)</span>
+                    <span className="text-xs text-muted-foreground">
+                      {uploadType === "video" ? "Tap to select (max 15s, 50 MB)" : "Tap to select (max 50 MB)"}
+                    </span>
                   </div>
                 )}
 
