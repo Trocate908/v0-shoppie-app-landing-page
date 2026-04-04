@@ -597,13 +597,6 @@ export default function StatusRow({
     }
   }, [viewIndex, viewOpen])
 
-  // Sync video play/pause state when isPaused changes
-  useEffect(() => {
-    if (!videoViewerRef.current) return
-    if (isPaused) videoViewerRef.current.pause()
-    else videoViewerRef.current.play().catch(() => {})
-  }, [isPaused])
-
   useEffect(() => {
     setMediaLoaded(false)
   }, [viewIndex, current?.id])
