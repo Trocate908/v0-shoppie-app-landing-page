@@ -83,7 +83,7 @@ export default function BrowseProductsClient({
   const [trackedViews, setTrackedViews] = useState<Set<string>>(new Set())
 
   const [selectedCategory, setSelectedCategory] = useState<string>("")
-  const [sortBy, setSortBy] = useState<string>("random")
+  const [sortBy, setSortBy] = useState<string>("newest")
   const [minPrice, setMinPrice] = useState<string>("")
   const [maxPrice, setMaxPrice] = useState<string>("")
   const [filterDialogOpen, setFilterDialogOpen] = useState(false)
@@ -229,13 +229,6 @@ export default function BrowseProductsClient({
     // Sort products
     const sorted = [...filtered]
     switch (sortBy) {
-      case "random":
-        // Fisher-Yates shuffle — stable per render via useMemo dep on sortBy
-        for (let i = sorted.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [sorted[i], sorted[j]] = [sorted[j], sorted[i]]
-        }
-        break
       case "price-low":
         sorted.sort((a, b) => a.price - b.price)
         break
@@ -379,7 +372,6 @@ export default function BrowseProductsClient({
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="random">Random</SelectItem>
                   <SelectItem value="newest">Newest First</SelectItem>
                   <SelectItem value="name">Name (A-Z)</SelectItem>
                   <SelectItem value="price-low">Price: Low to High</SelectItem>
