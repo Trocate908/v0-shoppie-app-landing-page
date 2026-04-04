@@ -327,6 +327,9 @@ export default function StatusRow({
   const [bgUpload, setBgUpload] = useState<BackgroundUpload | null>(null)
   const bgUploadTimerRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Must declare `current` before any useEffect that references it
+  const current = viewingStatuses[viewIndex]
+
   useEffect(() => {
     fetch("/api/cleanup-statuses", { method: "POST" }).finally(() => {
       fetchStatuses()
@@ -618,7 +621,6 @@ export default function StatusRow({
     setCroppedUrl(null)
   }
 
-  const current = viewingStatuses[viewIndex]
   const activePreview = croppedUrl ?? previewUrl
   const activeVideoPreview = trimmedVideoUrl ?? previewUrl
 
