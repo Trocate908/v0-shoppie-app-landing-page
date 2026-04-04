@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Plus, X, Image as ImageIcon, Type, Video, Upload, Check, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil, Volume2, VolumeX } from "lucide-react"
+import { Plus, X, Image as ImageIcon, Type, Video, Upload, Check, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil, Volume2, VolumeX, Crop, RotateCcw } from "lucide-react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -275,6 +275,7 @@ function ImageCropper({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
+const MAX_VIDEO_DURATION = 15 // seconds
 
 export default function StatusRow({
   currentVendorId,
@@ -303,6 +304,7 @@ export default function StatusRow({
   const [trimmedVideoUrl, setTrimmedVideoUrl] = useState<string | null>(null)
   const [videoDurationSeconds, setVideoDurationSeconds] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const isVideoRef = useRef(false)
 
   // Viewer state
   const progressRef = useRef<NodeJS.Timeout | null>(null)
@@ -324,6 +326,9 @@ export default function StatusRow({
   // Background upload indicator
   const [bgUpload, setBgUpload] = useState<BackgroundUpload | null>(null)
   const bgUploadTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Must declare `current` before any useEffect that references it
+  const current = viewingStatuses[viewIndex]
 
   useEffect(() => {
     fetch("/api/cleanup-statuses", { method: "POST" }).finally(() => {
@@ -456,7 +461,7 @@ export default function StatusRow({
       incrementViewCount(viewingStatuses[nextIndex].id)
     }
     setViewIndex(nextIndex)
-    setMediaLoading(true)
+    setMediaLoaded(false)
     const isVid = viewingStatuses[nextIndex]?.media_type === "video"
     isVideoRef.current = isVid
     if (!isVid) startProgress()
@@ -595,13 +600,6 @@ export default function StatusRow({
     }
   }, [viewIndex, viewOpen])
 
-  // Sync video play/pause state when paused changes
-  useEffect(() => {
-    if (!videoRef.current) return
-    if (paused) videoRef.current.pause()
-    else videoRef.current.play().catch(() => {})
-  }, [paused])
-
   useEffect(() => {
     setMediaLoaded(false)
   }, [viewIndex, current?.id])
@@ -623,7 +621,6 @@ export default function StatusRow({
     setCroppedUrl(null)
   }
 
-  const current = viewingStatuses[viewIndex]
   const activePreview = croppedUrl ?? previewUrl
   const activeVideoPreview = trimmedVideoUrl ?? previewUrl
 
