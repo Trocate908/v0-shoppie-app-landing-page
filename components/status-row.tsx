@@ -66,6 +66,9 @@ export default function StatusRow({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const progressRef = useRef<NodeJS.Timeout | null>(null)
   const [storyProgress, setStoryProgress] = useState(0)
+  const [isPaused, setIsPaused] = useState(false)
+  const isPausedRef = useRef(false)
+  const [mediaLoaded, setMediaLoaded] = useState(false)
 
   // Edit caption state
   const [editCaptionOpen, setEditCaptionOpen] = useState(false)
@@ -248,13 +251,25 @@ export default function StatusRow({
 
   function startProgress() {
     setStoryProgress(0)
+    setMediaLoaded(false)
     if (progressRef.current) clearInterval(progressRef.current)
     progressRef.current = setInterval(() => {
+      if (isPausedRef.current) return
       setStoryProgress((p) => {
         if (p >= 100) { clearInterval(progressRef.current!); return 100 }
         return p + 2
       })
     }, 100)
+  }
+
+  function pauseProgress() {
+    isPausedRef.current = true
+    setIsPaused(true)
+  }
+
+  function resumeProgress() {
+    isPausedRef.current = false
+    setIsPaused(false)
   }
 
   useEffect(() => {
@@ -274,6 +289,10 @@ export default function StatusRow({
       })
     }
   }, [storyProgress])
+
+  useEffect(() => {
+    setMediaLoaded(false)
+  }, [viewIndex, current?.id])
 
   useEffect(() => {
     return () => {
@@ -406,13 +425,18 @@ export default function StatusRow({
       <Dialog open={viewOpen} onOpenChange={(o) => { setViewOpen(o); if (!o && progressRef.current) clearInterval(progressRef.current) }}>
         <DialogContent className="max-w-sm p-0 overflow-hidden rounded-2xl bg-black border-0">
           {current && (
-            <div className="relative flex flex-col h-[70vh]">
+            <div
+              className="relative flex flex-col h-[78vh] select-none"
+              onPointerDown={() => pauseProgress()}
+              onPointerUp={() => resumeProgress()}
+              onPointerLeave={() => resumeProgress()}
+            >
               {/* Progress bars */}
               <div className="absolute top-0 left-0 right-0 z-20 flex gap-1 p-2">
                 {viewingStatuses.map((_, i) => (
                   <div key={i} className="flex-1 h-0.5 bg-white/30 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-white rounded-full transition-none"
+                      className={`h-full bg-white rounded-full ${isPaused && i === viewIndex ? "" : "transition-none"}`}
                       style={{ width: i < viewIndex ? "100%" : i === viewIndex ? `${storyProgress}%` : "0%" }}
                     />
                   </div>
@@ -443,6 +467,7 @@ export default function StatusRow({
                   {/* Edit button — owner only */}
                   {current.vendor_id === currentVendorId && (
                     <button
+                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (progressRef.current) clearInterval(progressRef.current)
@@ -459,6 +484,7 @@ export default function StatusRow({
                   {/* Delete button — owner only */}
                   {current.vendor_id === currentVendorId && (
                     <button
+                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (progressRef.current) clearInterval(progressRef.current)
@@ -470,41 +496,96 @@ export default function StatusRow({
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
-                  <button onClick={() => setViewOpen(false)} className="p-1.5 text-white/80 hover:text-white">
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => setViewOpen(false)}
+                    className="p-1.5 text-white/80 hover:text-white"
+                  >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
               </div>
 
-              {/* Content */}
-              <div className="flex-1 flex items-center justify-center">
+              {/* Media content */}
+              <div className="flex-1 flex items-center justify-center overflow-hidden bg-black relative">
+
+                {/* Circle loading spinner — shown while media loads */}
+                {!mediaLoaded && current.media_type !== "text" && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-black">
+                    <svg className="h-14 w-14 -rotate-90" viewBox="0 0 56 56">
+                      {/* Track */}
+                      <circle cx="28" cy="28" r="22" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="3" />
+                      {/* Spinner arc */}
+                      <circle
+                        cx="28" cy="28" r="22"
+                        fill="none"
+                        stroke="white"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeDasharray="138.2"
+                        strokeDashoffset="103.7"
+                        className="origin-center animate-spin"
+                        style={{ animationDuration: "900ms" }}
+                      />
+                    </svg>
+                  </div>
+                )}
+
                 {current.media_type === "image" && (
-                  <img src={current.media_url} alt={current.caption ?? ""} className="w-full h-full object-cover" />
+                  <img
+                    key={current.id}
+                    src={current.media_url}
+                    alt={current.caption ?? ""}
+                    className={`max-w-full max-h-full object-contain transition-opacity duration-300 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
+                    onLoad={() => setMediaLoaded(true)}
+                    draggable={false}
+                  />
                 )}
                 {current.media_type === "video" && (
-                  <video src={current.media_url} autoPlay muted loop className="w-full h-full object-cover" />
+                  <video
+                    key={current.id}
+                    src={current.media_url}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className={`max-w-full max-h-full object-contain transition-opacity duration-300 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
+                    onCanPlay={() => setMediaLoaded(true)}
+                    draggable={false}
+                  />
                 )}
                 {current.media_type === "text" && (
-                  <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-primary/80 to-primary p-6">
-                    <p className="text-center text-xl font-semibold text-white">{current.text_content}</p>
+                  <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-primary/80 to-primary p-8">
+                    <p className="text-center text-xl font-semibold text-white leading-relaxed">{current.text_content}</p>
+                  </div>
+                )}
+
+                {/* Hold-to-pause overlay hint */}
+                {isPaused && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                    <div className="bg-black/40 rounded-full px-4 py-2">
+                      <span className="text-white text-xs font-medium tracking-wide">Hold to pause</span>
+                    </div>
                   </div>
                 )}
               </div>
 
               {/* Caption */}
               {current.caption && (
-                <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/70 px-4 py-3">
-                  <p className="text-sm text-white">{current.caption}</p>
+                <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-4 pb-5 pt-8">
+                  <p className="text-sm text-white leading-snug">{current.caption}</p>
                 </div>
               )}
 
               {/* Tap zones */}
               <button
                 className="absolute left-0 top-0 h-full w-1/3 z-10"
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => { if (viewIndex > 0) { setViewIndex(v => v - 1); startProgress() } }}
               />
               <button
                 className="absolute right-0 top-0 h-full w-1/3 z-10"
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => {
                   if (viewIndex < viewingStatuses.length - 1) {
                     const next = viewIndex + 1
