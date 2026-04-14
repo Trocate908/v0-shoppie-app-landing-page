@@ -16,6 +16,7 @@ import ShareButton from "@/components/share-button"
 import { VerificationBadge } from "@/components/verification-badge"
 import ProductCarousel from "@/components/product-carousel"
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed"
+import MessageSellerButton from "@/components/message-seller-button"
 
 interface Location {
   id: string
@@ -192,8 +193,19 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
                       </span>
                     </div>
                   )}
+                  {/* Message Seller button — available to all buyers */}
+                  <div className="pt-3">
+                    <MessageSellerButton
+                      productId={product.id}
+                      vendorId={product.vendor.id}
+                      variant="default"
+                      size="default"
+                      className="w-full"
+                    />
+                  </div>
+
                   {product.vendor.whatsapp_number && (
-                    <div className="pt-3">
+                    <div className="pt-2">
                       <WhatsAppButton
                         phoneNumber={product.vendor.whatsapp_number}
                         shopName={product.vendor.shop_name}

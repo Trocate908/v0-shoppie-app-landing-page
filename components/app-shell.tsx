@@ -1,10 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import BottomNav, { type NavTab } from "@/components/bottom-nav"
 import BrowseProductsClient from "@/components/browse-products-client"
 import SettingsTab from "@/components/settings-tab"
 import HomeTab from "@/components/home-tab"
+import MessagesTab from "@/components/messages-tab"
+import { createBrowserClient } from "@/lib/supabase/client"
 
 interface Location {
   id: string
@@ -39,8 +42,61 @@ interface AppShellProps {
 }
 
 export default function AppShell({ products, locations }: AppShellProps) {
-  // Default to "store" so products show first, like Shein
-  const [activeTab, setActiveTab] = useState<NavTab>("store")
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get("tab") as NavTab | null
+  const validTabs: NavTab[] = ["store", "home", "messages", "settings"]
+  const initialTab: NavTab =
+    tabParam && validTabs.includes(tabParam) ? tabParam : "store"
+
+  const [activeTab, setActiveTab] = useState<NavTab>(initialTab)
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  // Fetch unread message count
+  useEffect(() => {
+    async function fetchUnreadCount() {
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) return
+
+      const { data: conversations } = await supabase
+        .from("conversations")
+        .select("id")
+        .or(`buyer_id.eq.${user.id},vendor_id.eq.${user.id}`)
+
+      if (!conversations || conversations.length === 0) return
+
+      const conversationIds = conversations.map((c) => c.id)
+      const { count } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .in("conversation_id", conversationIds)
+        .eq("read", false)
+        .eq("deleted", false)
+        .neq("sender_id", user.id)
+
+      setUnreadCount(count ?? 0)
+    }
+
+    fetchUnreadCount()
+
+    // Subscribe to realtime updates
+    const supabase = createBrowserClient()
+    const channel = supabase
+      .channel("unread_messages")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages" },
+        () => {
+          fetchUnreadCount()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -50,11 +106,12 @@ export default function AppShell({ products, locations }: AppShellProps) {
           <BrowseProductsClient products={products} locations={locations} visitorCountry={null} />
         )}
         {activeTab === "home" && <HomeTab onNavigate={setActiveTab} />}
+        {activeTab === "messages" && <MessagesTab />}
         {activeTab === "settings" && <SettingsTab />}
       </div>
 
       {/* Bottom Navigation */}
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} unreadMessages={unreadCount} />
     </div>
   )
 }
