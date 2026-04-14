@@ -29,15 +29,24 @@ interface Conversation {
   product_id: string
   buyer_id: string
   vendor_id: string
-  last_message_at: string
+  last_message_at: string | null
   created_at: string
   unread_count: number
   is_buyer: boolean
   products: ConversationProduct | null
   vendors: ConversationVendor | null
+  last_message: { content: string | null; sender_id: string } | null
 }
 
-export default function MessagesTab() {
+interface MessagesTabProps {
+  initialConversationId?: string | null
+  onConversationOpen?: () => void
+}
+
+export default function MessagesTab({
+  initialConversationId,
+  onConversationOpen,
+}: MessagesTabProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
@@ -49,6 +58,11 @@ export default function MessagesTab() {
       const res = await fetch("/api/messages/conversations")
       if (res.status === 401) {
         setIsAuthenticated(false)
+        setLoading(false)
+        return
+      }
+      if (!res.ok) {
+        setLoading(false)
         return
       }
       const data = await res.json()
@@ -64,27 +78,52 @@ export default function MessagesTab() {
   useEffect(() => {
     async function init() {
       const supabase = createBrowserClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       setUserId(user?.id ?? null)
       await fetchConversations()
     }
     init()
   }, [fetchConversations])
 
-  // Realtime: refresh list on new messages
+  // Auto-open a specific conversation when coming from message-seller-button
+  useEffect(() => {
+    if (!initialConversationId || conversations.length === 0) return
+    const target = conversations.find((c) => c.id === initialConversationId)
+    if (target) {
+      setActiveConversation(target)
+      onConversationOpen?.()
+    }
+  }, [initialConversationId, conversations, onConversationOpen])
+
+  // Realtime: refresh list on new/updated messages
   useEffect(() => {
     if (!isAuthenticated) return
     const supabase = createBrowserClient()
     const channel = supabase
-      .channel("conversations_list")
+      .channel("messages_tab_list")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "messages" },
-        () => { fetchConversations() }
+        () => {
+          fetchConversations()
+        }
       )
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [isAuthenticated, fetchConversations])
+
+  function openConversation(convo: Conversation) {
+    setActiveConversation(convo)
+    onConversationOpen?.()
+    // Optimistically clear unread badge on this conversation
+    setConversations((prev) =>
+      prev.map((c) => (c.id === convo.id ? { ...c, unread_count: 0 } : c))
+    )
+  }
 
   if (activeConversation) {
     return (
@@ -106,6 +145,11 @@ export default function MessagesTab() {
         <div className="flex h-14 items-center gap-3 px-4">
           <MessageCircle className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-semibold text-foreground">Messages</h1>
+          {conversations.length > 0 && (
+            <span className="ml-auto text-xs text-muted-foreground">
+              {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
+            </span>
+          )}
         </div>
       </header>
 
@@ -123,7 +167,8 @@ export default function MessagesTab() {
               <ConversationItem
                 key={convo.id}
                 conversation={convo}
-                onClick={() => setActiveConversation(convo)}
+                currentUserId={userId ?? ""}
+                onClick={() => openConversation(convo)}
               />
             ))}
           </ul>
@@ -137,17 +182,26 @@ export default function MessagesTab() {
 
 function ConversationItem({
   conversation,
+  currentUserId,
   onClick,
 }: {
   conversation: Conversation
+  currentUserId: string
   onClick: () => void
 }) {
-  const { products, vendors, unread_count, last_message_at, is_buyer } = conversation
+  const { products, vendors, unread_count, last_message_at, last_message, is_buyer } =
+    conversation
   const hasUnread = unread_count > 0
 
   const timeAgo = last_message_at
     ? formatDistanceToNow(new Date(last_message_at), { addSuffix: true })
     : ""
+
+  const previewText = last_message
+    ? last_message.sender_id === currentUserId
+      ? `You: ${last_message.content ?? "Sent an image"}`
+      : last_message.content ?? "Sent an image"
+    : "No messages yet — tap to start"
 
   return (
     <li>
@@ -155,7 +209,7 @@ function ConversationItem({
         onClick={onClick}
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 active:bg-muted"
       >
-        {/* Avatar: product image or shop icon */}
+        {/* Avatar: product image */}
         <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-muted">
           {products?.image_url ? (
             <Image
@@ -175,13 +229,26 @@ function ConversationItem({
         {/* Text info */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className={`truncate text-sm ${hasUnread ? "font-semibold text-foreground" : "font-medium text-foreground"}`}>
-              {is_buyer ? vendors?.shop_name ?? "Unknown Shop" : "Buyer"}
+            <span
+              className={`truncate text-sm ${
+                hasUnread
+                  ? "font-semibold text-foreground"
+                  : "font-medium text-foreground"
+              }`}
+            >
+              {is_buyer ? (vendors?.shop_name ?? "Unknown Shop") : "Buyer"}
             </span>
             <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo}</span>
           </div>
-          <p className="truncate text-xs text-muted-foreground mt-0.5">
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {products?.name ?? "Product enquiry"}
+          </p>
+          <p
+            className={`mt-0.5 truncate text-xs ${
+              hasUnread ? "font-medium text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            {previewText}
           </p>
         </div>
 
@@ -208,6 +275,7 @@ function ConversationsSkeleton() {
           <div className="flex-1 space-y-2">
             <div className="h-3.5 w-32 animate-pulse rounded bg-muted" />
             <div className="h-3 w-48 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-40 animate-pulse rounded bg-muted" />
           </div>
         </li>
       ))}
@@ -224,12 +292,9 @@ function EmptyState() {
       <div>
         <h2 className="text-base font-semibold text-foreground">No messages yet</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          When you enquire about a product, your conversations will appear here.
+          Tap &quot;Message Seller&quot; on any product to start a conversation.
         </p>
       </div>
-      <Button variant="outline" size="sm" onClick={() => window.history.back()}>
-        Browse products
-      </Button>
     </div>
   )
 }
@@ -241,11 +306,18 @@ function NotAuthenticatedState() {
         <Store className="h-8 w-8 text-muted-foreground" />
       </div>
       <div>
-        <h2 className="text-base font-semibold text-foreground">Sign in to message vendors</h2>
+        <h2 className="text-base font-semibold text-foreground">Sign in to view messages</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Create an account or sign in to start a conversation with any seller.
+          Create an account or sign in to message vendors and see your conversations.
         </p>
       </div>
+      <Button
+        variant="default"
+        size="sm"
+        onClick={() => (window.location.href = "/vendor/login")}
+      >
+        Sign in
+      </Button>
     </div>
   )
 }

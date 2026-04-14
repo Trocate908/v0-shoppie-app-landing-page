@@ -28,7 +28,7 @@ import {
   Loader2,
 } from "lucide-react"
 import Image from "next/image"
-import { formatDistanceToNow, format, isToday, isYesterday } from "date-fns"
+import { format, isToday, isYesterday } from "date-fns"
 import { cn } from "@/lib/utils"
 
 interface Message {
@@ -63,7 +63,7 @@ interface Conversation {
   product_id: string
   buyer_id: string
   vendor_id: string
-  last_message_at: string
+  last_message_at: string | null
   created_at: string
   unread_count: number
   is_buyer: boolean
@@ -92,7 +92,7 @@ export default function ChatWindow({
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const otherName = conversation.is_buyer
-    ? conversation.vendors?.shop_name ?? "Vendor"
+    ? (conversation.vendors?.shop_name ?? "Vendor")
     : "Buyer"
 
   const fetchMessages = useCallback(async () => {
@@ -107,45 +107,76 @@ export default function ChatWindow({
     fetchMessages()
   }, [fetchMessages])
 
-  // Auto-scroll to bottom when messages load/update
+  // Scroll to bottom when messages load or new ones arrive
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+    if (!loading) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [messages, loading])
 
-  // Realtime subscription for this conversation
+  // Focus input on mount
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  // Realtime subscription — listen for changes in this conversation's messages
   useEffect(() => {
     const supabase = createBrowserClient()
+
     const channel = supabase
-      .channel(`chat_${conversation.id}`)
+      .channel(`chat:${conversation.id}`)
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "INSERT",
           schema: "public",
           table: "messages",
           filter: `conversation_id=eq.${conversation.id}`,
         },
         (payload) => {
-          if (payload.eventType === "INSERT") {
-            const newMsg = payload.new as Message
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === newMsg.id)) return prev
-              return [...prev, newMsg]
-            })
-            // Mark as read if from the other party
-            if (newMsg.sender_id !== currentUserId) {
-              supabase
-                .from("messages")
-                .update({ read: true })
-                .eq("id", newMsg.id)
-                .then(() => {})
+          const newMsg = payload.new as Message
+          setMessages((prev) => {
+            // Deduplicate — optimistic insert may already be there
+            if (prev.some((m) => m.id === newMsg.id)) return prev
+            return [...prev, newMsg]
+          })
+
+          // Mark as read immediately if it came from the other party
+          if (newMsg.sender_id !== currentUserId) {
+            supabase
+              .from("messages")
+              .update({ read: true })
+              .eq("id", newMsg.id)
+              .then(() => {})
+
+            // Browser notification for incoming messages
+            if (
+              typeof window !== "undefined" &&
+              "Notification" in window &&
+              Notification.permission === "granted"
+            ) {
+              new Notification(otherName, {
+                body: newMsg.content ?? "Sent an image",
+                icon: "/icons/icon-192x192.png",
+                tag: `msg-${conversation.id}`,
+              })
             }
-          } else if (payload.eventType === "UPDATE") {
-            const updated = payload.new as Message
-            setMessages((prev) =>
-              prev.map((m) => (m.id === updated.id ? updated : m))
-            )
           }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversation.id}`,
+        },
+        (payload) => {
+          const updated = payload.new as Message
+          setMessages((prev) =>
+            prev.map((m) => (m.id === updated.id ? updated : m))
+          )
         }
       )
       .subscribe()
@@ -153,13 +184,36 @@ export default function ChatWindow({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [conversation.id, currentUserId])
+  }, [conversation.id, currentUserId, otherName])
+
+  // Request notification permission once the chat is opened
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {})
+    }
+  }, [])
 
   async function sendMessage() {
     if (!input.trim() || sending) return
     setSending(true)
     const content = input.trim()
     setInput("")
+
+    // Optimistic insert
+    const optimisticId = `optimistic-${Date.now()}`
+    const optimistic: Message = {
+      id: optimisticId,
+      conversation_id: conversation.id,
+      sender_id: currentUserId,
+      content,
+      image_url: null,
+      read: false,
+      deleted: false,
+      created_at: new Date().toISOString(),
+      edited_at: null,
+    }
+    setMessages((prev) => [...prev, optimistic])
 
     try {
       const res = await fetch(`/api/messages/${conversation.id}`, {
@@ -169,11 +223,18 @@ export default function ChatWindow({
       })
       if (res.ok) {
         const data = await res.json()
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === data.message.id)) return prev
-          return [...prev, data.message]
-        })
+        // Replace the optimistic message with the real one
+        setMessages((prev) =>
+          prev.map((m) => (m.id === optimisticId ? data.message : m))
+        )
+      } else {
+        // Roll back optimistic message on failure
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
+        setInput(content)
       }
+    } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
+      setInput(content)
     } finally {
       setSending(false)
       inputRef.current?.focus()
@@ -185,7 +246,10 @@ export default function ChatWindow({
     const res = await fetch(`/api/messages/${conversation.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message_id: editingMessage.id, content: editContent }),
+      body: JSON.stringify({
+        message_id: editingMessage.id,
+        content: editContent,
+      }),
     })
     if (res.ok) {
       const data = await res.json()
@@ -198,14 +262,19 @@ export default function ChatWindow({
   }
 
   async function deleteMessage(messageId: string) {
+    // Optimistic update
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, deleted: true } : m))
+    )
     const res = await fetch(`/api/messages/${conversation.id}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_id: messageId }),
     })
-    if (res.ok) {
+    if (!res.ok) {
+      // Roll back
       setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, deleted: true } : m))
+        prev.map((m) => (m.id === messageId ? { ...m, deleted: false } : m))
       )
     }
   }
@@ -213,11 +282,26 @@ export default function ChatWindow({
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      sendMessage()
+      if (editingMessage) {
+        submitEdit()
+      } else {
+        sendMessage()
+      }
     }
   }
 
-  // Group messages by date
+  function startEdit(msg: Message) {
+    setEditingMessage(msg)
+    setEditContent(msg.content ?? "")
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
+  function cancelEdit() {
+    setEditingMessage(null)
+    setEditContent("")
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
   const groupedMessages = groupByDate(messages)
 
   return (
@@ -228,7 +312,7 @@ export default function ChatWindow({
           <ArrowLeft className="h-5 w-5" />
         </Button>
 
-        {/* Avatar */}
+        {/* Avatar: product thumbnail */}
         <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg bg-muted">
           {conversation.products?.image_url ? (
             <Image
@@ -247,11 +331,11 @@ export default function ChatWindow({
 
         {/* Name + product */}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-foreground leading-tight">
+          <p className="truncate text-sm font-semibold leading-tight text-foreground">
             {otherName}
           </p>
           {conversation.products && (
-            <p className="truncate text-[11px] text-muted-foreground leading-tight">
+            <p className="truncate text-[11px] leading-tight text-muted-foreground">
               re: {conversation.products.name}
             </p>
           )}
@@ -263,9 +347,11 @@ export default function ChatWindow({
         <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-2">
           <Package className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <p className="truncate text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{conversation.products.name}</span>
+            <span className="font-medium text-foreground">
+              {conversation.products.name}
+            </span>
             {" — "}
-            <span className="text-primary font-semibold">
+            <span className="font-semibold text-primary">
               ${conversation.products.price.toFixed(2)}
             </span>
           </p>
@@ -279,8 +365,8 @@ export default function ChatWindow({
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : messages.length === 0 ? (
-          <p className="text-center text-sm text-muted-foreground py-8">
-            No messages yet. Send the first message!
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            No messages yet. Say hello!
           </p>
         ) : (
           <div className="space-y-1">
@@ -289,24 +375,20 @@ export default function ChatWindow({
                 {/* Date divider */}
                 <div className="flex items-center gap-3 py-3">
                   <div className="h-px flex-1 bg-border" />
-                  <span className="text-[11px] font-medium text-muted-foreground">{dateLabel}</span>
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    {dateLabel}
+                  </span>
                   <div className="h-px flex-1 bg-border" />
                 </div>
 
-                {msgs.map((msg, idx) => {
+                {msgs.map((msg) => {
                   const isOwn = msg.sender_id === currentUserId
-                  const showAvatar = !isOwn && (idx === 0 || msgs[idx - 1]?.sender_id !== msg.sender_id)
-
                   return (
                     <MessageBubble
                       key={msg.id}
                       message={msg}
                       isOwn={isOwn}
-                      showAvatar={showAvatar}
-                      onEdit={() => {
-                        setEditingMessage(msg)
-                        setEditContent(msg.content ?? "")
-                      }}
+                      onEdit={() => startEdit(msg)}
                       onDelete={() => deleteMessage(msg.id)}
                     />
                   )
@@ -324,7 +406,7 @@ export default function ChatWindow({
           <Pencil className="h-3.5 w-3.5 shrink-0 text-primary" />
           <p className="flex-1 truncate text-xs text-primary">Editing message</p>
           <button
-            onClick={() => { setEditingMessage(null); setEditContent("") }}
+            onClick={cancelEdit}
             className="text-xs text-muted-foreground hover:text-foreground"
             aria-label="Cancel edit"
           >
@@ -334,7 +416,7 @@ export default function ChatWindow({
       )}
 
       {/* Input area */}
-      <div className="shrink-0 border-t border-border bg-background p-3 pb-safe">
+      <div className="shrink-0 border-t border-border bg-background p-3">
         <div className="flex items-end gap-2">
           <Textarea
             ref={inputRef}
@@ -344,8 +426,8 @@ export default function ChatWindow({
                 ? setEditContent(e.target.value)
                 : setInput(e.target.value)
             }
-            onKeyDown={editingMessage ? undefined : handleKeyDown}
-            placeholder="Type a message…"
+            onKeyDown={handleKeyDown}
+            placeholder={editingMessage ? "Edit your message…" : "Type a message…"}
             rows={1}
             className="max-h-32 min-h-[40px] flex-1 resize-none text-sm leading-relaxed"
           />
@@ -353,9 +435,7 @@ export default function ChatWindow({
             size="icon"
             onClick={editingMessage ? submitEdit : sendMessage}
             disabled={
-              editingMessage
-                ? !editContent.trim()
-                : !input.trim() || sending
+              editingMessage ? !editContent.trim() : !input.trim() || sending
             }
             aria-label={editingMessage ? "Save edit" : "Send message"}
             className="shrink-0"
@@ -377,7 +457,6 @@ export default function ChatWindow({
 interface MessageBubbleProps {
   message: Message
   isOwn: boolean
-  showAvatar: boolean
   onEdit: () => void
   onDelete: () => void
 }
@@ -387,8 +466,8 @@ function MessageBubble({ message, isOwn, onEdit, onDelete }: MessageBubbleProps)
 
   if (message.deleted) {
     return (
-      <div className={cn("flex my-0.5", isOwn ? "justify-end" : "justify-start")}>
-        <p className="rounded-2xl px-3 py-1.5 text-xs italic text-muted-foreground bg-muted/50">
+      <div className={cn("my-0.5 flex", isOwn ? "justify-end" : "justify-start")}>
+        <p className="rounded-2xl bg-muted/50 px-3 py-1.5 text-xs italic text-muted-foreground">
           This message was deleted
         </p>
       </div>
@@ -396,7 +475,12 @@ function MessageBubble({ message, isOwn, onEdit, onDelete }: MessageBubbleProps)
   }
 
   return (
-    <div className={cn("group flex items-end gap-1 my-0.5", isOwn ? "flex-row-reverse" : "flex-row")}>
+    <div
+      className={cn(
+        "group my-0.5 flex items-end gap-1",
+        isOwn ? "flex-row-reverse" : "flex-row"
+      )}
+    >
       {/* Bubble */}
       <div
         className={cn(
@@ -419,26 +503,42 @@ function MessageBubble({ message, isOwn, onEdit, onDelete }: MessageBubbleProps)
         )}
         {message.content && <p className="break-words">{message.content}</p>}
 
-        {/* Timestamp + status */}
-        <div className={cn("mt-0.5 flex items-center gap-1", isOwn ? "justify-end" : "justify-start")}>
-          <span className={cn("text-[10px]", isOwn ? "text-primary-foreground/70" : "text-muted-foreground")}>
+        {/* Timestamp + read receipt */}
+        <div
+          className={cn(
+            "mt-0.5 flex items-center gap-1",
+            isOwn ? "justify-end" : "justify-start"
+          )}
+        >
+          <span
+            className={cn(
+              "text-[10px]",
+              isOwn ? "text-primary-foreground/70" : "text-muted-foreground"
+            )}
+          >
             {timeStr}
             {message.edited_at && " (edited)"}
           </span>
-          {isOwn && (
-            message.read
-              ? <CheckCheck className="h-3 w-3 text-primary-foreground/70" />
-              : <Check className="h-3 w-3 text-primary-foreground/50" />
-          )}
+          {isOwn &&
+            (message.read ? (
+              <CheckCheck className="h-3 w-3 text-primary-foreground/70" />
+            ) : (
+              <Check className="h-3 w-3 text-primary-foreground/50" />
+            ))}
         </div>
       </div>
 
-      {/* Actions menu — only for own messages */}
+      {/* Actions — only own messages */}
       {isOwn && (
         <div className="mb-1 opacity-0 transition-opacity group-hover:opacity-100">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Message options">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                aria-label="Message options"
+              >
                 <MoreVertical className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
@@ -466,7 +566,9 @@ function MessageBubble({ message, isOwn, onEdit, onDelete }: MessageBubbleProps)
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-function groupByDate(messages: Message[]): { dateLabel: string; msgs: Message[] }[] {
+function groupByDate(
+  messages: Message[]
+): { dateLabel: string; msgs: Message[] }[] {
   const groups: Map<string, Message[]> = new Map()
 
   for (const msg of messages) {
@@ -480,5 +582,8 @@ function groupByDate(messages: Message[]): { dateLabel: string; msgs: Message[] 
     groups.get(label)!.push(msg)
   }
 
-  return Array.from(groups.entries()).map(([dateLabel, msgs]) => ({ dateLabel, msgs }))
+  return Array.from(groups.entries()).map(([dateLabel, msgs]) => ({
+    dateLabel,
+    msgs,
+  }))
 }

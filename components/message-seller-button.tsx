@@ -5,7 +5,6 @@ import { createBrowserClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { MessageCircle, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { useRouter } from "next/navigation"
 
 interface MessageSellerButtonProps {
   productId: string
@@ -14,6 +13,7 @@ interface MessageSellerButtonProps {
   variant?: "default" | "outline" | "secondary" | "ghost"
   size?: "default" | "sm" | "lg" | "icon"
   showLabel?: boolean
+  onConversationReady?: (conversationId: string) => void
 }
 
 export default function MessageSellerButton({
@@ -23,16 +23,18 @@ export default function MessageSellerButton({
   variant = "outline",
   size = "default",
   showLabel = true,
+  onConversationReady,
 }: MessageSellerButtonProps) {
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
-  const router = useRouter()
 
   async function handleClick() {
     setLoading(true)
     try {
       const supabase = createBrowserClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
       if (!user) {
         toast({
@@ -62,8 +64,15 @@ export default function MessageSellerButton({
         throw new Error(err.error ?? "Failed to start conversation")
       }
 
-      // Navigate to the home page messages tab
-      router.push("/?tab=messages")
+      const { conversation } = await res.json()
+
+      if (onConversationReady) {
+        // In-app navigation: let the parent handle it
+        onConversationReady(conversation.id)
+      } else {
+        // Fallback: navigate to messages tab with conversation pre-selected
+        window.location.href = `/?tab=messages&cid=${conversation.id}`
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Something went wrong"
       toast({ title: "Error", description: message, variant: "destructive" })
