@@ -139,7 +139,34 @@ export async function POST(request: Request) {
     )
   }
 
-  if (user.id === vendor_id) {
+  // vendor_id may be the vendor row id (uuid from products.vendor_id) OR the
+  // vendor's auth user_id. Resolve it to the auth user_id either way.
+  let vendorAuthId: string = vendor_id
+
+  // Try to find a vendor row where id = vendor_id (the row uuid case)
+  const { data: vendorRow } = await supabase
+    .from("vendors")
+    .select("user_id")
+    .eq("id", vendor_id)
+    .maybeSingle()
+
+  if (vendorRow?.user_id) {
+    vendorAuthId = vendorRow.user_id
+  } else {
+    // Fallback: maybe vendor_id is already the user_id — verify it exists
+    const { data: vendorByUserId } = await supabase
+      .from("vendors")
+      .select("user_id")
+      .eq("user_id", vendor_id)
+      .maybeSingle()
+
+    if (!vendorByUserId) {
+      return NextResponse.json({ error: "Vendor not found" }, { status: 404 })
+    }
+    vendorAuthId = vendorByUserId.user_id
+  }
+
+  if (user.id === vendorAuthId) {
     return NextResponse.json(
       { error: "Vendors cannot message themselves" },
       { status: 400 }
@@ -152,8 +179,8 @@ export async function POST(request: Request) {
     .select("id, product_id, buyer_id, vendor_id, last_message_at, created_at")
     .eq("product_id", product_id)
     .eq("buyer_id", user.id)
-    .eq("vendor_id", vendor_id)
-    .single()
+    .eq("vendor_id", vendorAuthId)
+    .maybeSingle()
 
   if (existing) {
     return NextResponse.json({ conversation: existing })
@@ -162,7 +189,7 @@ export async function POST(request: Request) {
   // Create new conversation
   const { data, error } = await supabase
     .from("conversations")
-    .insert({ product_id, buyer_id: user.id, vendor_id })
+    .insert({ product_id, buyer_id: user.id, vendor_id: vendorAuthId })
     .select()
     .single()
 
@@ -174,8 +201,8 @@ export async function POST(request: Request) {
         .select("id, product_id, buyer_id, vendor_id, last_message_at, created_at")
         .eq("product_id", product_id)
         .eq("buyer_id", user.id)
-        .eq("vendor_id", vendor_id)
-        .single()
+        .eq("vendor_id", vendorAuthId)
+        .maybeSingle()
       return NextResponse.json({ conversation: race })
     }
     return NextResponse.json({ error: error.message }, { status: 500 })
