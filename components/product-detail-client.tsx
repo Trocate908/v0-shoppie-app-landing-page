@@ -27,6 +27,7 @@ interface Location {
 
 interface Vendor {
   id: string
+  user_id: string
   shop_name: string
   is_open: boolean
   is_verified?: boolean
@@ -197,7 +198,7 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
                   <div className="pt-3">
                     <MessageSellerButton
                       productId={product.id}
-                      vendorId={product.vendor.id}
+                      vendorId={product.vendor.user_id}
                       variant="default"
                       size="default"
                       className="w-full"

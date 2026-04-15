@@ -83,6 +83,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
       in_stock,
       vendor:vendors!inner(
         id,
+        user_id,
         shop_name,
         is_open,
         is_verified,

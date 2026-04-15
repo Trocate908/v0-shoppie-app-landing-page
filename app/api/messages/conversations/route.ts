@@ -119,11 +119,14 @@ export async function GET() {
 
 // POST /api/messages/conversations — create or fetch existing conversation
 export async function POST(request: Request) {
+  console.log("[v0] POST /api/messages/conversations called")
   const supabase = await createServerClient()
   const {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser()
+
+  console.log("[v0] Auth user:", user?.id ?? "none", "authError:", authError?.message ?? "none")
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -132,6 +135,8 @@ export async function POST(request: Request) {
   const body = await request.json()
   const { product_id, vendor_id } = body
 
+  console.log("[v0] Request body:", { product_id, vendor_id })
+
   if (!product_id || !vendor_id) {
     return NextResponse.json(
       { error: "product_id and vendor_id are required" },
@@ -139,34 +144,7 @@ export async function POST(request: Request) {
     )
   }
 
-  // vendor_id may be the vendor row id (uuid from products.vendor_id) OR the
-  // vendor's auth user_id. Resolve it to the auth user_id either way.
-  let vendorAuthId: string = vendor_id
-
-  // Try to find a vendor row where id = vendor_id (the row uuid case)
-  const { data: vendorRow } = await supabase
-    .from("vendors")
-    .select("user_id")
-    .eq("id", vendor_id)
-    .maybeSingle()
-
-  if (vendorRow?.user_id) {
-    vendorAuthId = vendorRow.user_id
-  } else {
-    // Fallback: maybe vendor_id is already the user_id — verify it exists
-    const { data: vendorByUserId } = await supabase
-      .from("vendors")
-      .select("user_id")
-      .eq("user_id", vendor_id)
-      .maybeSingle()
-
-    if (!vendorByUserId) {
-      return NextResponse.json({ error: "Vendor not found" }, { status: 404 })
-    }
-    vendorAuthId = vendorByUserId.user_id
-  }
-
-  if (user.id === vendorAuthId) {
+  if (user.id === vendor_id) {
     return NextResponse.json(
       { error: "Vendors cannot message themselves" },
       { status: 400 }
@@ -174,24 +152,30 @@ export async function POST(request: Request) {
   }
 
   // Check if conversation already exists
-  const { data: existing } = await supabase
+  console.log("[v0] Checking for existing conversation")
+  const { data: existing, error: existingError } = await supabase
     .from("conversations")
     .select("id, product_id, buyer_id, vendor_id, last_message_at, created_at")
     .eq("product_id", product_id)
     .eq("buyer_id", user.id)
-    .eq("vendor_id", vendorAuthId)
-    .maybeSingle()
+    .eq("vendor_id", vendor_id)
+    .single()
+
+  console.log("[v0] Existing conversation:", existing, "error:", existingError?.message ?? "none")
 
   if (existing) {
     return NextResponse.json({ conversation: existing })
   }
 
   // Create new conversation
+  console.log("[v0] Creating new conversation")
   const { data, error } = await supabase
     .from("conversations")
-    .insert({ product_id, buyer_id: user.id, vendor_id: vendorAuthId })
+    .insert({ product_id, buyer_id: user.id, vendor_id })
     .select()
     .single()
+
+  console.log("[v0] Insert result:", data, "error:", error?.message ?? "none")
 
   if (error) {
     // Handle race condition — another insert may have won
@@ -201,8 +185,8 @@ export async function POST(request: Request) {
         .select("id, product_id, buyer_id, vendor_id, last_message_at, created_at")
         .eq("product_id", product_id)
         .eq("buyer_id", user.id)
-        .eq("vendor_id", vendorAuthId)
-        .maybeSingle()
+        .eq("vendor_id", vendor_id)
+        .single()
       return NextResponse.json({ conversation: race })
     }
     return NextResponse.json({ error: error.message }, { status: 500 })

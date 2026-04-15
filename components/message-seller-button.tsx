@@ -30,11 +30,14 @@ export default function MessageSellerButton({
 
   async function handleClick() {
     setLoading(true)
+    console.log("[v0] MessageSellerButton clicked", { productId, vendorId })
     try {
       const supabase = createBrowserClient()
       const {
         data: { user },
       } = await supabase.auth.getUser()
+
+      console.log("[v0] Current user:", user?.id ?? "not logged in")
 
       if (!user) {
         toast({
@@ -53,27 +56,34 @@ export default function MessageSellerButton({
         return
       }
 
+      console.log("[v0] Creating conversation with:", { product_id: productId, vendor_id: vendorId })
       const res = await fetch("/api/messages/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ product_id: productId, vendor_id: vendorId }),
       })
 
+      console.log("[v0] Conversation API response status:", res.status)
+
       if (!res.ok) {
         const err = await res.json()
+        console.log("[v0] Conversation API error:", err)
         throw new Error(err.error ?? "Failed to start conversation")
       }
 
       const { conversation } = await res.json()
+      console.log("[v0] Conversation created/fetched:", conversation)
 
       if (onConversationReady) {
         // In-app navigation: let the parent handle it
         onConversationReady(conversation.id)
       } else {
         // Fallback: navigate to messages tab with conversation pre-selected
+        console.log("[v0] Navigating to:", `/?tab=messages&cid=${conversation.id}`)
         window.location.href = `/?tab=messages&cid=${conversation.id}`
       }
     } catch (err: unknown) {
+      console.log("[v0] MessageSellerButton error:", err)
       const message = err instanceof Error ? err.message : "Something went wrong"
       toast({ title: "Error", description: message, variant: "destructive" })
     } finally {
