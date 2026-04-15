@@ -39,17 +39,21 @@ export default function MessageSellerButton({
       // Buyers are not required to have a full account — sign them in anonymously
       // so they get a real auth.uid() that satisfies RLS on conversations/messages.
       if (!user) {
+        console.log("[v0] No user found, attempting anonymous sign-in")
         const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously()
+        console.log("[v0] Anonymous sign-in result:", { user: anonData?.user?.id, error: anonError?.message })
         if (anonError || !anonData.user) {
           toast({
             title: "Could not start chat",
-            description: "Please try again in a moment.",
+            description: anonError?.message || "Please try again in a moment.",
             variant: "destructive",
           })
           return
         }
         user = anonData.user
       }
+      
+      console.log("[v0] User authenticated:", user.id)
 
       if (user.id === vendorId) {
         toast({
@@ -59,18 +63,23 @@ export default function MessageSellerButton({
         return
       }
 
+      console.log("[v0] Creating conversation:", { product_id: productId, vendor_id: vendorId })
       const res = await fetch("/api/messages/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ product_id: productId, vendor_id: vendorId }),
       })
 
+      console.log("[v0] Conversation API status:", res.status)
+      
       if (!res.ok) {
         const err = await res.json()
+        console.log("[v0] Conversation API error:", err)
         throw new Error(err.error ?? "Failed to start conversation")
       }
 
       const { conversation } = await res.json()
+      console.log("[v0] Conversation created:", conversation?.id)
 
       if (onConversationReady) {
         onConversationReady(conversation.id)
