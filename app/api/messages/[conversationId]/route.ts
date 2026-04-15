@@ -37,7 +37,7 @@ export async function GET(request: Request, { params }: Params) {
 
   let query = supabase
     .from("messages")
-    .select("id, conversation_id, sender_id, content, image_url, read, deleted, created_at, edited_at")
+    .select("id, conversation_id, sender_id, content, image_url, read, delivered, deleted, created_at, edited_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -52,15 +52,29 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Mark unread messages as read (messages sent by the other party)
-  const unreadIds = (data ?? [])
-    .filter((m) => !m.read && m.sender_id !== user.id)
+  const incomingMessages = (data ?? []).filter((m) => m.sender_id !== user.id)
+
+  // Mark undelivered incoming messages as delivered first (receiver is now online)
+  const undeliveredIds = incomingMessages
+    .filter((m) => !m.delivered)
+    .map((m) => m.id)
+
+  if (undeliveredIds.length > 0) {
+    await supabase
+      .from("messages")
+      .update({ delivered: true })
+      .in("id", undeliveredIds)
+  }
+
+  // Mark all unread incoming messages as read (conversation is open)
+  const unreadIds = incomingMessages
+    .filter((m) => !m.read)
     .map((m) => m.id)
 
   if (unreadIds.length > 0) {
     await supabase
       .from("messages")
-      .update({ read: true })
+      .update({ delivered: true, read: true })
       .in("id", unreadIds)
   }
 
