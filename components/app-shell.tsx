@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import BottomNav, { type NavTab } from "@/components/bottom-nav"
 import BrowseProductsClient from "@/components/browse-products-client"
@@ -44,6 +44,15 @@ interface AppShellProps {
 
 const VALID_TABS: NavTab[] = ["store", "home", "messages", "settings"]
 
+// Single shared Supabase client — prevents multiple GoTrueClient instances
+let sharedSupabaseClient: ReturnType<typeof createBrowserClient> | null = null
+function getSupabaseClient() {
+  if (!sharedSupabaseClient) {
+    sharedSupabaseClient = createBrowserClient()
+  }
+  return sharedSupabaseClient
+}
+
 export default function AppShell({ products, locations }: AppShellProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -58,13 +67,42 @@ export default function AppShell({ products, locations }: AppShellProps) {
   const [openConversationId, setOpenConversationId] = useState<string | null>(cidParam)
   // null = not yet loaded (hide badge), 0 = loaded but no unread
   const [unreadCount, setUnreadCount] = useState<number | null>(null)
+  // Tracks which conversation is currently open so we never double-count it
+  const openConversationIdRef = useRef<string | null>(null)
   const activeTabRef = useRef<NavTab>(resolvedTab)
+  const currentUserIdRef = useRef<string | null>(null)
   const { notify } = useNotifications()
 
-  // Keep a ref to activeTab so we can read it inside async callbacks without stale closure
+  // Keep refs in sync
   useEffect(() => {
     activeTabRef.current = activeTab
   }, [activeTab])
+
+  // Fetch current user id once (for notification filtering — only show notifs for messages you didn't send)
+  useEffect(() => {
+    const supabase = getSupabaseClient()
+    supabase.auth.getUser().then(({ data }) => {
+      currentUserIdRef.current = data.user?.id ?? null
+    })
+  }, [])
+
+  // Fetch unread count from the conversations API
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const res = await fetch("/api/messages/conversations")
+      if (!res.ok) return
+      const data = await res.json()
+      const conversations: { id: string; unread_count: number }[] = data.conversations ?? []
+      // Conversations that are currently open should not count toward the badge
+      const total = conversations.reduce((sum, c) => {
+        if (c.id === openConversationIdRef.current) return sum
+        return sum + (c.unread_count ?? 0)
+      }, 0)
+      setUnreadCount(total)
+    } catch {
+      // Not logged in or network error — keep badge hidden
+    }
+  }, [])
 
   // Keep activeTab in sync when URL search params change (e.g. after message-seller redirect)
   useEffect(() => {
@@ -78,17 +116,12 @@ export default function AppShell({ products, locations }: AppShellProps) {
     }
   }, [searchParams])
 
-  // When the user manually switches tabs, clear the conversation deep-link
+  // When the user manually switches tabs
   function handleTabChange(tab: NavTab) {
     setActiveTab(tab)
     if (tab !== "messages") {
       setOpenConversationId(null)
     }
-    // Instantly clear the unread badge when the user navigates to messages
-    if (tab === "messages") {
-      setUnreadCount(0)
-    }
-    // Update URL without full navigation
     const url = new URL(window.location.href)
     url.searchParams.set("tab", tab)
     if (tab !== "messages") {
@@ -97,44 +130,47 @@ export default function AppShell({ products, locations }: AppShellProps) {
     router.replace(url.pathname + url.search, { scroll: false })
   }
 
-  // Unread message count — single Supabase query using the conversations API
+  // Called by MessagesTab when a conversation is opened or closed
+  function handleConversationChange(conversationId: string | null) {
+    openConversationIdRef.current = conversationId
+    // Re-compute unread without the now-open conversation
+    fetchUnreadCount()
+  }
+
+  // Single realtime subscription for the whole app — no duplicate clients
   useEffect(() => {
-    let cancelled = false
-
-    async function fetchUnreadCount() {
-      try {
-        const res = await fetch("/api/messages/conversations")
-        if (!res.ok) return
-        const data = await res.json()
-        if (cancelled) return
-        const total = (data.conversations ?? []).reduce(
-          (sum: number, c: { unread_count: number }) => sum + (c.unread_count ?? 0),
-          0
-        )
-        setUnreadCount(total)
-      } catch {
-        // Not logged in or network error — no badge
-      }
-    }
-
     fetchUnreadCount()
 
-    // Realtime subscription for new/updated messages
-    const supabase = createBrowserClient()
+    const supabase = getSupabaseClient()
     const channel = supabase
       .channel("app_shell_unread")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
         (payload) => {
-          fetchUnreadCount()
-          // Show a browser notification when a new message arrives and messages tab isn't active
-          if (activeTabRef.current !== "messages") {
+          const msg = payload.new as { sender_id?: string; content?: string; conversation_id?: string }
+          const isOwnMessage = msg.sender_id === currentUserIdRef.current
+          const isOpenConversation = msg.conversation_id === openConversationIdRef.current
+
+          // Only bump the unread count for messages from others in conversations not currently open
+          if (!isOwnMessage && !isOpenConversation) {
+            fetchUnreadCount()
+          }
+
+          // Push a browser notification only when:
+          // 1. The message is from someone else
+          // 2. The messages tab is not active OR a different conversation is open
+          if (!isOwnMessage && (activeTabRef.current !== "messages" || !isOpenConversation)) {
             notify({
               title: "New message",
-              body: (payload.new as { content?: string })?.content ?? "You have a new message",
-              tag: "new-message",
-              onClick: () => setActiveTab("messages"),
+              body: msg.content ?? "You have a new message",
+              tag: `msg-${msg.conversation_id}`,
+              onClick: () => {
+                setActiveTab("messages")
+                if (msg.conversation_id) {
+                  setOpenConversationId(msg.conversation_id)
+                }
+              },
             })
           }
         }
@@ -142,32 +178,20 @@ export default function AppShell({ products, locations }: AppShellProps) {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "messages" },
-        () => {
-          fetchUnreadCount()
+        (payload) => {
+          const msg = payload.new as { read?: boolean }
+          // When a message is marked read, recompute the badge
+          if (msg.read === true) {
+            fetchUnreadCount()
+          }
         }
       )
       .subscribe()
 
     return () => {
-      cancelled = true
       supabase.removeChannel(channel)
     }
-  }, [notify])
-
-  // When messages tab is active and a conversation is opened, decrement unread visually
-  function handleConversationOpen() {
-    // The actual unread refresh happens via realtime — just trigger a refetch
-    fetch("/api/messages/conversations")
-      .then((r) => r.json())
-      .then((data) => {
-        const total = (data.conversations ?? []).reduce(
-          (sum: number, c: { unread_count: number }) => sum + (c.unread_count ?? 0),
-          0
-        )
-        setUnreadCount(total)
-      })
-      .catch(() => {})
-  }
+  }, [fetchUnreadCount, notify])
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -184,7 +208,7 @@ export default function AppShell({ products, locations }: AppShellProps) {
         {activeTab === "messages" && (
           <MessagesTab
             initialConversationId={openConversationId}
-            onConversationOpen={handleConversationOpen}
+            onConversationChange={handleConversationChange}
           />
         )}
         {activeTab === "settings" && <SettingsTab />}

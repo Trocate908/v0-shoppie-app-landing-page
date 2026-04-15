@@ -148,19 +148,6 @@ export default function ChatWindow({
               .update({ read: true })
               .eq("id", newMsg.id)
               .then(() => {})
-
-            // Browser notification for incoming messages
-            if (
-              typeof window !== "undefined" &&
-              "Notification" in window &&
-              Notification.permission === "granted"
-            ) {
-              new Notification(otherName, {
-                body: newMsg.content ?? "Sent an image",
-                icon: "/icons/icon-192x192.png",
-                tag: `msg-${conversation.id}`,
-              })
-            }
           }
         }
       )
@@ -186,14 +173,6 @@ export default function ChatWindow({
     }
   }, [conversation.id, currentUserId, otherName])
 
-  // Request notification permission once the chat is opened
-  useEffect(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) return
-    if (Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {})
-    }
-  }, [])
-
   async function sendMessage() {
     if (!input.trim() || sending) return
     setSending(true)
@@ -216,29 +195,23 @@ export default function ChatWindow({
     setMessages((prev) => [...prev, optimistic])
 
     try {
-      console.log("[v0] Sending message to:", `/api/messages/${conversation.id}`)
       const res = await fetch(`/api/messages/${conversation.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       })
-      console.log("[v0] Message API status:", res.status)
       if (res.ok) {
         const data = await res.json()
-        console.log("[v0] Message sent successfully:", data.message?.id)
         // Replace the optimistic message with the real one
         setMessages((prev) =>
           prev.map((m) => (m.id === optimisticId ? data.message : m))
         )
       } else {
-        const errData = await res.json().catch(() => ({}))
-        console.log("[v0] Message API error:", errData)
         // Roll back optimistic message on failure
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
         setInput(content)
       }
-    } catch (err) {
-      console.log("[v0] Message send exception:", err)
+    } catch {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
       setInput(content)
     } finally {
@@ -313,20 +286,23 @@ export default function ChatWindow({
   return (
     <div className="flex h-dvh flex-col bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-3 backdrop-blur">
-        <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back">
+      <header className="sticky top-0 z-10 flex h-[60px] shrink-0 items-center gap-2 border-b border-border bg-background/98 px-2 backdrop-blur">
+        <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back" className="shrink-0">
           <ArrowLeft className="h-5 w-5" />
         </Button>
 
-        {/* Avatar: product thumbnail */}
-        <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg bg-muted">
+        {/* Avatar: product thumbnail — circular like WhatsApp */}
+        <div
+          className="relative shrink-0 overflow-hidden rounded-full bg-muted"
+          style={{ height: "40px", width: "40px" }}
+        >
           {conversation.products?.image_url ? (
             <Image
               src={conversation.products.image_url}
               alt={conversation.products.name}
               fill
               className="object-cover"
-              sizes="32px"
+              sizes="40px"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
@@ -335,34 +311,22 @@ export default function ChatWindow({
           )}
         </div>
 
-        {/* Name + product */}
+        {/* Name + product context */}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold leading-tight text-foreground">
+          <p className="truncate text-[15px] font-semibold leading-tight text-foreground">
             {otherName}
           </p>
           {conversation.products && (
-            <p className="truncate text-[11px] leading-tight text-muted-foreground">
-              re: {conversation.products.name}
+            <p className="truncate text-xs leading-tight text-muted-foreground">
+              {conversation.products.name}
+              {" · "}
+              <span className="font-medium text-primary">
+                ${conversation.products.price.toFixed(2)}
+              </span>
             </p>
           )}
         </div>
       </header>
-
-      {/* Product context banner */}
-      {conversation.products && (
-        <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-2">
-          <Package className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <p className="truncate text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">
-              {conversation.products.name}
-            </span>
-            {" — "}
-            <span className="font-semibold text-primary">
-              ${conversation.products.price.toFixed(2)}
-            </span>
-          </p>
-        </div>
-      )}
 
       {/* Messages list */}
       <main className="flex-1 overflow-y-auto px-4 py-3">
@@ -422,7 +386,7 @@ export default function ChatWindow({
       )}
 
       {/* Input area */}
-      <div className="shrink-0 border-t border-border bg-background p-3">
+      <div className="shrink-0 border-t border-border bg-background px-3 py-2">
         <div className="flex items-end gap-2">
           <Textarea
             ref={inputRef}
@@ -433,9 +397,9 @@ export default function ChatWindow({
                 : setInput(e.target.value)
             }
             onKeyDown={handleKeyDown}
-            placeholder={editingMessage ? "Edit your message…" : "Type a message…"}
+            placeholder={editingMessage ? "Edit message…" : "Message"}
             rows={1}
-            className="max-h-32 min-h-[40px] flex-1 resize-none text-sm leading-relaxed"
+            className="max-h-32 min-h-[44px] flex-1 resize-none rounded-2xl bg-muted/60 px-4 py-3 text-sm leading-relaxed border-0 focus-visible:ring-1 focus-visible:ring-primary/50"
           />
           <Button
             size="icon"
@@ -444,7 +408,7 @@ export default function ChatWindow({
               editingMessage ? !editContent.trim() : !input.trim() || sending
             }
             aria-label={editingMessage ? "Save edit" : "Send message"}
-            className="shrink-0"
+            className="h-11 w-11 shrink-0 rounded-full"
           >
             {sending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -525,12 +489,11 @@ function MessageBubble({ message, isOwn, onEdit, onDelete }: MessageBubbleProps)
             {timeStr}
             {message.edited_at && " (edited)"}
           </span>
-          {isOwn &&
-            (message.read ? (
-              <CheckCheck className="h-3 w-3 text-primary-foreground/70" />
-            ) : (
-              <Check className="h-3 w-3 text-primary-foreground/50" />
-            ))}
+          {isOwn && (
+            message.read
+              ? <CheckCheck className="h-3.5 w-3.5 text-blue-300" />
+              : <Check className="h-3.5 w-3.5 text-primary-foreground/50" />
+          )}
         </div>
       </div>
 
