@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useTheme } from "next-themes"
-import { Moon, Sun, Monitor, LogOut, Info, FileText, Phone, MapPin, Heart, ChevronRight, Store, Plus, RefreshCw, Check, Trash2 } from "lucide-react"
+import { useTheme } from "@/components/theme-provider"
+import { Moon, Sun, LogOut, Info, FileText, Phone, MapPin, Heart, ChevronRight, Store, Plus, RefreshCw, Check, Trash2 } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { createBrowserClient } from "@/lib/supabase/client"
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils"
 import { getSavedAccounts, removeAccount, setActiveAccountId, type SavedAccount } from "@/lib/account-switcher"
 
 export default function SettingsTab() {
-  const { theme, setTheme, resolvedTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -49,7 +49,7 @@ export default function SettingsTab() {
     })
   }, [])
 
-  const isDark = resolvedTheme === "dark"
+  const isDark = theme === "dark"
 
   const handleLogout = async () => {
     setIsLoggingOut(true)
@@ -257,21 +257,7 @@ export default function SettingsTab() {
                 />
               )}
             </div>
-            <div className="border-t border-border">
-              <button
-                onClick={() => setTheme("system")}
-                className={cn(
-                  "flex w-full items-center justify-between px-4 py-3 text-sm transition-colors",
-                  theme === "system" ? "text-primary" : "text-foreground hover:bg-muted/50",
-                )}
-              >
-                <span className="flex items-center gap-3">
-                  <Monitor className="h-4 w-4 text-muted-foreground" />
-                  Use System Theme
-                </span>
-                {theme === "system" && <span className="text-xs text-primary font-medium">Active</span>}
-              </button>
-            </div>
+
           </div>
         </section>
 
