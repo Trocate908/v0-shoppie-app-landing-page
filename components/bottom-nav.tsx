@@ -8,7 +8,7 @@ export type NavTab = "store" | "home" | "messages" | "settings"
 interface BottomNavProps {
   activeTab: NavTab
   onTabChange: (tab: NavTab) => void
-  unreadMessages?: number | null
+  unreadMessages?: number
 }
 
 const tabs = [
@@ -28,7 +28,7 @@ export default function BottomNav({ activeTab, onTabChange, unreadMessages }: Bo
         {tabs.map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.id
-          const showBadge = tab.id === "messages" && unreadMessages != null && unreadMessages > 0
+          const showBadge = tab.id === "messages" && (unreadMessages ?? 0) > 0
           return (
             <button
               key={tab.id}

@@ -65,8 +65,10 @@ export default function AppShell({ products, locations }: AppShellProps) {
 
   const [activeTab, setActiveTab] = useState<NavTab>(resolvedTab)
   const [openConversationId, setOpenConversationId] = useState<string | null>(cidParam)
-  // null = not yet loaded (hide badge), 0 = loaded but no unread
-  const [unreadCount, setUnreadCount] = useState<number | null>(null)
+  // Start at 0 (not null) so the badge is stable from the very first render.
+  // The realtime subscription will update it once the fetch completes.
+  const [unreadCount, setUnreadCount] = useState<number>(0)
+  const [unreadReady, setUnreadReady] = useState(false)
   // Tracks which conversation is currently open so we never double-count it
   const openConversationIdRef = useRef<string | null>(null)
   const activeTabRef = useRef<NavTab>(resolvedTab)
@@ -78,7 +80,7 @@ export default function AppShell({ products, locations }: AppShellProps) {
     activeTabRef.current = activeTab
   }, [activeTab])
 
-  // Fetch current user id once (for notification filtering — only show notifs for messages you didn't send)
+  // Fetch current user id once — initialise immediately, don't wait for UI
   useEffect(() => {
     const supabase = getSupabaseClient()
     supabase.auth.getUser().then(({ data }) => {
@@ -90,7 +92,10 @@ export default function AppShell({ products, locations }: AppShellProps) {
   const fetchUnreadCount = useCallback(async () => {
     try {
       const res = await fetch("/api/messages/conversations")
-      if (!res.ok) return
+      if (!res.ok) {
+        setUnreadReady(true)
+        return
+      }
       const data = await res.json()
       const conversations: { id: string; unread_count: number }[] = data.conversations ?? []
       // Conversations that are currently open should not count toward the badge
@@ -100,7 +105,9 @@ export default function AppShell({ products, locations }: AppShellProps) {
       }, 0)
       setUnreadCount(total)
     } catch {
-      // Not logged in or network error — keep badge hidden
+      // Not logged in or network error — show 0, no badge
+    } finally {
+      setUnreadReady(true)
     }
   }, [])
 
@@ -218,7 +225,7 @@ export default function AppShell({ products, locations }: AppShellProps) {
       <BottomNav
         activeTab={activeTab}
         onTabChange={handleTabChange}
-        unreadMessages={unreadCount}
+        unreadMessages={unreadReady ? unreadCount : 0}
       />
     </div>
   )
