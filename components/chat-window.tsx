@@ -37,6 +37,7 @@ interface Message {
   sender_id: string
   content: string | null
   image_url: string | null
+  delivered: boolean
   read: boolean
   deleted: boolean
   created_at: string
@@ -141,11 +142,11 @@ export default function ChatWindow({
             return [...prev, newMsg]
           })
 
-          // Mark as read immediately if it came from the other party
+          // Receiver is online and viewing the chat — mark delivered + read immediately
           if (newMsg.sender_id !== currentUserId) {
             supabase
               .from("messages")
-              .update({ read: true })
+              .update({ delivered: true, read: true })
               .eq("id", newMsg.id)
               .then(() => {})
           }
@@ -187,6 +188,7 @@ export default function ChatWindow({
       sender_id: currentUserId,
       content,
       image_url: null,
+      delivered: false,
       read: false,
       deleted: false,
       created_at: new Date().toISOString(),
@@ -422,6 +424,29 @@ export default function ChatWindow({
   )
 }
 
+// ─── MessageTick ───────────────────────────────────────────────────────────────
+// Single grey  = sent, receiver offline (delivered=false, read=false)
+// Double grey  = delivered, receiver online but not read (delivered=true, read=false)
+// Double blue  = read by receiver (delivered=true, read=true)
+
+interface MessageTickProps {
+  delivered: boolean
+  read: boolean
+}
+
+function MessageTick({ delivered, read }: MessageTickProps) {
+  if (read) {
+    // Double blue ticks
+    return <CheckCheck className="h-3.5 w-3.5 shrink-0 text-blue-400" />
+  }
+  if (delivered) {
+    // Double grey ticks
+    return <CheckCheck className="h-3.5 w-3.5 shrink-0 text-primary-foreground/50" />
+  }
+  // Single grey tick — sent but not yet delivered
+  return <Check className="h-3.5 w-3.5 shrink-0 text-primary-foreground/50" />
+}
+
 // ─── MessageBubble ─────────────────────────────────────────────────────────────
 
 interface MessageBubbleProps {
@@ -489,11 +514,7 @@ function MessageBubble({ message, isOwn, onEdit, onDelete }: MessageBubbleProps)
             {timeStr}
             {message.edited_at && " (edited)"}
           </span>
-          {isOwn && (
-            message.read
-              ? <CheckCheck className="h-3.5 w-3.5 text-blue-300" />
-              : <Check className="h-3.5 w-3.5 text-primary-foreground/50" />
-          )}
+          {isOwn && <MessageTick delivered={message.delivered} read={message.read} />}
         </div>
       </div>
 

@@ -78,11 +78,23 @@ export async function GET() {
 
   const { data: unreadData } = await supabase
     .from("messages")
-    .select("conversation_id")
+    .select("conversation_id, id, delivered")
     .in("conversation_id", conversationIds)
     .eq("read", false)
     .eq("deleted", false)
     .neq("sender_id", user.id)
+
+  // Mark undelivered messages as delivered — receiver is online (fetching conversations)
+  const undeliveredIds = (unreadData ?? [])
+    .filter((m) => !m.delivered)
+    .map((m) => m.id)
+
+  if (undeliveredIds.length > 0) {
+    await supabase
+      .from("messages")
+      .update({ delivered: true })
+      .in("id", undeliveredIds)
+  }
 
   for (const msg of unreadData ?? []) {
     unreadCounts[msg.conversation_id] = (unreadCounts[msg.conversation_id] ?? 0) + 1
