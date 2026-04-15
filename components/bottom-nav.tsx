@@ -8,7 +8,7 @@ export type NavTab = "store" | "home" | "messages" | "settings"
 interface BottomNavProps {
   activeTab: NavTab
   onTabChange: (tab: NavTab) => void
-  unreadMessages?: number
+  unreadMessages?: number | null
 }
 
 const tabs = [
@@ -18,7 +18,7 @@ const tabs = [
   { id: "settings" as NavTab, label: "Settings", icon: Settings },
 ]
 
-export default function BottomNav({ activeTab, onTabChange, unreadMessages = 0 }: BottomNavProps) {
+export default function BottomNav({ activeTab, onTabChange, unreadMessages }: BottomNavProps) {
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
@@ -28,7 +28,7 @@ export default function BottomNav({ activeTab, onTabChange, unreadMessages = 0 }
         {tabs.map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.id
-          const showBadge = tab.id === "messages" && unreadMessages > 0
+          const showBadge = tab.id === "messages" && unreadMessages != null && unreadMessages > 0
           return (
             <button
               key={tab.id}

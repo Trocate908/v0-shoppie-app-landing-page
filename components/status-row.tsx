@@ -331,9 +331,9 @@ export default function StatusRow({
   const current = viewingStatuses[viewIndex]
 
   useEffect(() => {
-    fetch("/api/cleanup-statuses", { method: "POST" }).finally(() => {
-      fetchStatuses()
-    })
+    // Run cleanup and fetch in parallel — don't wait for cleanup before showing statuses
+    fetchStatuses()
+    fetch("/api/cleanup-statuses", { method: "POST" }).then(() => fetchStatuses()).catch(() => {})
   }, [])
 
   async function fetchStatuses() {
