@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import Image from "next/image"
 import { formatDistanceToNow } from "date-fns"
 import ChatWindow from "@/components/chat-window"
+import { VerificationBadge } from "@/components/verification-badge"
 
 interface ConversationProduct {
   id: string
@@ -67,7 +68,16 @@ export default function MessagesTab({
       }
       const data = await res.json()
       setIsAuthenticated(true)
-      setConversations(data.conversations ?? [])
+      // Sort: unread conversations first, then by most recent message
+      const sorted = (data.conversations ?? []).slice().sort((a: Conversation, b: Conversation) => {
+        const aUnread = (a.unread_count ?? 0) > 0 ? 1 : 0
+        const bUnread = (b.unread_count ?? 0) > 0 ? 1 : 0
+        if (bUnread !== aUnread) return bUnread - aUnread
+        const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
+        const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+        return bTime - aTime
+      })
+      setConversations(sorted)
     } catch {
       setIsAuthenticated(false)
     } finally {
@@ -229,14 +239,24 @@ function ConversationItem({
         {/* Text info */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span
-              className={`truncate text-sm ${
-                hasUnread
-                  ? "font-semibold text-foreground"
-                  : "font-medium text-foreground"
-              }`}
-            >
-              {is_buyer ? (vendors?.shop_name ?? "Unknown Shop") : "Buyer"}
+            <span className="flex min-w-0 items-center gap-1">
+              <span
+                className={`truncate text-sm ${
+                  hasUnread
+                    ? "font-semibold text-foreground"
+                    : "font-medium text-foreground"
+                }`}
+              >
+                {is_buyer ? (vendors?.shop_name ?? "Unknown Shop") : "Buyer"}
+              </span>
+              {is_buyer && vendors?.is_verified && (
+                <VerificationBadge
+                  isVerified={vendors.is_verified}
+                  verificationExpiresAt={vendors.verification_expires_at}
+                  size="sm"
+                  showTooltip={false}
+                />
+              )}
             </span>
             <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo}</span>
           </div>

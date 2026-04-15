@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import BottomNav, { type NavTab } from "@/components/bottom-nav"
 import BrowseProductsClient from "@/components/browse-products-client"
@@ -8,6 +8,7 @@ import SettingsTab from "@/components/settings-tab"
 import HomeTab from "@/components/home-tab"
 import MessagesTab from "@/components/messages-tab"
 import { createBrowserClient } from "@/lib/supabase/client"
+import { useNotifications } from "@/hooks/use-notifications"
 
 interface Location {
   id: string
@@ -55,7 +56,15 @@ export default function AppShell({ products, locations }: AppShellProps) {
 
   const [activeTab, setActiveTab] = useState<NavTab>(resolvedTab)
   const [openConversationId, setOpenConversationId] = useState<string | null>(cidParam)
-  const [unreadCount, setUnreadCount] = useState(0)
+  // null = not yet loaded (hide badge), 0 = loaded but no unread
+  const [unreadCount, setUnreadCount] = useState<number | null>(null)
+  const activeTabRef = useRef<NavTab>(resolvedTab)
+  const { notify } = useNotifications()
+
+  // Keep a ref to activeTab so we can read it inside async callbacks without stale closure
+  useEffect(() => {
+    activeTabRef.current = activeTab
+  }, [activeTab])
 
   // Keep activeTab in sync when URL search params change (e.g. after message-seller redirect)
   useEffect(() => {
@@ -74,6 +83,10 @@ export default function AppShell({ products, locations }: AppShellProps) {
     setActiveTab(tab)
     if (tab !== "messages") {
       setOpenConversationId(null)
+    }
+    // Instantly clear the unread badge when the user navigates to messages
+    if (tab === "messages") {
+      setUnreadCount(0)
     }
     // Update URL without full navigation
     const url = new URL(window.location.href)
@@ -112,7 +125,23 @@ export default function AppShell({ products, locations }: AppShellProps) {
       .channel("app_shell_unread")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "messages" },
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          fetchUnreadCount()
+          // Show a browser notification when a new message arrives and messages tab isn't active
+          if (activeTabRef.current !== "messages") {
+            notify({
+              title: "New message",
+              body: (payload.new as { content?: string })?.content ?? "You have a new message",
+              tag: "new-message",
+              onClick: () => setActiveTab("messages"),
+            })
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
         () => {
           fetchUnreadCount()
         }
@@ -123,7 +152,7 @@ export default function AppShell({ products, locations }: AppShellProps) {
       cancelled = true
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [notify])
 
   // When messages tab is active and a conversation is opened, decrement unread visually
   function handleConversationOpen() {

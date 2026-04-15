@@ -70,20 +70,14 @@ export async function GET(request: Request, { params }: Params) {
 // POST /api/messages/[conversationId] — send a message
 export async function POST(request: Request, { params }: Params) {
   const { conversationId } = await params
-  console.log("[v0] POST /api/messages called for conversation:", conversationId)
-  
   const supabase = await createServerClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-  console.log("[v0] Auth result:", { userId: user?.id, authError: authError?.message })
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   const conversation = await verifyParticipant(supabase, conversationId, user.id)
-  console.log("[v0] Conversation verification:", { found: !!conversation, buyer_id: conversation?.buyer_id, vendor_id: conversation?.vendor_id })
-  
   if (!conversation) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
@@ -95,8 +89,6 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Message must have content or image" }, { status: 400 })
   }
 
-  console.log("[v0] Inserting message:", { conversation_id: conversationId, sender_id: user.id })
-  
   const { data: message, error } = await supabase
     .from("messages")
     .insert({
@@ -107,8 +99,6 @@ export async function POST(request: Request, { params }: Params) {
     })
     .select()
     .single()
-
-  console.log("[v0] Insert result:", { messageId: message?.id, error: error?.message })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
