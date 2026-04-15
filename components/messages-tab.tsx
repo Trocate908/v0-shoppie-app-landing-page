@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { createBrowserClient } from "@/lib/supabase/client"
-import { MessageCircle, Store, Package, Trash2, ShoppingBag } from "lucide-react"
+import { MessageCircle, Store, ShoppingBag, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Image from "next/image"
-import { formatDistanceToNow } from "date-fns"
+import { isToday, isYesterday, format } from "date-fns"
 import ChatWindow from "@/components/chat-window"
 import { VerificationBadge } from "@/components/verification-badge"
 import { cn } from "@/lib/utils"
@@ -51,12 +51,21 @@ interface Conversation {
 
 interface MessagesTabProps {
   initialConversationId?: string | null
-  onConversationOpen?: () => void
+  /** Called whenever a conversation is opened (id) or closed (null) */
+  onConversationChange?: (conversationId: string | null) => void
+}
+
+function formatTime(dateStr: string | null): string {
+  if (!dateStr) return ""
+  const d = new Date(dateStr)
+  if (isToday(d)) return format(d, "HH:mm")
+  if (isYesterday(d)) return "Yesterday"
+  return format(d, "dd/MM/yyyy")
 }
 
 export default function MessagesTab({
   initialConversationId,
-  onConversationOpen,
+  onConversationChange,
 }: MessagesTabProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,17 +74,14 @@ export default function MessagesTab({
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null)
   const [deleting, setDeleting] = useState(false)
-  // Track which conversations we've opened so we don't re-apply unread from realtime
-  const openedConvoIds = useRef<Set<string>>(new Set())
-  const isConversationOpenRef = useRef(false)
+  // IDs of conversations we've opened this session — kept zero in the local list
+  const openedIds = useRef<Set<string>>(new Set())
+  const didAutoOpen = useRef(false)
 
-  const sortConversations = (list: Conversation[]) =>
+  const sortConversations = (list: Conversation[]): Conversation[] =>
     list.slice().sort((a, b) => {
-      const aUnread = (a.unread_count ?? 0) > 0 ? 1 : 0
-      const bUnread = (b.unread_count ?? 0) > 0 ? 1 : 0
-      if (bUnread !== aUnread) return bUnread - aUnread
-      const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
-      const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+      const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : new Date(a.created_at).getTime()
+      const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : new Date(b.created_at).getTime()
       return bTime - aTime
     })
 
@@ -94,9 +100,9 @@ export default function MessagesTab({
       const data = await res.json()
       setIsAuthenticated(true)
       const incoming: Conversation[] = data.conversations ?? []
-      // For any conversation the user has already opened, force unread_count = 0
+      // Zero out unread for conversations we've already opened this session
       const patched = incoming.map((c) =>
-        openedConvoIds.current.has(c.id) ? { ...c, unread_count: 0 } : c
+        openedIds.current.has(c.id) ? { ...c, unread_count: 0 } : c
       )
       setConversations(sortConversations(patched))
     } catch {
@@ -106,71 +112,66 @@ export default function MessagesTab({
     }
   }, [])
 
+  // Init: get user + load conversations
   useEffect(() => {
     async function init() {
       const supabase = createBrowserClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       setUserId(user?.id ?? null)
       await fetchConversations()
     }
     init()
   }, [fetchConversations])
 
-  // Auto-open a specific conversation when coming from message-seller-button
+  // Realtime: refresh conversation list on new messages (INSERT only, not read-updates)
   useEffect(() => {
-    if (!initialConversationId || conversations.length === 0) return
+    if (!isAuthenticated) return
+    const supabase = createBrowserClient()
+    const channel = supabase
+      .channel("messages_tab_list_v2")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
+        // Refresh list so the preview + timestamp updates; unread will be zeroed for open convos
+        fetchConversations()
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [isAuthenticated, fetchConversations])
+
+  // Auto-open a specific conversation (from deep-link / message-seller button)
+  useEffect(() => {
+    if (!initialConversationId || didAutoOpen.current || conversations.length === 0) return
     const target = conversations.find((c) => c.id === initialConversationId)
     if (target) {
+      didAutoOpen.current = true
       openConversation(target)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConversationId, conversations.length])
 
-  // Realtime: refresh list on new INSERT messages only (not on read-updates to avoid re-showing badge)
-  useEffect(() => {
-    if (!isAuthenticated) return
-    const supabase = createBrowserClient()
-    const channel = supabase
-      .channel("messages_tab_list")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        () => {
-          // Only refresh if no conversation is currently open
-          if (!isConversationOpenRef.current) {
-            fetchConversations()
-          }
-        }
-      )
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [isAuthenticated, fetchConversations])
-
   function openConversation(convo: Conversation) {
-    openedConvoIds.current.add(convo.id)
-    isConversationOpenRef.current = true
-    setActiveConversation(convo)
-    onConversationOpen?.()
-    // Immediately zero out the unread count for this conversation
+    openedIds.current.add(convo.id)
+    // Zero out locally immediately — no waiting for server
     setConversations((prev) =>
       prev.map((c) => (c.id === convo.id ? { ...c, unread_count: 0 } : c))
     )
+    setActiveConversation(convo)
+    onConversationChange?.(convo.id)
+  }
+
+  function closeConversation() {
+    setActiveConversation(null)
+    onConversationChange?.(null)
+    fetchConversations()
   }
 
   async function deleteConversation() {
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      const res = await fetch(`/api/messages/conversations/${deleteTarget.id}`, {
-        method: "DELETE",
-      })
+      const res = await fetch(`/api/messages/conversations/${deleteTarget.id}`, { method: "DELETE" })
       if (res.ok) {
         setConversations((prev) => prev.filter((c) => c.id !== deleteTarget.id))
-        openedConvoIds.current.delete(deleteTarget.id)
+        openedIds.current.delete(deleteTarget.id)
       }
     } finally {
       setDeleting(false)
@@ -183,11 +184,7 @@ export default function MessagesTab({
       <ChatWindow
         conversation={activeConversation}
         currentUserId={userId ?? ""}
-        onBack={() => {
-          isConversationOpenRef.current = false
-          setActiveConversation(null)
-          fetchConversations()
-        }}
+        onBack={closeConversation}
       />
     )
   }
@@ -196,21 +193,13 @@ export default function MessagesTab({
 
   return (
     <div className="flex min-h-dvh flex-col bg-background pb-20">
-      {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
-        <div className="flex h-14 items-center gap-3 px-4">
-          <div className="relative">
-            <MessageCircle className="h-5 w-5 text-primary" />
-            {totalUnread > 0 && (
-              <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
-                {totalUnread > 9 ? "9+" : totalUnread}
-              </span>
-            )}
-          </div>
-          <h1 className="text-lg font-semibold text-foreground">Messages</h1>
-          {conversations.length > 0 && (
-            <span className="ml-auto text-xs text-muted-foreground">
-              {conversations.length} chat{conversations.length !== 1 ? "s" : ""}
+      {/* Header — WhatsApp style */}
+      <header className="sticky top-0 z-10 border-b border-border bg-background/98 backdrop-blur">
+        <div className="flex h-14 items-center gap-2 px-4">
+          <h1 className="flex-1 text-xl font-bold text-foreground tracking-tight">Chats</h1>
+          {totalUnread > 0 && (
+            <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">
+              {totalUnread > 99 ? "99+" : totalUnread}
             </span>
           )}
         </div>
@@ -225,7 +214,7 @@ export default function MessagesTab({
         ) : conversations.length === 0 ? (
           <EmptyState />
         ) : (
-          <ul className="divide-y divide-border" role="list">
+          <ul role="list">
             {conversations.map((convo) => (
               <ConversationItem
                 key={convo.id}
@@ -233,6 +222,7 @@ export default function MessagesTab({
                 currentUserId={userId ?? ""}
                 onClick={() => openConversation(convo)}
                 onDelete={() => setDeleteTarget(convo)}
+                formatTime={formatTime}
               />
             ))}
           </ul>
@@ -243,9 +233,9 @@ export default function MessagesTab({
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete conversation?</AlertDialogTitle>
+            <AlertDialogTitle>Delete chat?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this conversation and all its messages. This action cannot be undone.
+              This will permanently delete this conversation and all its messages. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -271,48 +261,41 @@ function ConversationItem({
   currentUserId,
   onClick,
   onDelete,
+  formatTime,
 }: {
   conversation: Conversation
   currentUserId: string
   onClick: () => void
   onDelete: () => void
+  formatTime: (d: string | null) => string
 }) {
   const { products, vendors, unread_count, last_message_at, last_message, is_buyer } =
     conversation
   const hasUnread = (unread_count ?? 0) > 0
+  const unreadNum = unread_count ?? 0
 
-  const timeAgo = last_message_at
-    ? formatDistanceToNow(new Date(last_message_at), { addSuffix: true })
-    : ""
+  const timeStr = formatTime(last_message_at ?? conversation.created_at)
 
   const previewText = last_message
     ? last_message.sender_id === currentUserId
-      ? `You: ${last_message.content ?? "Sent an image"}`
-      : last_message.content ?? "Sent an image"
+      ? `You: ${last_message.content ?? "Image"}`
+      : last_message.content ?? "Image"
     : "No messages yet"
 
   const shopName = is_buyer ? (vendors?.shop_name ?? "Unknown Shop") : "Buyer"
 
   return (
-    <li className={cn("relative transition-colors", hasUnread ? "bg-primary/[0.03]" : "")}>
-      {/* Unread accent bar */}
-      {hasUnread && (
-        <span className="absolute inset-y-0 left-0 w-0.5 rounded-r-full bg-primary" aria-hidden />
-      )}
-
-      <div className="flex items-center gap-0">
+    <li>
+      <div className="flex items-stretch">
         {/* Main tap area */}
         <button
           onClick={onClick}
-          className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/50 active:bg-muted/70"
+          className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors active:bg-muted/60"
         >
-          {/* Avatar: product image with unread ring */}
+          {/* Avatar: product image */}
           <div
-            className={cn(
-              "relative h-13 w-13 shrink-0 overflow-hidden rounded-2xl bg-muted",
-              hasUnread ? "ring-2 ring-primary ring-offset-1" : ""
-            )}
-            style={{ height: "52px", width: "52px" }}
+            className="relative shrink-0 overflow-hidden rounded-full bg-muted"
+            style={{ height: "54px", width: "54px" }}
           >
             {products?.image_url ? (
               <Image
@@ -320,11 +303,11 @@ function ConversationItem({
                 alt={products.name ?? "Product"}
                 fill
                 className="object-cover"
-                sizes="52px"
+                sizes="54px"
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center">
-                <ShoppingBag className="h-5 w-5 text-muted-foreground" />
+              <div className="flex h-full w-full items-center justify-center bg-muted">
+                <ShoppingBag className="h-6 w-6 text-muted-foreground" />
               </div>
             )}
           </div>
@@ -332,12 +315,12 @@ function ConversationItem({
           {/* Text info */}
           <div className="min-w-0 flex-1">
             {/* Row 1: name + time */}
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-baseline justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1">
                 <span
                   className={cn(
-                    "truncate text-sm",
-                    hasUnread ? "font-semibold text-foreground" : "font-medium text-foreground"
+                    "truncate text-[15px] leading-snug",
+                    hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground"
                   )}
                 >
                   {shopName}
@@ -351,32 +334,39 @@ function ConversationItem({
                   />
                 )}
               </span>
-              <span className={cn("shrink-0 text-[11px]", hasUnread ? "font-medium text-primary" : "text-muted-foreground")}>
-                {timeAgo}
+              <span
+                className={cn(
+                  "shrink-0 text-xs",
+                  hasUnread ? "font-semibold text-primary" : "text-muted-foreground"
+                )}
+              >
+                {timeStr}
               </span>
             </div>
 
-            {/* Row 2: product name */}
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {products?.name ?? "Product enquiry"}
-            </p>
-
-            {/* Row 3: last message preview + unread dot */}
-            <div className="mt-1 flex items-center gap-2">
+            {/* Row 2: last message preview + unread badge */}
+            <div className="mt-0.5 flex items-center gap-2">
               <p
                 className={cn(
-                  "flex-1 truncate text-xs leading-snug",
-                  hasUnread ? "font-semibold text-foreground" : "text-muted-foreground"
+                  "flex-1 truncate text-sm leading-snug",
+                  hasUnread
+                    ? "font-medium text-foreground"
+                    : "text-muted-foreground"
                 )}
               >
                 {previewText}
               </p>
               {hasUnread && (
-                <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
-                  {unread_count > 99 ? "99+" : unread_count}
+                <span className="flex h-[20px] min-w-[20px] shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold leading-none text-primary-foreground">
+                  {unreadNum > 99 ? "99+" : unreadNum}
                 </span>
               )}
             </div>
+
+            {/* Row 3: product context */}
+            <p className="mt-0.5 truncate text-xs text-muted-foreground/70">
+              {products?.name ?? "Product enquiry"}
+            </p>
           </div>
         </button>
 
@@ -387,28 +377,34 @@ function ConversationItem({
             onDelete()
           }}
           aria-label="Delete conversation"
-          className="flex h-full shrink-0 items-center justify-center px-3 py-3.5 text-muted-foreground transition-colors hover:text-destructive active:text-destructive"
+          className="flex shrink-0 items-center justify-center px-3 text-muted-foreground/40 transition-colors hover:text-destructive active:text-destructive focus-visible:text-destructive focus-visible:outline-none"
         >
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
+
+      {/* Divider — inset like WhatsApp */}
+      <div className="ml-[82px] h-px bg-border/60" aria-hidden />
     </li>
   )
 }
 
 function ConversationsSkeleton() {
   return (
-    <ul className="divide-y divide-border" aria-label="Loading conversations">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <li key={i} className="flex items-center gap-3 px-4 py-3.5">
-          <div className="h-13 w-13 animate-pulse rounded-2xl bg-muted" style={{ height: "52px", width: "52px" }} />
+    <ul aria-label="Loading conversations">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <li key={i} className="flex items-center gap-3 px-4 py-3">
+          <div
+            className="shrink-0 animate-pulse rounded-full bg-muted"
+            style={{ height: "54px", width: "54px" }}
+          />
           <div className="flex-1 space-y-2">
             <div className="flex justify-between">
-              <div className="h-3.5 w-28 animate-pulse rounded bg-muted" />
-              <div className="h-3 w-14 animate-pulse rounded bg-muted" />
+              <div className="h-4 w-32 animate-pulse rounded-full bg-muted" />
+              <div className="h-3 w-10 animate-pulse rounded-full bg-muted" />
             </div>
-            <div className="h-3 w-40 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-48 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-48 animate-pulse rounded-full bg-muted" />
+            <div className="h-3 w-36 animate-pulse rounded-full bg-muted" />
           </div>
         </li>
       ))}
