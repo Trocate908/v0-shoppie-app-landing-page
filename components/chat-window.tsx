@@ -216,23 +216,29 @@ export default function ChatWindow({
     setMessages((prev) => [...prev, optimistic])
 
     try {
+      console.log("[v0] Sending message to:", `/api/messages/${conversation.id}`)
       const res = await fetch(`/api/messages/${conversation.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       })
+      console.log("[v0] Message API status:", res.status)
       if (res.ok) {
         const data = await res.json()
+        console.log("[v0] Message sent successfully:", data.message?.id)
         // Replace the optimistic message with the real one
         setMessages((prev) =>
           prev.map((m) => (m.id === optimisticId ? data.message : m))
         )
       } else {
+        const errData = await res.json().catch(() => ({}))
+        console.log("[v0] Message API error:", errData)
         // Roll back optimistic message on failure
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
         setInput(content)
       }
-    } catch {
+    } catch (err) {
+      console.log("[v0] Message send exception:", err)
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
       setInput(content)
     } finally {
