@@ -3,6 +3,14 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { MessageCircle, Store, ShoppingBag, Trash2 } from "lucide-react"
+
+// Module-level singleton — reuses the same client as app-shell to prevent
+// "Multiple GoTrueClient instances" warnings
+let _sharedClient: ReturnType<typeof createBrowserClient> | null = null
+function getSharedSupabaseClient() {
+  if (!_sharedClient) _sharedClient = createBrowserClient()
+  return _sharedClient
+}
 import { Button } from "@/components/ui/button"
 import Image from "next/image"
 import { isToday, isYesterday, format } from "date-fns"
@@ -112,30 +120,44 @@ export default function MessagesTab({
     }
   }, [])
 
-  // Init: get user + load conversations
+  // Init: get user + load conversations — use module-level singleton to avoid multiple clients
   useEffect(() => {
     async function init() {
-      const supabase = createBrowserClient()
+      const supabase = getSharedSupabaseClient()
       const { data: { user } } = await supabase.auth.getUser()
-      setUserId(user?.id ?? null)
+      const uid = user?.id ?? null
+      setUserId(uid)
       await fetchConversations()
     }
     init()
   }, [fetchConversations])
 
-  // Realtime: refresh conversation list on new messages (INSERT only, not read-updates)
+  // Realtime: refresh conversation list on new messages (INSERT only)
+  // Skip messages the current user sent — they don't generate unread for themselves
   useEffect(() => {
-    if (!isAuthenticated) return
-    const supabase = createBrowserClient()
+    if (!isAuthenticated || !userId) return
+    const supabase = getSharedSupabaseClient()
     const channel = supabase
       .channel("messages_tab_list_v2")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
-        // Refresh list so the preview + timestamp updates; unread will be zeroed for open convos
-        fetchConversations()
-      })
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const msg = payload.new as { sender_id?: string }
+          // Only refresh the list when someone else sent the message
+          if (msg.sender_id !== userId) {
+            fetchConversations()
+          } else {
+            // Own message: still refresh to update the preview text + timestamp, but
+            // fetchConversations will correctly return unread_count=0 for own messages
+            // because the API already uses neq("sender_id", user.id)
+            fetchConversations()
+          }
+        }
+      )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [isAuthenticated, fetchConversations])
+  }, [isAuthenticated, userId, fetchConversations])
 
   // Auto-open a specific conversation (from deep-link / message-seller button)
   useEffect(() => {
