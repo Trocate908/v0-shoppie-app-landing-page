@@ -9,6 +9,7 @@ import HomeTab from "@/components/home-tab"
 import MessagesTab from "@/components/messages-tab"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { useNotifications } from "@/hooks/use-notifications"
+import { useToast } from "@/hooks/use-toast"
 
 interface Location {
   id: string
@@ -74,6 +75,7 @@ export default function AppShell({ products, locations }: AppShellProps) {
   const activeTabRef = useRef<NavTab>(resolvedTab)
   const currentUserIdRef = useRef<string | null>(null)
   const { notify } = useNotifications()
+  const { toast } = useToast()
 
   // Keep refs in sync
   useEffect(() => {
@@ -164,21 +166,35 @@ export default function AppShell({ products, locations }: AppShellProps) {
             fetchUnreadCount()
           }
 
-          // Push a browser notification only when:
-          // 1. The message is from someone else
-          // 2. The messages tab is not active OR a different conversation is open
-          if (!isOwnMessage && (activeTabRef.current !== "messages" || !isOpenConversation)) {
+          // Notify when message is from someone else AND the user isn't
+          // already viewing this exact conversation
+          const shouldNotify =
+            !isOwnMessage &&
+            (activeTabRef.current !== "messages" || !isOpenConversation)
+
+          if (shouldNotify) {
+            const openInApp = () => {
+              setActiveTab("messages")
+              if (msg.conversation_id) {
+                setOpenConversationId(msg.conversation_id)
+              }
+            }
+
+            // Browser notification (shown when tab is hidden)
             notify({
               title: "New message",
               body: msg.content ?? "You have a new message",
               tag: `msg-${msg.conversation_id}`,
-              onClick: () => {
-                setActiveTab("messages")
-                if (msg.conversation_id) {
-                  setOpenConversationId(msg.conversation_id)
-                }
-              },
+              onClick: openInApp,
             })
+
+            // In-app toast (shown while app is visible)
+            if (typeof document !== "undefined" && !document.hidden) {
+              toast({
+                title: "New message",
+                description: msg.content ?? "You have a new message",
+              })
+            }
           }
         }
       )
@@ -198,7 +214,7 @@ export default function AppShell({ products, locations }: AppShellProps) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [fetchUnreadCount, notify])
+  }, [fetchUnreadCount, notify, toast])
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
