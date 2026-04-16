@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { createBrowserClient } from "@/lib/supabase/client"
-import { MessageCircle, Store, ShoppingBag, Trash2 } from "lucide-react"
+import { MessageCircle, Store, ShoppingBag, Trash2, Search, X } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { usePresence, formatLastSeen } from "@/hooks/use-presence"
 
 // Module-level singleton — reuses the same client as app-shell to prevent
 // "Multiple GoTrueClient instances" warnings
@@ -82,6 +84,7 @@ export default function MessagesTab({
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [search, setSearch] = useState("")
   // IDs of conversations we've opened this session — kept zero in the local list
   const openedIds = useRef<Set<string>>(new Set())
   const didAutoOpen = useRef(false)
@@ -213,18 +216,62 @@ export default function MessagesTab({
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unread_count ?? 0), 0)
 
+  const filteredConversations = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return conversations
+    return conversations.filter((c) => {
+      const shop = c.vendors?.shop_name?.toLowerCase() ?? ""
+      const product = c.products?.name?.toLowerCase() ?? ""
+      const preview = c.last_message?.content?.toLowerCase() ?? ""
+      return shop.includes(q) || product.includes(q) || preview.includes(q)
+    })
+  }, [conversations, search])
+
   return (
     <div className="flex min-h-dvh flex-col bg-background pb-20">
-      {/* Header — WhatsApp style */}
-      <header className="sticky top-0 z-10 border-b border-border bg-background/98 backdrop-blur">
-        <div className="flex h-14 items-center gap-2 px-4">
-          <h1 className="flex-1 text-xl font-bold text-foreground tracking-tight">Chats</h1>
-          {totalUnread > 0 && (
-            <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">
-              {totalUnread > 99 ? "99+" : totalUnread}
-            </span>
-          )}
+      {/* Header */}
+      <header className="sticky top-0 z-10 border-b border-border/60 bg-background/95 backdrop-blur">
+        <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold leading-none tracking-tight text-foreground">
+              Chats
+            </h1>
+            {totalUnread > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                {totalUnread > 99 ? "99+" : totalUnread}
+              </span>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {conversations.length > 0 &&
+              `${conversations.length} ${conversations.length === 1 ? "chat" : "chats"}`}
+          </span>
         </div>
+
+        {/* Search bar */}
+        {conversations.length > 0 && (
+          <div className="px-4 pb-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search chats"
+                className="h-9 rounded-full border-0 bg-muted/60 pl-9 pr-9 text-sm focus-visible:ring-1 focus-visible:ring-primary/40"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Content */}
@@ -235,9 +282,16 @@ export default function MessagesTab({
           <NotAuthenticatedState />
         ) : conversations.length === 0 ? (
           <EmptyState />
+        ) : filteredConversations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+            <Search className="h-6 w-6 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              No chats match &quot;{search}&quot;
+            </p>
+          </div>
         ) : (
-          <ul role="list">
-            {conversations.map((convo) => (
+          <ul role="list" className="divide-y divide-border/40">
+            {filteredConversations.map((convo) => (
               <ConversationItem
                 key={convo.id}
                 conversation={convo}
@@ -298,38 +352,73 @@ function ConversationItem({
 
   const timeStr = formatTime(last_message_at ?? conversation.created_at)
 
+  const ownedLast = last_message?.sender_id === currentUserId
+
   const previewText = last_message
-    ? last_message.sender_id === currentUserId
-      ? `You: ${last_message.content ?? "Image"}`
-      : last_message.content ?? "Image"
-    : "No messages yet"
+    ? last_message.content ?? "Photo"
+    : "Tap to start the conversation"
 
   const shopName = is_buyer ? (vendors?.shop_name ?? "Unknown Shop") : "Buyer"
+  const avatarUrl = is_buyer ? vendors?.profile_picture_url ?? null : null
+
+  // Presence for the other participant
+  const otherUserId =
+    conversation.buyer_id === currentUserId
+      ? conversation.vendor_id
+      : conversation.buyer_id
+  const { isOnline, getLastSeen } = usePresence(currentUserId)
+  const online = isOnline(otherUserId)
+  const lastSeenText = formatLastSeen(getLastSeen(otherUserId))
 
   return (
     <li>
-      <div className="flex items-stretch">
+      <div className="group flex items-stretch transition-colors hover:bg-muted/40 active:bg-muted/60">
         {/* Main tap area */}
         <button
           onClick={onClick}
-          className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors active:bg-muted/60"
+          className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left"
         >
-          {/* Avatar: product image */}
-          <div
-            className="relative shrink-0 overflow-hidden rounded-full bg-muted"
-            style={{ height: "54px", width: "54px" }}
-          >
-            {products?.image_url ? (
-              <Image
-                src={products.image_url}
-                alt={products.name ?? "Product"}
-                fill
-                className="object-cover"
-                sizes="54px"
+          {/* Avatar: vendor profile (with product overlay) + online dot */}
+          <div className="relative shrink-0" style={{ height: "56px", width: "56px" }}>
+            <div className="relative h-14 w-14 overflow-hidden rounded-full bg-muted ring-1 ring-border">
+              {avatarUrl ? (
+                <Image
+                  src={avatarUrl}
+                  alt={shopName}
+                  fill
+                  className="object-cover"
+                  sizes="56px"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-primary/10 text-base font-bold uppercase text-primary">
+                  {shopName.charAt(0)}
+                </div>
+              )}
+            </div>
+
+            {/* Online dot */}
+            {online && (
+              <span
+                aria-label="Online"
+                className="absolute bottom-0 right-0 block h-3.5 w-3.5 rounded-full border-2 border-background bg-green-500"
               />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center bg-muted">
-                <ShoppingBag className="h-6 w-6 text-muted-foreground" />
+            )}
+
+            {/* Product thumbnail badge (bottom-left) */}
+            {!online && products?.image_url && (
+              <div className="absolute -bottom-0.5 -right-0.5 h-6 w-6 overflow-hidden rounded-full border-2 border-background bg-muted">
+                <Image
+                  src={products.image_url}
+                  alt={products.name ?? "Product"}
+                  width={24}
+                  height={24}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            )}
+            {!online && !products?.image_url && (
+              <div className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted">
+                <ShoppingBag className="h-3 w-3 text-muted-foreground" />
               </div>
             )}
           </div>
@@ -358,7 +447,7 @@ function ConversationItem({
               </span>
               <span
                 className={cn(
-                  "shrink-0 text-xs",
+                  "shrink-0 text-xs tabular-nums",
                   hasUnread ? "font-semibold text-primary" : "text-muted-foreground"
                 )}
               >
@@ -370,12 +459,15 @@ function ConversationItem({
             <div className="mt-0.5 flex items-center gap-2">
               <p
                 className={cn(
-                  "flex-1 truncate text-sm leading-snug",
-                  hasUnread
-                    ? "font-medium text-foreground"
-                    : "text-muted-foreground"
+                  "flex-1 min-w-0 truncate text-sm leading-snug",
+                  hasUnread ? "font-medium text-foreground" : "text-muted-foreground"
                 )}
               >
+                {ownedLast && (
+                  <span className="mr-1 inline-flex -translate-y-[1px] items-center align-middle text-green-600 dark:text-green-500">
+                    <DoubleTickIcon className="h-3.5 w-3.5" />
+                  </span>
+                )}
                 {previewText}
               </p>
               {hasUnread && (
@@ -385,9 +477,19 @@ function ConversationItem({
               )}
             </div>
 
-            {/* Row 3: product context */}
-            <p className="mt-0.5 truncate text-xs text-muted-foreground/70">
-              {products?.name ?? "Product enquiry"}
+            {/* Row 3: presence / product context */}
+            <p className="mt-0.5 flex items-center gap-1 truncate text-[11px]">
+              {online ? (
+                <span className="font-medium text-green-600 dark:text-green-500">
+                  online
+                </span>
+              ) : lastSeenText ? (
+                <span className="text-muted-foreground/80">{lastSeenText}</span>
+              ) : (
+                <span className="truncate text-muted-foreground/70">
+                  {products?.name ?? "Product enquiry"}
+                </span>
+              )}
             </p>
           </div>
         </button>
@@ -404,10 +506,26 @@ function ConversationItem({
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
-
-      {/* Divider — inset like WhatsApp */}
-      <div className="ml-[82px] h-px bg-border/60" aria-hidden />
     </li>
+  )
+}
+
+// Small inline double-tick icon — green to indicate "read"
+function DoubleTickIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="m2 12 5 5 10-10" />
+      <path d="m8 12 5 5 10-10" />
+    </svg>
   )
 }
 

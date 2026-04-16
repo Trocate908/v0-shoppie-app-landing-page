@@ -30,6 +30,8 @@ import {
 import Image from "next/image"
 import { format, isToday, isYesterday } from "date-fns"
 import { cn } from "@/lib/utils"
+import { usePresence, formatLastSeen } from "@/hooks/use-presence"
+import { VerificationBadge } from "@/components/verification-badge"
 
 interface Message {
   id: string
@@ -288,47 +290,41 @@ export default function ChatWindow({
   return (
     <div className="flex h-dvh flex-col bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-10 flex h-[60px] shrink-0 items-center gap-2 border-b border-border bg-background/98 px-2 backdrop-blur">
-        <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back" className="shrink-0">
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
+      <ChatHeader
+        conversation={conversation}
+        currentUserId={currentUserId}
+        otherName={otherName}
+        onBack={onBack}
+      />
 
-        {/* Avatar: product thumbnail — circular like WhatsApp */}
-        <div
-          className="relative shrink-0 overflow-hidden rounded-full bg-muted"
-          style={{ height: "40px", width: "40px" }}
-        >
-          {conversation.products?.image_url ? (
-            <Image
-              src={conversation.products.image_url}
-              alt={conversation.products.name}
-              fill
-              className="object-cover"
-              sizes="40px"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center">
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </div>
-          )}
-        </div>
-
-        {/* Name + product context */}
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold leading-tight text-foreground">
-            {otherName}
-          </p>
-          {conversation.products && (
-            <p className="truncate text-xs leading-tight text-muted-foreground">
+      {/* Product context strip */}
+      {conversation.products && (
+        <div className="sticky top-[60px] z-[9] flex shrink-0 items-center gap-2.5 border-b border-border bg-muted/40 px-4 py-2 backdrop-blur">
+          <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md bg-background">
+            {conversation.products.image_url ? (
+              <Image
+                src={conversation.products.image_url}
+                alt={conversation.products.name}
+                fill
+                className="object-cover"
+                sizes="36px"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <Package className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium leading-tight text-foreground">
               {conversation.products.name}
-              {" · "}
-              <span className="font-medium text-primary">
-                ${conversation.products.price.toFixed(2)}
-              </span>
             </p>
-          )}
+            <p className="text-[11px] font-semibold leading-tight text-primary">
+              ${conversation.products.price.toFixed(2)}
+            </p>
+          </div>
         </div>
-      </header>
+      )}
 
       {/* Messages list */}
       <main className="flex-1 overflow-y-auto px-4 py-3">
@@ -424,6 +420,95 @@ export default function ChatWindow({
   )
 }
 
+// ─── ChatHeader ────────────────────────────────────────────────────────────────
+
+function ChatHeader({
+  conversation,
+  currentUserId,
+  otherName,
+  onBack,
+}: {
+  conversation: Conversation
+  currentUserId: string
+  otherName: string
+  onBack: () => void
+}) {
+  const { isOnline, getLastSeen } = usePresence(currentUserId)
+
+  // The other participant is whichever side the current user is not on
+  const otherUserId =
+    conversation.buyer_id === currentUserId
+      ? conversation.vendor_id
+      : conversation.buyer_id
+
+  const online = isOnline(otherUserId)
+  const lastSeenAt = getLastSeen(otherUserId)
+  const lastSeenText = formatLastSeen(lastSeenAt)
+
+  const avatarUrl = conversation.is_buyer
+    ? conversation.vendors?.profile_picture_url ?? null
+    : null
+
+  return (
+    <header className="sticky top-0 z-10 flex h-[60px] shrink-0 items-center gap-3 border-b border-border bg-background/95 px-2 pr-4 backdrop-blur">
+      <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back" className="shrink-0">
+        <ArrowLeft className="h-5 w-5" />
+      </Button>
+
+      {/* Avatar with online dot */}
+      <div className="relative shrink-0">
+        <div className="relative h-10 w-10 overflow-hidden rounded-full bg-muted ring-1 ring-border">
+          {avatarUrl ? (
+            <Image
+              src={avatarUrl}
+              alt={otherName}
+              fill
+              className="object-cover"
+              sizes="40px"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-primary/10 text-sm font-semibold uppercase text-primary">
+              {otherName.charAt(0)}
+            </div>
+          )}
+        </div>
+        {online && (
+          <span
+            aria-label="Online"
+            className="absolute bottom-0 right-0 block h-3 w-3 rounded-full border-2 border-background bg-green-500"
+          />
+        )}
+      </div>
+
+      {/* Name + presence subtitle */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1">
+          <p className="truncate text-[15px] font-semibold leading-tight text-foreground">
+            {otherName}
+          </p>
+          {conversation.is_buyer && conversation.vendors?.is_verified && (
+            <VerificationBadge
+              isVerified={conversation.vendors.is_verified}
+              verificationExpiresAt={conversation.vendors.verification_expires_at}
+              size="sm"
+              showTooltip={false}
+            />
+          )}
+        </div>
+        <p className="truncate text-xs leading-tight">
+          {online ? (
+            <span className="font-medium text-green-600 dark:text-green-500">online</span>
+          ) : lastSeenText ? (
+            <span className="text-muted-foreground">{lastSeenText}</span>
+          ) : (
+            <span className="text-muted-foreground">offline</span>
+          )}
+        </p>
+      </div>
+    </header>
+  )
+}
+
 // ─── MessageTick ───────────────────────────────────────────────────────────────
 // Single grey  = sent, receiver offline (delivered=false, read=false)
 // Double grey  = delivered, receiver online but not read (delivered=true, read=false)
@@ -436,15 +521,15 @@ interface MessageTickProps {
 
 function MessageTick({ delivered, read }: MessageTickProps) {
   if (read) {
-    // Double blue ticks
-    return <CheckCheck className="h-3.5 w-3.5 shrink-0 text-blue-400" />
+    // Double GREEN ticks — message read by receiver
+    return <CheckCheck className="h-3.5 w-3.5 shrink-0 text-green-500 dark:text-green-400" />
   }
   if (delivered) {
-    // Double grey ticks
-    return <CheckCheck className="h-3.5 w-3.5 shrink-0 text-primary-foreground/50" />
+    // Double faded ticks — delivered, not yet read
+    return <CheckCheck className="h-3.5 w-3.5 shrink-0 text-primary-foreground/55" />
   }
-  // Single grey tick — sent but not yet delivered
-  return <Check className="h-3.5 w-3.5 shrink-0 text-primary-foreground/50" />
+  // Single faded tick — sent but not yet delivered
+  return <Check className="h-3.5 w-3.5 shrink-0 text-primary-foreground/55" />
 }
 
 // ─── MessageBubble ─────────────────────────────────────────────────────────────
