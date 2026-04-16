@@ -67,15 +67,21 @@ export function PwaProvider({ children }: { children: ReactNode }) {
     }
     window.addEventListener("appinstalled", onAppInstalled)
 
-    // Register service worker
+    // Register service worker only in production-like environments where
+    // /sw.js is actually served as JavaScript (not an HTML 404 page).
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/sw.js", { scope: "/" })
-        .then((registration) => {
-          console.log("[PWA] Service worker registered:", registration.scope)
+      // First do a lightweight HEAD check — if the server returns a non-JS
+      // content-type (e.g. the preview sandbox returning text/html for a
+      // missing static file), skip registration entirely to avoid the
+      // "unsupported MIME type" error.
+      fetch("/sw.js", { method: "HEAD" })
+        .then((res) => {
+          const ct = res.headers.get("content-type") ?? ""
+          if (!res.ok || !ct.includes("javascript")) return // not available here — skip silently
+          return navigator.serviceWorker.register("/sw.js", { scope: "/" })
         })
-        .catch((err) => {
-          console.error("[PWA] Service worker registration failed:", err)
+        .catch(() => {
+          // Network error or sw.js unavailable — ignore silently
         })
     }
 
