@@ -204,6 +204,19 @@ export default function MessagesTab({
     }
   }
 
+  // IMPORTANT: All hooks must be called before any early return to avoid
+  // React error #300 ("Rendered fewer hooks than expected").
+  const filteredConversations = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return conversations
+    return conversations.filter((c) => {
+      const shop = c.vendors?.shop_name?.toLowerCase() ?? ""
+      const product = c.products?.name?.toLowerCase() ?? ""
+      const preview = c.last_message?.content?.toLowerCase() ?? ""
+      return shop.includes(q) || product.includes(q) || preview.includes(q)
+    })
+  }, [conversations, search])
+
   if (activeConversation) {
     return (
       <ChatWindow
@@ -215,17 +228,6 @@ export default function MessagesTab({
   }
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unread_count ?? 0), 0)
-
-  const filteredConversations = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return conversations
-    return conversations.filter((c) => {
-      const shop = c.vendors?.shop_name?.toLowerCase() ?? ""
-      const product = c.products?.name?.toLowerCase() ?? ""
-      const preview = c.last_message?.content?.toLowerCase() ?? ""
-      return shop.includes(q) || product.includes(q) || preview.includes(q)
-    })
-  }, [conversations, search])
 
   return (
     <div className="flex min-h-dvh flex-col bg-background pb-20">
