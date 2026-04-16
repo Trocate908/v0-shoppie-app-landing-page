@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Store, MapPin, Filter, X, DollarSign, BadgeCheck, Locate, Loader2, Menu } from "lucide-react"
+import { Store, MapPin, Filter, X, DollarSign, BadgeCheck, Locate, Loader2, Menu, Heart, PackageOpen, Sparkles } from "lucide-react"
 import Link from "next/link"
 import WhatsAppButton from "@/components/whatsapp-button"
 import FavoriteButton from "@/components/favorite-button"
@@ -328,16 +328,23 @@ export default function BrowseProductsClient({
   return (
     <>
       {/* Store Header */}
-      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header className="sticky top-0 z-10 border-b border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Store className="h-5 w-5 text-primary" />
-              <h1 className="text-base font-bold text-foreground">Store</h1>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20">
+                <Store className="h-4.5 w-4.5 text-primary" strokeWidth={2.25} />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-base font-bold leading-tight text-foreground sm:text-lg">Store</h1>
+                <p className="truncate text-[11px] leading-tight text-muted-foreground sm:text-xs">
+                  {initialProducts.length.toLocaleString()} products from local vendors
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 shrink-0">
               <Select value={selectedCurrency.code} onValueChange={(code) => setSelectedCurrency(CURRENCIES[code])}>
-                <SelectTrigger className="h-8 w-20 text-xs">
+                <SelectTrigger className="h-9 w-[72px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -348,9 +355,15 @@ export default function BrowseProductsClient({
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2" onClick={() => router.push("/wishlist")}>
-                <BadgeCheck className="h-4 w-4" />
-                <span className="hidden sm:inline text-xs">Wishlist</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 gap-1.5 px-2.5"
+                onClick={() => router.push("/wishlist")}
+                aria-label="Open wishlist"
+              >
+                <Heart className="h-4 w-4" />
+                <span className="hidden text-xs font-medium sm:inline">Wishlist</span>
               </Button>
             </div>
           </div>
@@ -593,10 +606,13 @@ export default function BrowseProductsClient({
           </div>
 
           {/* Status Row */}
-          <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Shop Updates
-            </p>
+          <div className="mb-5">
+            <div className="mb-2 flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Shop Updates
+              </p>
+            </div>
             <StatusRow
               currentVendorId={currentVendor?.id ?? null}
               currentVendorName={currentVendor?.shop_name ?? null}
@@ -677,46 +693,85 @@ export default function BrowseProductsClient({
           )}
 
           {/* Products Grid */}
-          <h2 className="mb-3 font-serif text-2xl italic text-primary">Explore</h2>
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <div className="flex items-baseline gap-3">
+              <h2 className="font-serif text-3xl italic leading-none text-primary">Explore</h2>
+              <span className="text-xs font-medium text-muted-foreground">
+                {filteredProducts.length.toLocaleString()} {filteredProducts.length === 1 ? "item" : "items"}
+              </span>
+            </div>
+            <div className="hidden h-px flex-1 bg-border sm:block" />
+          </div>
+
           {filteredProducts.length === 0 ? (
-            <div className="flex min-h-[400px] items-center justify-center">
-              <div className="text-center">
-                <p className="text-lg font-medium text-muted-foreground">
+            <div className="flex min-h-[400px] items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-6">
+              <div className="max-w-sm text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                  <PackageOpen className="h-7 w-7 text-muted-foreground" />
+                </div>
+                <p className="text-base font-semibold text-foreground">
                   {searchQuery || activeFiltersCount > 0 ? "No products found" : "No products available"}
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {searchQuery || activeFiltersCount > 0
-                    ? "Try adjusting your search or filters"
-                    : "Check back soon for new items!"}
+                    ? "Try adjusting your search or filters to see more results."
+                    : "Check back soon — new items are added every day."}
                 </p>
+                {(searchQuery || activeFiltersCount > 0) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => {
+                      setSearchQuery("")
+                      clearAllFilters()
+                    }}
+                  >
+                    Clear search & filters
+                  </Button>
+                )}
               </div>
             </div>
           ) : (
-            <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
               {filteredProducts.map((product) => {
                 const convertedPrice = convertPrice(product.price, selectedCurrency.code)
                 const formattedPrice = formatPrice(convertedPrice, selectedCurrency)
+                const isActivelyVerified =
+                  !!product.vendor.is_verified &&
+                  (!product.vendor.verification_expires_at ||
+                    new Date(product.vendor.verification_expires_at).getTime() >= Date.now())
 
                 return (
                   <Card
                     key={product.id}
                     data-product-id={product.id}
-                    className="group relative overflow-hidden transition-shadow hover:shadow-lg"
+                    className="group relative flex flex-col overflow-hidden rounded-xl border-border/60 bg-card p-0 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-xl"
                   >
-                    <div className="cursor-pointer" onClick={() => router.push(`/product/${product.id}`)}>
-                      <ProductCarousel
-                        images={
-                          product.image_urls && product.image_urls.length > 0
-                            ? product.image_urls
-                            : product.image_url
-                              ? [product.image_url]
-                              : []
-                        }
-                        productName={product.name}
-                        autoSlide={false}
-                      />
+                    {/* Image */}
+                    <div
+                      className="relative cursor-pointer overflow-hidden"
+                      onClick={() => router.push(`/product/${product.id}`)}
+                    >
+                      <div className="transition-transform duration-500 ease-out group-hover:scale-[1.04]">
+                        <ProductCarousel
+                          images={
+                            product.image_urls && product.image_urls.length > 0
+                              ? product.image_urls
+                              : product.image_url
+                                ? [product.image_url]
+                                : []
+                          }
+                          productName={product.name}
+                          autoSlide={false}
+                        />
+                      </div>
 
-                      <div className="absolute right-2 top-2 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                      {/* Bottom gradient for price legibility */}
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
+
+                      {/* Top-right: favorite + share */}
+                      <div className="absolute right-2 top-2 flex gap-1.5" onClick={(e) => e.stopPropagation()}>
                         <FavoriteButton productId={product.id} variant="outline" />
                         <ShareButton
                           type="product"
@@ -726,47 +781,72 @@ export default function BrowseProductsClient({
                           variant="outline"
                         />
                       </div>
+
+                      {/* Top-left: stock / verified ribbons */}
+                      <div className="absolute left-2 top-2 flex flex-col items-start gap-1.5">
+                        {!product.in_stock && (
+                          <Badge variant="destructive" className="h-6 px-2 text-[10px] font-semibold shadow-md">
+                            Out of Stock
+                          </Badge>
+                        )}
+                        {isActivelyVerified && product.in_stock && (
+                          <Badge className="h-6 gap-1 bg-background/95 px-2 text-[10px] font-semibold text-primary shadow-md backdrop-blur hover:bg-background/95">
+                            <BadgeCheck className="h-3 w-3" />
+                            Verified
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Bottom-left: price pill */}
+                      <div className="absolute bottom-2 left-2">
+                        <div className="rounded-full bg-background/95 px-3 py-1 text-sm font-bold leading-tight text-primary shadow-lg backdrop-blur">
+                          {formattedPrice}
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Product Details */}
-                    <div className="p-4">
-                      <div className="mb-2 flex items-start justify-between gap-2">
-                        <h3 className="line-clamp-2 font-semibold text-foreground">{product.name}</h3>
-                        <Badge variant={product.in_stock ? "default" : "secondary"} className="shrink-0">
-                          {product.in_stock ? "In Stock" : "Out of Stock"}
-                        </Badge>
+                    {/* Details */}
+                    <div
+                      className="flex flex-1 flex-col p-3 sm:p-3.5 cursor-pointer"
+                      onClick={() => router.push(`/product/${product.id}`)}
+                    >
+                      <h3 className="mb-1.5 line-clamp-2 min-h-[2.4rem] text-sm font-semibold leading-snug text-foreground group-hover:text-primary">
+                        {product.name}
+                      </h3>
+
+                      {/* Shop row */}
+                      <div className="flex items-center gap-1 text-xs">
+                        <span className="truncate font-medium text-foreground/80">
+                          {product.vendor.shop_name}
+                        </span>
+                        {product.vendor.is_verified && (
+                          <VerificationBadge
+                            isVerified={product.vendor.is_verified}
+                            size="xs"
+                            showTooltip={false}
+                          />
+                        )}
                       </div>
 
-                      {product.description && (
-                        <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
-                      )}
-
-                      <div className="flex items-center justify-between">
-                        <p className="text-lg font-bold text-primary">{formattedPrice}</p>
-                      </div>
-
-                      <div className="mt-2 space-y-1">
-                        <div className="flex items-center gap-1">
-                          <p className="text-xs text-muted-foreground">{product.vendor.shop_name}</p>
-                          {product.vendor.is_verified && (
-                            <VerificationBadge isVerified={product.vendor.is_verified} size="xs" showTooltip={false} />
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
+                      {/* Location row */}
+                      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <MapPin className="h-3 w-3 shrink-0" />
+                        <span className="truncate">
                           {product.vendor.location.market_name}, {product.vendor.location.city}
-                        </p>
+                        </span>
                       </div>
 
+                      {/* WhatsApp CTA */}
                       {product.vendor.whatsapp_number && (
                         <div className="mt-3" onClick={(e) => e.stopPropagation()}>
                           <WhatsAppButton
                             phoneNumber={product.vendor.whatsapp_number}
                             shopName={product.vendor.shop_name}
                             productName={product.name}
-                            label="Chat"
+                            label="Chat on WhatsApp"
                             variant="outline"
                             size="sm"
-                            className="w-full"
+                            className="h-8 w-full text-xs"
                           />
                         </div>
                       )}
