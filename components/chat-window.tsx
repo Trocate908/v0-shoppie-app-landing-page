@@ -6,6 +6,7 @@ import {
   useRef,
   useCallback,
   KeyboardEvent,
+  ChangeEvent,
 } from "react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -14,8 +15,20 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
 import {
   ArrowLeft,
   Send,
@@ -26,12 +39,19 @@ import {
   Check,
   CheckCheck,
   Loader2,
+  Smile,
+  Paperclip,
+  Copy,
+  ArrowDown,
+  X,
+  ImageIcon,
 } from "lucide-react"
 import Image from "next/image"
 import { format, isToday, isYesterday } from "date-fns"
 import { cn } from "@/lib/utils"
 import { usePresence, formatLastSeen } from "@/hooks/use-presence"
 import { VerificationBadge } from "@/components/verification-badge"
+import { EmojiPicker } from "@/components/emoji-picker"
 
 interface Message {
   id: string
@@ -85,14 +105,24 @@ export default function ChatWindow({
   currentUserId,
   onBack,
 }: ChatWindowProps) {
+  const { toast } = useToast()
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState("")
   const [sending, setSending] = useState(false)
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   const [editContent, setEditContent] = useState("")
+  const [showEmoji, setShowEmoji] = useState(false)
+  const [pendingImage, setPendingImage] = useState<{ file: File; preview: string } | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const [deletingChat, setDeletingChat] = useState(false)
+  const [confirmDeleteChat, setConfirmDeleteChat] = useState(false)
+
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const otherName = conversation.is_buyer
     ? (conversation.vendors?.shop_name ?? "Vendor")
@@ -122,6 +152,19 @@ export default function ChatWindow({
     inputRef.current?.focus()
   }, [])
 
+  // Watch scroll position to toggle "scroll to bottom" button
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    function onScroll() {
+      if (!el) return
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      setShowScrollBtn(distanceFromBottom > 200)
+    }
+    el.addEventListener("scroll", onScroll, { passive: true })
+    return () => el.removeEventListener("scroll", onScroll)
+  }, [loading])
+
   // Realtime subscription — listen for changes in this conversation's messages
   useEffect(() => {
     const supabase = createBrowserClient()
@@ -139,12 +182,10 @@ export default function ChatWindow({
         (payload) => {
           const newMsg = payload.new as Message
           setMessages((prev) => {
-            // Deduplicate — optimistic insert may already be there
             if (prev.some((m) => m.id === newMsg.id)) return prev
             return [...prev, newMsg]
           })
 
-          // Receiver is online and viewing the chat — mark delivered + read immediately
           if (newMsg.sender_id !== currentUserId) {
             supabase
               .from("messages")
@@ -169,6 +210,20 @@ export default function ChatWindow({
           )
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversation.id}`,
+        },
+        (payload) => {
+          const removed = payload.old as { id?: string }
+          if (!removed?.id) return
+          setMessages((prev) => prev.filter((m) => m.id !== removed.id))
+        }
+      )
       .subscribe()
 
     return () => {
@@ -176,11 +231,60 @@ export default function ChatWindow({
     }
   }, [conversation.id, currentUserId, otherName])
 
+  async function uploadImage(file: File): Promise<string | null> {
+    try {
+      const supabase = createBrowserClient()
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg"
+      const path = `${currentUserId}/${conversation.id}/${Date.now()}.${ext}`
+      const { error } = await supabase.storage
+        .from("chat-attachments")
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file.type,
+        })
+      if (error) {
+        console.log("[v0] image upload error:", error.message)
+        return null
+      }
+      const { data } = supabase.storage.from("chat-attachments").getPublicUrl(path)
+      return data.publicUrl
+    } catch (e) {
+      console.log("[v0] image upload exception:", e)
+      return null
+    }
+  }
+
   async function sendMessage() {
-    if (!input.trim() || sending) return
+    if ((!input.trim() && !pendingImage) || sending) return
     setSending(true)
     const content = input.trim()
+    const imageFile = pendingImage?.file ?? null
     setInput("")
+    setPendingImage(null)
+    setShowEmoji(false)
+
+    // Upload image first if present
+    let imageUrl: string | null = null
+    if (imageFile) {
+      setUploading(true)
+      imageUrl = await uploadImage(imageFile)
+      setUploading(false)
+      if (!imageUrl) {
+        toast({
+          title: "Image upload failed",
+          description: "Please try again.",
+          variant: "destructive",
+        })
+        setSending(false)
+        setPendingImage({
+          file: imageFile,
+          preview: URL.createObjectURL(imageFile),
+        })
+        setInput(content)
+        return
+      }
+    }
 
     // Optimistic insert
     const optimisticId = `optimistic-${Date.now()}`
@@ -188,8 +292,8 @@ export default function ChatWindow({
       id: optimisticId,
       conversation_id: conversation.id,
       sender_id: currentUserId,
-      content,
-      image_url: null,
+      content: content || null,
+      image_url: imageUrl,
       delivered: false,
       read: false,
       deleted: false,
@@ -202,18 +306,21 @@ export default function ChatWindow({
       const res = await fetch(`/api/messages/${conversation.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content: content || null, image_url: imageUrl }),
       })
       if (res.ok) {
         const data = await res.json()
-        // Replace the optimistic message with the real one
         setMessages((prev) =>
           prev.map((m) => (m.id === optimisticId ? data.message : m))
         )
       } else {
-        // Roll back optimistic message on failure
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
         setInput(content)
+        toast({
+          title: "Couldn't send",
+          description: "Please try again.",
+          variant: "destructive",
+        })
       }
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
@@ -245,7 +352,6 @@ export default function ChatWindow({
   }
 
   async function deleteMessage(messageId: string) {
-    // Optimistic update
     setMessages((prev) =>
       prev.map((m) => (m.id === messageId ? { ...m, deleted: true } : m))
     )
@@ -255,10 +361,44 @@ export default function ChatWindow({
       body: JSON.stringify({ message_id: messageId }),
     })
     if (!res.ok) {
-      // Roll back
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, deleted: false } : m))
       )
+    }
+  }
+
+  async function deleteConversation() {
+    setDeletingChat(true)
+    try {
+      const res = await fetch(
+        `/api/messages/conversations/${conversation.id}`,
+        { method: "DELETE" }
+      )
+      if (res.ok) {
+        toast({
+          title: "Conversation deleted",
+          description: "All messages have been removed.",
+        })
+        onBack()
+      } else {
+        toast({
+          title: "Couldn't delete conversation",
+          description: "Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setDeletingChat(false)
+      setConfirmDeleteChat(false)
+    }
+  }
+
+  function copyMessage(content: string) {
+    try {
+      navigator.clipboard.writeText(content)
+      toast({ title: "Copied to clipboard" })
+    } catch {
+      // silent fail
     }
   }
 
@@ -285,7 +425,51 @@ export default function ChatWindow({
     setTimeout(() => inputRef.current?.focus(), 0)
   }
 
+  function handleEmojiSelect(emoji: string) {
+    if (editingMessage) {
+      setEditContent((prev) => prev + emoji)
+    } else {
+      setInput((prev) => prev + emoji)
+    }
+    inputRef.current?.focus()
+  }
+
+  function handleFilePick(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid file",
+        description: "Please select an image.",
+        variant: "destructive",
+      })
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Image must be under 5 MB.",
+        variant: "destructive",
+      })
+      return
+    }
+    setPendingImage({ file, preview: URL.createObjectURL(file) })
+    // Reset input so selecting the same file twice still triggers change
+    e.target.value = ""
+    setShowEmoji(false)
+  }
+
+  function removePendingImage() {
+    if (pendingImage) URL.revokeObjectURL(pendingImage.preview)
+    setPendingImage(null)
+  }
+
+  function scrollToBottom() {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+  }
+
   const groupedMessages = groupByDate(messages)
+  const canSend = !!(input.trim() || pendingImage) && !sending
 
   return (
     <div className="flex h-dvh flex-col bg-background">
@@ -295,6 +479,7 @@ export default function ChatWindow({
         currentUserId={currentUserId}
         otherName={otherName}
         onBack={onBack}
+        onDeleteConversation={() => setConfirmDeleteChat(true)}
       />
 
       {/* Product context strip */}
@@ -327,7 +512,10 @@ export default function ChatWindow({
       )}
 
       {/* Messages list */}
-      <main className="flex-1 overflow-y-auto px-4 py-3">
+      <main
+        ref={scrollContainerRef}
+        className="relative flex-1 overflow-y-auto px-4 py-3"
+      >
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -343,7 +531,7 @@ export default function ChatWindow({
                 {/* Date divider */}
                 <div className="flex items-center gap-3 py-3">
                   <div className="h-px flex-1 bg-border" />
-                  <span className="text-[11px] font-medium text-muted-foreground">
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                     {dateLabel}
                   </span>
                   <div className="h-px flex-1 bg-border" />
@@ -358,6 +546,7 @@ export default function ChatWindow({
                       isOwn={isOwn}
                       onEdit={() => startEdit(msg)}
                       onDelete={() => deleteMessage(msg.id)}
+                      onCopy={() => msg.content && copyMessage(msg.content)}
                     />
                   )
                 })}
@@ -366,6 +555,18 @@ export default function ChatWindow({
           </div>
         )}
         <div ref={bottomRef} />
+
+        {/* Scroll to bottom floating button */}
+        {showScrollBtn && (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            aria-label="Scroll to latest"
+            className="sticky bottom-2 float-right mr-1 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background/95 shadow-md backdrop-blur transition-transform hover:scale-105 active:scale-95"
+          >
+            <ArrowDown className="h-4 w-4 text-foreground" />
+          </button>
+        )}
       </main>
 
       {/* Edit mode banner */}
@@ -383,30 +584,120 @@ export default function ChatWindow({
         </div>
       )}
 
-      {/* Input area */}
+      {/* Pending image preview */}
+      {pendingImage && (
+        <div className="flex items-center gap-3 border-t border-border bg-muted/40 px-3 py-2">
+          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border">
+            <Image
+              src={pendingImage.preview}
+              alt="Attachment preview"
+              fill
+              className="object-cover"
+              sizes="56px"
+              unoptimized
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="truncate text-xs font-medium text-foreground">
+              {pendingImage.file.name}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {(pendingImage.file.size / 1024).toFixed(0)} KB
+              {uploading && " • Uploading…"}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={removePendingImage}
+            aria-label="Remove attachment"
+            className="h-8 w-8 shrink-0"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* Emoji picker */}
+      {showEmoji && !editingMessage && (
+        <div className="shrink-0 border-t border-border px-3 pt-2">
+          <EmojiPicker
+            onSelect={handleEmojiSelect}
+            className="mx-auto w-full max-w-md"
+          />
+        </div>
+      )}
+
+      {/* Input bar */}
       <div className="shrink-0 border-t border-border bg-background px-3 py-2">
         <div className="flex items-end gap-2">
-          <Textarea
-            ref={inputRef}
-            value={editingMessage ? editContent : input}
-            onChange={(e) =>
-              editingMessage
-                ? setEditContent(e.target.value)
-                : setInput(e.target.value)
-            }
-            onKeyDown={handleKeyDown}
-            placeholder={editingMessage ? "Edit message…" : "Message"}
-            rows={1}
-            className="max-h-32 min-h-[44px] flex-1 resize-none rounded-2xl bg-muted/60 px-4 py-3 text-sm leading-relaxed border-0 focus-visible:ring-1 focus-visible:ring-primary/50"
-          />
+          <div className="flex flex-1 items-end gap-0.5 rounded-2xl bg-muted/60 pl-1 pr-2 ring-0 focus-within:ring-1 focus-within:ring-primary/40">
+            {/* Emoji toggle */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowEmoji((v) => !v)}
+              aria-label={showEmoji ? "Close emoji picker" : "Open emoji picker"}
+              aria-pressed={showEmoji}
+              className={cn(
+                "h-10 w-10 shrink-0 self-end rounded-full hover:bg-background/80",
+                showEmoji && "text-primary"
+              )}
+              disabled={!!editingMessage}
+            >
+              <Smile className="h-[22px] w-[22px]" />
+            </Button>
+
+            <Textarea
+              ref={inputRef}
+              value={editingMessage ? editContent : input}
+              onChange={(e) =>
+                editingMessage
+                  ? setEditContent(e.target.value)
+                  : setInput(e.target.value)
+              }
+              onKeyDown={handleKeyDown}
+              onFocus={() => setShowEmoji(false)}
+              placeholder={editingMessage ? "Edit message…" : "Message"}
+              rows={1}
+              className="max-h-32 min-h-[40px] flex-1 resize-none border-0 bg-transparent px-1 py-[10px] text-sm leading-relaxed shadow-none focus-visible:ring-0"
+            />
+
+            {/* Attach image (hidden when editing) */}
+            {!editingMessage && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Attach image"
+                className="h-10 w-10 shrink-0 self-end rounded-full hover:bg-background/80"
+              >
+                <Paperclip className="h-[20px] w-[20px]" />
+              </Button>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFilePick}
+              className="hidden"
+            />
+          </div>
+
+          {/* Send / save button */}
           <Button
             size="icon"
             onClick={editingMessage ? submitEdit : sendMessage}
             disabled={
-              editingMessage ? !editContent.trim() : !input.trim() || sending
+              editingMessage
+                ? !editContent.trim()
+                : !canSend
             }
             aria-label={editingMessage ? "Save edit" : "Send message"}
-            className="h-11 w-11 shrink-0 rounded-full"
+            className="h-11 w-11 shrink-0 rounded-full shadow-sm"
           >
             {sending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -416,6 +707,32 @@ export default function ChatWindow({
           </Button>
         </div>
       </div>
+
+      {/* Confirm delete conversation */}
+      <AlertDialog
+        open={confirmDeleteChat}
+        onOpenChange={(open) => !open && setConfirmDeleteChat(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove all messages in your chat with{" "}
+              <span className="font-medium">{otherName}</span>. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingChat}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={deleteConversation}
+              disabled={deletingChat}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingChat ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -427,15 +744,16 @@ function ChatHeader({
   currentUserId,
   otherName,
   onBack,
+  onDeleteConversation,
 }: {
   conversation: Conversation
   currentUserId: string
   otherName: string
   onBack: () => void
+  onDeleteConversation: () => void
 }) {
   const { isOnline, getLastSeen } = usePresence(currentUserId)
 
-  // The other participant is whichever side the current user is not on
   const otherUserId =
     conversation.buyer_id === currentUserId
       ? conversation.vendor_id
@@ -450,7 +768,7 @@ function ChatHeader({
     : null
 
   return (
-    <header className="sticky top-0 z-10 flex h-[60px] shrink-0 items-center gap-3 border-b border-border bg-background/95 px-2 pr-4 backdrop-blur">
+    <header className="sticky top-0 z-10 flex h-[60px] shrink-0 items-center gap-3 border-b border-border bg-background/95 px-2 pr-2 backdrop-blur">
       <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back" className="shrink-0">
         <ArrowLeft className="h-5 w-5" />
       </Button>
@@ -505,14 +823,34 @@ function ChatHeader({
           )}
         </p>
       </div>
+
+      {/* Options menu */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Chat options"
+            className="shrink-0"
+          >
+            <MoreVertical className="h-5 w-5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem
+            onClick={onDeleteConversation}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete conversation
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </header>
   )
 }
 
 // ─── MessageTick ───────────────────────────────────────────────────────────────
-// Single grey  = sent, receiver offline (delivered=false, read=false)
-// Double grey  = delivered, receiver online but not read (delivered=true, read=false)
-// Double blue  = read by receiver (delivered=true, read=true)
 
 interface MessageTickProps {
   delivered: boolean
@@ -521,14 +859,11 @@ interface MessageTickProps {
 
 function MessageTick({ delivered, read }: MessageTickProps) {
   if (read) {
-    // Double GREEN ticks — message read by receiver
     return <CheckCheck className="h-3.5 w-3.5 shrink-0 text-green-500 dark:text-green-400" />
   }
   if (delivered) {
-    // Double faded ticks — delivered, not yet read
     return <CheckCheck className="h-3.5 w-3.5 shrink-0 text-primary-foreground/55" />
   }
-  // Single faded tick — sent but not yet delivered
   return <Check className="h-3.5 w-3.5 shrink-0 text-primary-foreground/55" />
 }
 
@@ -539,9 +874,10 @@ interface MessageBubbleProps {
   isOwn: boolean
   onEdit: () => void
   onDelete: () => void
+  onCopy: () => void
 }
 
-function MessageBubble({ message, isOwn, onEdit, onDelete }: MessageBubbleProps) {
+function MessageBubble({ message, isOwn, onEdit, onDelete, onCopy }: MessageBubbleProps) {
   const timeStr = format(new Date(message.created_at), "HH:mm")
 
   if (message.deleted) {
@@ -564,7 +900,7 @@ function MessageBubble({ message, isOwn, onEdit, onDelete }: MessageBubbleProps)
       {/* Bubble */}
       <div
         className={cn(
-          "relative max-w-[75%] rounded-2xl px-3 py-2 text-sm leading-relaxed",
+          "relative max-w-[75%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm",
           isOwn
             ? "rounded-br-sm bg-primary text-primary-foreground"
             : "rounded-bl-sm bg-muted text-foreground"
@@ -581,7 +917,7 @@ function MessageBubble({ message, isOwn, onEdit, onDelete }: MessageBubbleProps)
             />
           </div>
         )}
-        {message.content && <p className="break-words">{message.content}</p>}
+        {message.content && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
 
         {/* Timestamp + read receipt */}
         <div
@@ -603,38 +939,55 @@ function MessageBubble({ message, isOwn, onEdit, onDelete }: MessageBubbleProps)
         </div>
       </div>
 
-      {/* Actions — only own messages */}
-      {isOwn && (
-        <div className="mb-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                aria-label="Message options"
-              >
-                <MoreVertical className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-36">
-              {message.content && (
-                <DropdownMenuItem onClick={onEdit}>
-                  <Pencil className="mr-2 h-3.5 w-3.5" />
-                  Edit
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem
-                onClick={onDelete}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="mr-2 h-3.5 w-3.5" />
-                Delete
+      {/* Actions menu — available for every message */}
+      <div className="mb-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              aria-label="Message options"
+            >
+              <MoreVertical className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align={isOwn ? "end" : "start"} className="w-40">
+            {message.content && (
+              <DropdownMenuItem onClick={onCopy}>
+                <Copy className="mr-2 h-3.5 w-3.5" />
+                Copy
               </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
+            )}
+            {message.image_url && !message.content && (
+              <DropdownMenuItem
+                onClick={() => window.open(message.image_url!, "_blank", "noopener")}
+              >
+                <ImageIcon className="mr-2 h-3.5 w-3.5" />
+                Open image
+              </DropdownMenuItem>
+            )}
+            {isOwn && (
+              <>
+                <DropdownMenuSeparator />
+                {message.content && (
+                  <DropdownMenuItem onClick={onEdit}>
+                    <Pencil className="mr-2 h-3.5 w-3.5" />
+                    Edit
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  onClick={onDelete}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   )
 }
