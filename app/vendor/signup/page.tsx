@@ -516,9 +516,6 @@ export default function VendorSignupPage() {
         description: "Please check your email to confirm your account.",
         duration: 8000,
       })
-
-      await new Promise((resolve) => setTimeout(resolve, 3000))
-      window.location.href = "/vendor/dashboard"
     } catch (error: unknown) {
       console.error("[v0] Signup error:", error)
       toast({
@@ -558,9 +555,8 @@ export default function VendorSignupPage() {
                 <Button
                   onClick={() => window.location.href = "/vendor/login"}
                   className="w-full"
-                  variant="outline"
                 >
-                  Go to Login
+                  Continue to Log In
                 </Button>
               </div>
             </CardContent>
