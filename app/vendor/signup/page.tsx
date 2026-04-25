@@ -456,9 +456,9 @@ export default function VendorSignupPage() {
       if (signInError) {
         toast({
           title: "Account Created",
-          description: "Please login to continue.",
+          description: "Please Check your Email inbox 📥 and login to continue.",
         })
-        await new Promise((resolve) => setTimeout(resolve, 1500))
+        await new Promise((resolve) => setTimeout(resolve, 2000))
         window.location.href = "/vendor/login"
         return
       }
