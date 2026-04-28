@@ -1,5 +1,5 @@
 import "server-only"
-import { createClient as createServerClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { sendFcmToTokens, type FcmMessageInput } from "@/lib/firebase/admin"
 
 export type NotificationType =
@@ -30,7 +30,7 @@ export type DispatchInput = FcmMessageInput & {
  * session and the table is service-managed; if your project disallows
  * this, swap in a service-role client).
  */
-async function resolveTargets(supabase: Awaited<ReturnType<typeof createServerClient>>, target: DispatchTarget) {
+async function resolveTargets(supabase: ReturnType<typeof createAdminClient>, target: DispatchTarget) {
   const userIds = new Set<string>()
   const deviceIds = new Set<string>()
 
@@ -79,7 +79,7 @@ async function resolveTargets(supabase: Awaited<ReturnType<typeof createServerCl
 }
 
 async function isRecentlySent(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   type: NotificationType,
   refId: string | undefined,
   userId: string | null,
@@ -108,7 +108,7 @@ export async function dispatchNotification(
   target: DispatchTarget,
   input: DispatchInput,
 ): Promise<{ pushed: number; persisted: number; pruned: number }> {
-  const supabase = await createServerClient()
+  const supabase = createAdminClient()
   const { userIds, deviceIds } = await resolveTargets(supabase, target)
   if (userIds.length === 0 && deviceIds.length === 0) {
     return { pushed: 0, persisted: 0, pruned: 0 }
