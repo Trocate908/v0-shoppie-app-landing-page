@@ -35,6 +35,7 @@ import { VerificationBadge } from "@/components/verification-badge"
 import ProductCarousel from "./product-carousel"
 import SearchBox from "@/components/search-box"
 import StatusRow from "@/components/status-row"
+import { NotificationBell } from "@/components/notification-bell"
 
 interface Location {
   id: string
