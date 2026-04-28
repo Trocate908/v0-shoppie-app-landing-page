@@ -111,20 +111,12 @@ export default function NotificationsClient() {
             </Link>
             <h1 className="text-lg font-semibold text-foreground">Notifications</h1>
           </div>
-          <div className="flex items-center gap-1">
-            {unread > 0 && (
-              <Button size="sm" variant="ghost" onClick={markAllRead} className="gap-2">
-                <CheckCheck className="h-4 w-4" />
-                Mark all read
-              </Button>
-            )}
-            <Link
-              href="/notifications/debug"
-              className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline px-2"
-            >
-              Debug
-            </Link>
-          </div>
+          {unread > 0 && (
+            <Button size="sm" variant="ghost" onClick={markAllRead} className="gap-2">
+              <CheckCheck className="h-4 w-4" />
+              Mark all read
+            </Button>
+          )}
         </div>
       </header>
 
