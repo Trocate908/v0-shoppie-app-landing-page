@@ -29,6 +29,7 @@ import ShopShareButton from "@/components/shop-share-button"
 import { AccountSwitcherSheet } from "@/components/account-switcher-sheet"
 import { saveAccount, updateAccountTokens, setActiveAccountId } from "@/lib/account-switcher"
 import StatusRow from "@/components/status-row"
+import { NotificationBell } from "@/components/notification-bell"
 
 type VendorData = {
   id: string
@@ -211,6 +212,9 @@ export function DashboardClient({ vendor, totalViews, weeklyViews, productCount,
                   </>
                 )}
               </Button>
+              <div className="shrink-0">
+                <NotificationBell />
+              </div>
               <div className="shrink-0">
                 <AccountSwitcherSheet currentUserId={userId} />
               </div>

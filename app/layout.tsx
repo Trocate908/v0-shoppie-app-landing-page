@@ -7,6 +7,7 @@ import { WebVitals } from "./web-vitals"
 import { PwaProvider } from "@/components/pwa-provider"
 import OfflineBar from "@/components/offline-bar"
 import InstallBanner from "@/components/install-banner"
+import { NotificationProvider } from "@/components/notification-provider"
 import "./globals.css"
 
 const _geist = Geist({ 
@@ -104,6 +105,7 @@ export default function RootLayout({
             <OfflineBar />
             {children}
             <InstallBanner />
+            <NotificationProvider />
             <Toaster />
           </PwaProvider>
         </ThemeProvider>

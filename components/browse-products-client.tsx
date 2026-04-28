@@ -35,6 +35,7 @@ import { VerificationBadge } from "@/components/verification-badge"
 import ProductCarousel from "./product-carousel"
 import SearchBox from "@/components/search-box"
 import StatusRow from "@/components/status-row"
+import { NotificationBell } from "@/components/notification-bell"
 
 interface Location {
   id: string
@@ -324,12 +325,13 @@ export default function BrowseProductsClient({
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Store className="h-5 w-5 text-primary" />
-              <h1 className="text-base font-bold text-foreground">Store</h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <Select value={selectedCurrency.code} onValueChange={(code) => setSelectedCurrency(CURRENCIES[code])}>
+                  <div className="flex items-center gap-2">
+                    <Store className="h-5 w-5 text-primary" />
+                    <h1 className="text-base font-bold text-foreground">Store</h1>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <NotificationBell />
+                    <Select value={selectedCurrency.code} onValueChange={(code) => setSelectedCurrency(CURRENCIES[code])}>
                 <SelectTrigger className="h-8 w-20 text-xs">
                   <SelectValue />
                 </SelectTrigger>
