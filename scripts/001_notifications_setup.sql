@@ -119,7 +119,11 @@ CREATE POLICY "notifications_update_own"
 
 -- ───────────────────────────────────────────────────────────────────────
 -- 5) Helper: trending products (last 7 days by view count)
+--    See scripts/002_notifications_fix_trending.sql for the canonical
+--    schema-agnostic version. The version below is kept only as a stub
+--    so re-running this file is safe; it is overwritten by 002.
 -- ───────────────────────────────────────────────────────────────────────
+DROP FUNCTION IF EXISTS public.get_trending_products(INT);
 CREATE OR REPLACE FUNCTION public.get_trending_products(limit_count INT DEFAULT 5)
 RETURNS TABLE (
   product_id   UUID,
@@ -130,18 +134,5 @@ RETURNS TABLE (
 LANGUAGE SQL
 STABLE
 AS $$
-  SELECT
-    p.id,
-    p.name,
-    COALESCE(p.image_url, NULLIF((p.image_urls)[1], '')) AS image_url,
-    COUNT(pv.id) AS view_count
-  FROM public.products p
-  LEFT JOIN public.product_views pv
-    ON pv.product_id = p.id
-   AND pv.viewed_at >= NOW() - INTERVAL '7 days'
-  WHERE p.in_stock = TRUE
-  GROUP BY p.id, p.name, p.image_url, p.image_urls
-  HAVING COUNT(pv.id) > 0
-  ORDER BY view_count DESC
-  LIMIT limit_count;
+  SELECT NULL::UUID, NULL::TEXT, NULL::TEXT, NULL::BIGINT WHERE FALSE;
 $$;
