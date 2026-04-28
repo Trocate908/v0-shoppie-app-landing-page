@@ -85,24 +85,45 @@ export async function sendFcmToTokens(
     chunks.push(tokens.slice(i, i + 400))
   }
 
+  // FCM data fields must all be strings — coerce extras safely.
+  const extraData: Record<string, string> = {}
+  if (msg.data) {
+    for (const [k, v] of Object.entries(msg.data)) {
+      if (v === undefined || v === null) continue
+      extraData[k] = typeof v === "string" ? v : String(v)
+    }
+  }
+
   for (const chunk of chunks) {
+    // IMPORTANT: We deliberately omit the top-level `notification` field and
+    // instead put title/body into `data`. With a `notification` payload Chrome
+    // displays the toast itself and our service worker can't customise it
+    // (no requireInteraction, no vibration, no sound control). Data-only
+    // messages always invoke `onBackgroundMessage` / `push` event so we can
+    // render a rich, Facebook-style persistent notification ourselves.
     const response = await messaging.sendEachForMulticast({
       tokens: chunk,
-      notification: {
+      data: {
         title: msg.title,
         body: msg.body,
-        imageUrl: msg.imageUrl,
-      },
-      data: {
         link: msg.link ?? "/",
-        ...(msg.data ?? {}),
+        ...(msg.imageUrl ? { image: msg.imageUrl } : {}),
+        ...extraData,
       },
       webpush: {
+        // Maximum priority so the OS wakes the device immediately.
+        headers: {
+          Urgency: "high",
+          TTL: "86400",
+        },
         fcmOptions: msg.link ? { link: msg.link } : undefined,
-        notification: {
-          icon: "/logo.png",
-          badge: "/logo.png",
-          ...(msg.imageUrl ? { image: msg.imageUrl } : {}),
+      },
+      android: {
+        priority: "high",
+      },
+      apns: {
+        headers: {
+          "apns-priority": "10",
         },
       },
     })

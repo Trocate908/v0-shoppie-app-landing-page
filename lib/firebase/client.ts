@@ -94,17 +94,29 @@ export async function requestFcmToken(): Promise<string | null> {
 /**
  * Subscribe to foreground push messages (when the app is open & focused).
  * Returns an unsubscribe function.
+ *
+ * Because we send FCM as data-only payloads, both `notification` and `data`
+ * fields can carry title/body — we coalesce here.
  */
 export async function onForegroundMessage(
-  cb: (payload: { title?: string; body?: string; data?: Record<string, string> }) => void,
+  cb: (payload: {
+    title?: string
+    body?: string
+    link?: string
+    image?: string
+    data?: Record<string, string>
+  }) => void,
 ): Promise<() => void> {
   const messaging = await getMessagingInstance()
   if (!messaging) return () => {}
   const unsub = onMessage(messaging, (payload) => {
+    const data = (payload.data ?? {}) as Record<string, string>
     cb({
-      title: payload.notification?.title,
-      body: payload.notification?.body,
-      data: payload.data,
+      title: payload.notification?.title ?? data.title,
+      body: payload.notification?.body ?? data.body,
+      image: payload.notification?.image ?? data.image,
+      link: data.link,
+      data,
     })
   })
   return unsub
