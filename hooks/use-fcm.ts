@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { onForegroundMessage, requestFcmToken } from "@/lib/firebase/client"
+import { subscribeToPush, isPushSupported, getCurrentSubscription } from "@/lib/push/client"
 import { getDeviceId } from "@/lib/device-id"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
@@ -12,15 +12,22 @@ const SOFT_PROMPT_KEY = "shoppie:notif-soft-prompt"
 const REGISTER_TS_KEY = "shoppie:notif-registered-at"
 
 /**
- * Synthesise a short, pleasant two-tone "ding" using the Web Audio API.
- * No binary asset required and it works without any user gesture as long
- * as the page has been interacted with at least once (which is true for
- * any user that has just been chatting / sending messages).
+ * usePush wires the browser's native Web Push lifecycle:
+ *  - reports current permission state
+ *  - exposes an `enable()` action to request permission + subscribe + persist
+ *  - automatically (re)registers the subscription on app load if permission is already granted
+ *  - listens for SW messages so the app can react when a push arrives while open
+ *
+ * Note: hook name is preserved (`useFcm`) for backwards compatibility with
+ * existing imports. The implementation, however, is 100% native Web Push —
+ * no Firebase Cloud Messaging or Firebase Web SDK involved anymore.
  */
 function playNotificationSound() {
   if (typeof window === "undefined") return
   try {
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!Ctx) return
     const ctx = new Ctx()
     const playTone = (freq: number, start: number, duration: number) => {
@@ -35,36 +42,21 @@ function playNotificationSound() {
       osc.start(ctx.currentTime + start)
       osc.stop(ctx.currentTime + start + duration + 0.05)
     }
-    // Two-tone "ding" — high then higher.
     playTone(880, 0, 0.18)
     playTone(1320, 0.14, 0.22)
-    // Auto-close the context shortly after.
     setTimeout(() => ctx.close().catch(() => {}), 600)
   } catch {
-    /* ignored — sound is best-effort */
+    /* best-effort */
   }
 }
 
-/**
- * useFcm wires the browser's FCM lifecycle:
- *  - reports current permission state
- *  - exposes an `enable()` action to request permission + register the token
- *  - automatically (re)registers the token on app load if permission is already granted
- *  - shows a toast when foreground messages arrive
- */
 export function useFcm() {
   const [status, setStatus] = useState<Status>("idle")
   const [token, setToken] = useState<string | null>(null)
   const registeredRef = useRef(false)
   const { toast } = useToast()
 
-  const registerToken = useCallback(async (silent = false) => {
-    const t = await requestFcmToken()
-    if (!t) {
-      if (!silent) setStatus(typeof Notification !== "undefined" && Notification.permission === "denied" ? "denied" : "idle")
-      return null
-    }
-
+  const persist = useCallback(async (subscriptionJson: string) => {
     const supabase = createBrowserClient()
     const {
       data: { user },
@@ -85,7 +77,7 @@ export function useFcm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          token: t,
+          token: subscriptionJson,
           deviceId: getDeviceId(),
           userType,
           userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
@@ -94,27 +86,49 @@ export function useFcm() {
       try {
         localStorage.setItem(REGISTER_TS_KEY, String(Date.now()))
       } catch {}
-      setToken(t)
-      setStatus("granted")
     } catch (err) {
-      console.error("[FCM] failed to persist token:", err)
+      console.error("[push] failed to persist subscription:", err)
     }
-
-    return t
   }, [])
+
+  const registerToken = useCallback(
+    async (silent = false) => {
+      const result = await subscribeToPush()
+      if (!result.subscription) {
+        if (!silent) {
+          if (result.reason === "denied") setStatus("denied")
+          else if (result.reason === "unsupported") setStatus("unsupported")
+          else setStatus("idle")
+        }
+        if (result.reason && !silent) {
+          console.warn("[push] could not subscribe:", result.reason)
+        }
+        return null
+      }
+      await persist(result.subscription)
+      setToken(result.subscription)
+      setStatus("granted")
+      return result.subscription
+    },
+    [persist],
+  )
 
   // Detect support + auto-register if permission is already granted.
   useEffect(() => {
     if (typeof window === "undefined") return
-    if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+    if (!isPushSupported()) {
       setStatus("unsupported")
       return
     }
     const perm = Notification.permission
     if (perm === "granted") {
-      // Re-register at most once per 24h to refresh the token.
+      // Re-register at most once per 24h to refresh the subscription.
       const lastRaw = (() => {
-        try { return localStorage.getItem(REGISTER_TS_KEY) } catch { return null }
+        try {
+          return localStorage.getItem(REGISTER_TS_KEY)
+        } catch {
+          return null
+        }
       })()
       const last = lastRaw ? Number(lastRaw) : 0
       const stale = !last || Date.now() - last > 24 * 60 * 60 * 1000
@@ -122,6 +136,8 @@ export function useFcm() {
         registeredRef.current = true
         registerToken(true)
       } else {
+        // Surface the existing subscription if any.
+        getCurrentSubscription().then((s) => s && setToken(s))
         setStatus("granted")
       }
     } else if (perm === "denied") {
@@ -129,18 +145,15 @@ export function useFcm() {
     }
   }, [registerToken])
 
-  // Re-register whenever the Supabase auth user changes — this guarantees
-  // the FCM token is associated with the currently signed-in user, so
-  // notifications go to the right account when they swap shopper/vendor
-  // identities or sign out and back in.
+  // Re-register whenever the Supabase auth user changes — guarantees the
+  // subscription is associated with the currently-signed-in user.
   useEffect(() => {
     if (typeof window === "undefined") return
-    if (!("Notification" in window)) return
+    if (!isPushSupported()) return
     const supabase = createBrowserClient()
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return
       if (Notification.permission !== "granted") return
-      // Force a fresh registration so push_tokens.user_id reflects reality.
       try {
         localStorage.removeItem(REGISTER_TS_KEY)
       } catch {}
@@ -151,58 +164,31 @@ export function useFcm() {
     }
   }, [registerToken])
 
-  // Listen for foreground messages so the user gets feedback while the app is open.
+  // Listen for SW push messages so we can show a soft toast when the tab
+  // is open & focused (the SW always shows the system notification too).
   useEffect(() => {
-    let unsub: (() => void) | undefined
-    onForegroundMessage(async (payload) => {
+    if (typeof window === "undefined") return
+    if (!("serviceWorker" in navigator)) return
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data
+      if (!data || data.type !== "shoppie-push") return
+      const payload = data.payload ?? {}
       const title = payload.title ?? "ShoppieApp"
       const body = payload.body ?? "You have a new update"
-      const link = payload.link ?? "/"
-      const image = payload.image
-
-      // Always play a short beep so the user notices, just like Facebook.
-      playNotificationSound()
-
-      // If the tab is not the active/visible tab, show a real system
-      // notification (Chrome will play the OS notification sound + vibrate).
-      const isHidden = typeof document !== "undefined" && document.visibilityState !== "visible"
-      if (isHidden && "serviceWorker" in navigator) {
-        try {
-          const reg = await navigator.serviceWorker.getRegistration("/firebase-cloud-messaging-push-scope")
-          if (reg) {
-            await reg.showNotification(title, {
-              body,
-              icon: "/logo.png",
-              badge: "/logo.png",
-              image,
-              tag: `shoppie-fg-${Date.now()}`,
-              requireInteraction: true,
-              renotify: true,
-              vibrate: [200, 100, 200, 100, 200],
-              data: { link },
-            } as NotificationOptions)
-            return
-          }
-        } catch (err) {
-          console.error("[FCM] foreground showNotification failed", err)
-        }
+      const focused = document.visibilityState === "visible" && document.hasFocus()
+      if (focused) {
+        playNotificationSound()
+        toast({ title, description: body })
       }
-
-      // Tab is focused — show an in-app toast.
-      toast({ title, description: body })
-    }).then((fn) => {
-      unsub = fn
-    })
-    return () => {
-      if (unsub) unsub()
     }
+    navigator.serviceWorker.addEventListener("message", onMessage)
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage)
   }, [toast])
 
   const enable = useCallback(async () => {
     setStatus("asking")
     const t = await registerToken(false)
-    if (!t) return false
-    return true
+    return !!t
   }, [registerToken])
 
   const dismissSoftPrompt = useCallback(() => {

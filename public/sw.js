@@ -140,36 +140,82 @@ async function trimCache(cacheName, maxItems) {
   }
 }
 
-// ── Push Notifications ────────────────────────────────────────────────────────
+// ── Push Notifications (native Web Push, Facebook-style) ────────────────────
+//
+// Payload shape sent by lib/push/server.ts:
+//   { title, body, link, image, data, tag }
+//
+// requireInteraction keeps the notification visible until tapped (same as
+// FB web push). renotify + vibrate ensures the device buzzes even when a
+// notification with the same tag is replaced.
 self.addEventListener("push", (event) => {
-  if (!event.data) return
-  let data = { title: "ShoppieApp", body: "New update available!", icon: "/icons/icon-192x192.png" }
-  try {
-    data = { ...data, ...event.data.json() }
-  } catch {
-    data.body = event.data.text()
+  let data = {}
+  if (event.data) {
+    try {
+      data = event.data.json()
+    } catch {
+      data = { title: "ShoppieApp", body: event.data.text() }
+    }
   }
+  const title = data.title || "ShoppieApp"
+  const body = data.body || "You have a new update"
+  const link = data.link || "/"
+  const image = data.image || undefined
+  const tag = data.tag || ("shoppie-" + Date.now())
+
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: data.icon || "/icons/icon-192x192.png",
-      badge: "/icons/icon-192x192.png",
-      vibrate: [100, 50, 100],
-      data: { url: data.url || "/" },
-    })
+    Promise.all([
+      self.registration.showNotification(title, {
+        body,
+        icon: "/logo.png",
+        badge: "/logo.png",
+        image,
+        tag,
+        requireInteraction: true,
+        renotify: true,
+        silent: false,
+        vibrate: [200, 100, 200, 100, 200],
+        timestamp: Date.now(),
+        data: { link, ...data },
+        actions: [
+          { action: "open", title: "Open" },
+          { action: "dismiss", title: "Dismiss" },
+        ],
+      }),
+      // Tell any open tabs so they can update unread badges in real time
+      // and (optionally) play an in-app sound when focused.
+      self.clients
+        .matchAll({ type: "window", includeUncontrolled: true })
+        .then((clients) => {
+          clients.forEach((c) => c.postMessage({ type: "shoppie-push", payload: data }))
+        }),
+    ])
   )
 })
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close()
-  const targetUrl = event.notification.data?.url || "/"
+  if (event.action === "dismiss") return
+  const target = (event.notification.data && event.notification.data.link) || "/"
+  const targetUrl = new URL(target, self.location.origin).href
+
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clients) => {
-        const existing = clients.find((c) => c.url === targetUrl && "focus" in c)
-        if (existing) return existing.focus()
-        return self.clients.openWindow(targetUrl)
+      .then((clientList) => {
+        // Prefer focusing an existing tab on our origin and navigating it.
+        for (const c of clientList) {
+          try {
+            const u = new URL(c.url)
+            if (u.origin === self.location.origin && "focus" in c) {
+              c.navigate(targetUrl).catch(() => {})
+              return c.focus()
+            }
+          } catch {
+            // ignore
+          }
+        }
+        if (self.clients.openWindow) return self.clients.openWindow(targetUrl)
       })
   )
 })

@@ -39,6 +39,15 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     }
 
+    // Step 1: drop any previous subscription rows for this device so we
+    // don't accumulate stale entries when the browser rotates its push
+    // subscription. The new row will be inserted next.
+    if (deviceId) {
+      await supabase.from("push_tokens").delete().eq("device_id", deviceId).neq("token", token)
+    }
+
+    // Step 2: upsert the current token (so re-registering the same device
+    // is a no-op and just refreshes last_seen_at).
     const { error } = await supabase
       .from("push_tokens")
       .upsert(payload, { onConflict: "token" })

@@ -1,6 +1,6 @@
 import "server-only"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { sendFcmToTokens, type FcmMessageInput } from "@/lib/firebase/admin"
+import { sendWebPushToSubscriptions, type WebPushMessage } from "@/lib/push/server"
 
 export type NotificationType =
   | "message"
@@ -16,7 +16,7 @@ export type DispatchTarget =
   | { deviceId: string }
   | { audience: "all_shoppers" | "all_vendors_with_products" | "all_vendors_without_products" | "all" }
 
-export type DispatchInput = FcmMessageInput & {
+export type DispatchInput = WebPushMessage & {
   type: NotificationType
   refId?: string             // optional dedupe key (e.g. product id)
   dedupeWindowHours?: number // default 24
@@ -185,7 +185,7 @@ export async function dispatchNotification(
   let pushed = 0
   let pruned = 0
   if (tokens.length > 0) {
-    const result = await sendFcmToTokens(
+    const result = await sendWebPushToSubscriptions(
       tokens.map((t) => t.token),
       {
         title: input.title,
