@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Plus, X, Image as ImageIcon, Type, Video, Upload, CheckCircle, AlertCircle, Eye, PlusCircle } from "lucide-react"
+import { Plus, X, Image as ImageIcon, Type, Video, Upload, Check, CheckCircle, AlertCircle, Eye, PlusCircle, Trash2, Pencil, Volume2, VolumeX, Crop, RotateCcw } from "lucide-react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { VerificationBadge } from "@/components/verification-badge"
+import { VideoTrimmer } from "@/components/video-trimmer"
 
 interface VendorStatus {
   id: string
@@ -18,6 +19,7 @@ interface VendorStatus {
   created_at: string
   expires_at: string
   view_count: number
+  video_duration_seconds?: number | null
   vendor: {
     id: string
     shop_name: string
@@ -42,7 +44,238 @@ interface StatusRowProps {
   currentVendorProfilePic?: string | null
 }
 
-const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2 MB
+// ─── Crop Tool ────────────────────────────────────────────────────────────────
+
+interface CropBox { x: number; y: number; w: number; h: number }
+
+function ImageCropper({
+  src,
+  onConfirm,
+  onCancel,
+}: {
+  src: string
+  onConfirm: (croppedBlob: Blob, croppedUrl: string) => void
+  onCancel: () => void
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+
+  // natural image size
+  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
+  // rendered display size
+  const [displaySize, setDisplaySize] = useState<{ w: number; h: number } | null>(null)
+  // crop box in display coords
+  const [cropBox, setCropBox] = useState<CropBox | null>(null)
+  const dragState = useRef<{ type: "move" | "resize"; startX: number; startY: number; orig: CropBox } | null>(null)
+
+  const HANDLE = 12
+
+  useEffect(() => {
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => {
+      imgRef.current = img
+      setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight })
+    }
+    img.src = src
+  }, [src])
+
+  useEffect(() => {
+    if (!naturalSize || !containerRef.current) return
+    const maxW = containerRef.current.clientWidth
+    const maxH = 320
+    const ratio = Math.min(maxW / naturalSize.w, maxH / naturalSize.h, 1)
+    const dw = Math.round(naturalSize.w * ratio)
+    const dh = Math.round(naturalSize.h * ratio)
+    setDisplaySize({ w: dw, h: dh })
+    // default crop = full image
+    setCropBox({ x: 0, y: 0, w: dw, h: dh })
+  }, [naturalSize])
+
+  useEffect(() => {
+    if (!canvasRef.current || !displaySize || !cropBox) return
+    const ctx = canvasRef.current.getContext("2d")!
+    const img = imgRef.current
+    canvasRef.current.width = displaySize.w
+    canvasRef.current.height = displaySize.h
+    if (img) ctx.drawImage(img, 0, 0, displaySize.w, displaySize.h)
+    // dark overlay outside crop
+    ctx.fillStyle = "rgba(0,0,0,0.5)"
+    ctx.fillRect(0, 0, displaySize.w, displaySize.h)
+    if (img) ctx.drawImage(img,
+      (cropBox.x / displaySize.w) * img.naturalWidth,
+      (cropBox.y / displaySize.h) * img.naturalHeight,
+      (cropBox.w / displaySize.w) * img.naturalWidth,
+      (cropBox.h / displaySize.h) * img.naturalHeight,
+      cropBox.x, cropBox.y, cropBox.w, cropBox.h
+    )
+    // border
+    ctx.strokeStyle = "white"
+    ctx.lineWidth = 2
+    ctx.strokeRect(cropBox.x, cropBox.y, cropBox.w, cropBox.h)
+    // rule of thirds
+    ctx.strokeStyle = "rgba(255,255,255,0.3)"
+    ctx.lineWidth = 1
+    for (let i = 1; i < 3; i++) {
+      ctx.beginPath(); ctx.moveTo(cropBox.x + cropBox.w * i / 3, cropBox.y); ctx.lineTo(cropBox.x + cropBox.w * i / 3, cropBox.y + cropBox.h); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(cropBox.x, cropBox.y + cropBox.h * i / 3); ctx.lineTo(cropBox.x + cropBox.w, cropBox.y + cropBox.h * i / 3); ctx.stroke()
+    }
+    // handles
+    const corners = [
+      [cropBox.x, cropBox.y],
+      [cropBox.x + cropBox.w, cropBox.y],
+      [cropBox.x, cropBox.y + cropBox.h],
+      [cropBox.x + cropBox.w, cropBox.y + cropBox.h],
+    ]
+    ctx.fillStyle = "white"
+    corners.forEach(([cx, cy]) => {
+      ctx.fillRect(cx - HANDLE / 2, cy - HANDLE / 2, HANDLE, HANDLE)
+    })
+  }, [cropBox, displaySize])
+
+  function getPointer(e: React.PointerEvent<HTMLCanvasElement>) {
+    const rect = canvasRef.current!.getBoundingClientRect()
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!cropBox || !displaySize) return
+    const { x, y } = getPointer(e)
+    // check corner handles
+    const corners: Array<[number, number, "tl" | "tr" | "bl" | "br"]> = [
+      [cropBox.x, cropBox.y, "tl"],
+      [cropBox.x + cropBox.w, cropBox.y, "tr"],
+      [cropBox.x, cropBox.y + cropBox.h, "bl"],
+      [cropBox.x + cropBox.w, cropBox.y + cropBox.h, "br"],
+    ]
+    for (const [cx, cy, corner] of corners) {
+      if (Math.abs(x - cx) < HANDLE && Math.abs(y - cy) < HANDLE) {
+        dragState.current = { type: "resize", startX: x, startY: y, orig: { ...cropBox } }
+        ;(canvasRef.current as any)._corner = corner
+        canvasRef.current!.setPointerCapture(e.pointerId)
+        return
+      }
+    }
+    // inside box = move
+    if (x >= cropBox.x && x <= cropBox.x + cropBox.w && y >= cropBox.y && y <= cropBox.y + cropBox.h) {
+      dragState.current = { type: "move", startX: x, startY: y, orig: { ...cropBox } }
+      canvasRef.current!.setPointerCapture(e.pointerId)
+    }
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!dragState.current || !cropBox || !displaySize) return
+    const { x, y } = getPointer(e)
+    const dx = x - dragState.current.startX
+    const dy = y - dragState.current.startY
+    const o = dragState.current.orig
+    if (dragState.current.type === "move") {
+      const nx = Math.max(0, Math.min(displaySize.w - o.w, o.x + dx))
+      const ny = Math.max(0, Math.min(displaySize.h - o.h, o.y + dy))
+      setCropBox({ ...o, x: nx, y: ny })
+    } else {
+      const corner = (canvasRef.current as any)._corner as "tl" | "tr" | "bl" | "br"
+      let { x: bx, y: by, w: bw, h: bh } = o
+      const MIN = 40
+      if (corner === "tl") {
+        bx = Math.max(0, Math.min(o.x + o.w - MIN, o.x + dx))
+        by = Math.max(0, Math.min(o.y + o.h - MIN, o.y + dy))
+        bw = o.x + o.w - bx; bh = o.y + o.h - by
+      } else if (corner === "tr") {
+        by = Math.max(0, Math.min(o.y + o.h - MIN, o.y + dy))
+        bw = Math.max(MIN, Math.min(displaySize.w - o.x, o.w + dx))
+        bh = o.y + o.h - by
+      } else if (corner === "bl") {
+        bx = Math.max(0, Math.min(o.x + o.w - MIN, o.x + dx))
+        bw = o.x + o.w - bx
+        bh = Math.max(MIN, Math.min(displaySize.h - o.y, o.h + dy))
+      } else {
+        bw = Math.max(MIN, Math.min(displaySize.w - o.x, o.w + dx))
+        bh = Math.max(MIN, Math.min(displaySize.h - o.y, o.h + dy))
+      }
+      setCropBox({ x: bx, y: by, w: bw, h: bh })
+    }
+  }
+
+  function onPointerUp() {
+    dragState.current = null
+  }
+
+  function handleConfirm() {
+    if (!cropBox || !naturalSize || !displaySize || !imgRef.current) return
+    const scaleX = naturalSize.w / displaySize.w
+    const scaleY = naturalSize.h / displaySize.h
+    const offscreen = document.createElement("canvas")
+    offscreen.width = Math.round(cropBox.w * scaleX)
+    offscreen.height = Math.round(cropBox.h * scaleY)
+    const ctx = offscreen.getContext("2d")!
+    ctx.drawImage(
+      imgRef.current,
+      Math.round(cropBox.x * scaleX),
+      Math.round(cropBox.y * scaleY),
+      offscreen.width,
+      offscreen.height,
+      0, 0, offscreen.width, offscreen.height
+    )
+    offscreen.toBlob((blob) => {
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      onConfirm(blob, url)
+    }, "image/jpeg", 0.92)
+  }
+
+  function handleReset() {
+    if (!displaySize) return
+    setCropBox({ x: 0, y: 0, w: displaySize.w, h: displaySize.h })
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium flex items-center gap-1.5"><Crop className="h-4 w-4" /> Crop Image</span>
+        <button onClick={handleReset} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+          <RotateCcw className="h-3.5 w-3.5" /> Reset
+        </button>
+      </div>
+      <div ref={containerRef} className="w-full flex justify-center bg-black rounded-xl overflow-hidden">
+        {displaySize ? (
+          <canvas
+            ref={canvasRef}
+            width={displaySize.w}
+            height={displaySize.h}
+            className="touch-none cursor-crosshair"
+            style={{ display: "block" }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+          />
+        ) : (
+          <div className="h-40 flex items-center justify-center">
+            <svg className="h-8 w-8 animate-spin text-white/50" viewBox="0 0 48 48" fill="none">
+              <circle cx="24" cy="24" r="20" stroke="rgba(255,255,255,0.2)" strokeWidth="4" />
+              <circle cx="24" cy="24" r="20" stroke="white" strokeWidth="4" strokeLinecap="round" strokeDasharray="31.4 94.2" />
+            </svg>
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground text-center">Drag corners to crop, drag inside to move</p>
+      <div className="flex gap-2">
+        <Button variant="outline" className="flex-1" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button className="flex-1 gap-1.5" onClick={handleConfirm} disabled={!cropBox}>
+          <Check className="h-4 w-4" /> Apply Crop
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
+const MAX_VIDEO_DURATION = 15 // seconds
 
 export default function StatusRow({
   currentVendorId,
@@ -63,18 +296,44 @@ export default function StatusRow({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [cropMode, setCropMode] = useState(false)
+  const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null)
+  const [croppedUrl, setCroppedUrl] = useState<string | null>(null)
+  const [trimMode, setTrimMode] = useState(false)
+  const [trimmedVideoBlob, setTrimmedVideoBlob] = useState<Blob | null>(null)
+  const [trimmedVideoUrl, setTrimmedVideoUrl] = useState<string | null>(null)
+  const [videoDurationSeconds, setVideoDurationSeconds] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const isVideoRef = useRef(false)
+
+  // Viewer state
   const progressRef = useRef<NodeJS.Timeout | null>(null)
+  const videoViewerRef = useRef<HTMLVideoElement>(null)
+  const [isMuted, setIsMuted] = useState(false)
   const [storyProgress, setStoryProgress] = useState(0)
+  const [isPaused, setIsPaused] = useState(false)
+  const isPausedRef = useRef(false)
+  const [mediaLoaded, setMediaLoaded] = useState(false)
+
+  // Edit / delete state
+  const [editCaptionOpen, setEditCaptionOpen] = useState(false)
+  const [editCaptionValue, setEditCaptionValue] = useState("")
+  const [editTextValue, setEditTextValue] = useState("")
+  const [editSaving, setEditSaving] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // Background upload indicator
   const [bgUpload, setBgUpload] = useState<BackgroundUpload | null>(null)
   const bgUploadTimerRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Must declare `current` before any useEffect that references it
+  const current = viewingStatuses[viewIndex]
+
   useEffect(() => {
-    fetch("/api/cleanup-statuses", { method: "POST" }).finally(() => {
-      fetchStatuses()
-    })
+    // Run cleanup and fetch in parallel — don't wait for cleanup before showing statuses
+    fetchStatuses()
+    fetch("/api/cleanup-statuses", { method: "POST" }).then(() => fetchStatuses()).catch(() => {})
   }, [])
 
   async function fetchStatuses() {
@@ -100,15 +359,29 @@ export default function StatusRow({
     setCaption("")
     setSelectedFile(null)
     setPreviewUrl(null)
+    setCropMode(false)
+    setCroppedBlob(null)
+    setCroppedUrl(null)
+    setTrimMode(false)
+    setTrimmedVideoBlob(null)
+    setTrimmedVideoUrl(null)
+    setVideoDurationSeconds(null)
     setError(null)
   }
 
-  // Close dialog immediately, upload runs in the background
   async function handleSubmit() {
     if (!currentVendorId) return
-
     const mediaType = uploadType!
-    const file = selectedFile
+    let file: File | null = null
+    if (mediaType === "image") {
+      file = croppedBlob
+        ? new File([croppedBlob], selectedFile?.name ?? "cropped.jpg", { type: "image/jpeg" })
+        : selectedFile
+    } else if (mediaType === "video") {
+      file = trimmedVideoBlob
+        ? new File([trimmedVideoBlob], selectedFile?.name ?? "trimmed.webm", { type: trimmedVideoBlob.type || "video/webm" })
+        : selectedFile
+    }
     const text = textContent.trim()
     const cap = caption.trim()
 
@@ -133,7 +406,7 @@ export default function StatusRow({
 
       if (mediaType !== "text" && file) {
         const ext = file.name.split(".").pop()
-        const path = `statuses/${currentVendorId}/${Date.now()}.${ext}`
+        const path = `${currentVendorId}/statuses/${Date.now()}.${ext}`
         const { error: upErr } = await supabase.storage
           .from("product-images")
           .upload(path, file, { upsert: true })
@@ -148,6 +421,9 @@ export default function StatusRow({
         media_type: mediaType,
         text_content: mediaType === "text" ? text : null,
         caption: cap || null,
+        ...(mediaType === "video" && videoDurationSeconds !== null
+          ? { video_duration_seconds: videoDurationSeconds }
+          : {}),
       })
       if (insertErr) throw insertErr
 
@@ -162,7 +438,6 @@ export default function StatusRow({
     }
   }
 
-  // Group statuses by vendor
   const groupedByVendor = statuses.reduce<Record<string, VendorStatus[]>>((acc, s) => {
     if (!acc[s.vendor_id]) acc[s.vendor_id] = []
     acc[s.vendor_id].push(s)
@@ -175,11 +450,29 @@ export default function StatusRow({
 
   const myStatuses = currentVendorId ? (groupedByVendor[currentVendorId] ?? []) : []
 
+  // ── Viewer helpers ────────────────────────────────────────────────────────
+
+  function advanceTo(nextIndex: number) {
+    if (nextIndex >= viewingStatuses.length) {
+      setViewOpen(false)
+      return
+    }
+    if (viewingStatuses[nextIndex]?.vendor_id !== currentVendorId) {
+      incrementViewCount(viewingStatuses[nextIndex].id)
+    }
+    setViewIndex(nextIndex)
+    setMediaLoaded(false)
+    const isVid = viewingStatuses[nextIndex]?.media_type === "video"
+    isVideoRef.current = isVid
+    if (!isVid) startProgress()
+    else { setStoryProgress(0); if (progressRef.current) clearInterval(progressRef.current) }
+  }
+
   function openViewer(group: VendorStatus[]) {
     setViewingStatuses(group)
     setViewIndex(0)
     setViewOpen(true)
-    startProgress()
+    startProgressForStatus(group[0])
     // Increment view count for first status if it belongs to another vendor
     if (group[0].vendor_id !== currentVendorId) {
       incrementViewCount(group[0].id)
@@ -191,15 +484,86 @@ export default function StatusRow({
     await supabase.rpc("increment_status_view_count", { status_id: statusId })
   }
 
-  function startProgress() {
+  async function handleDeleteStatus() {
+    if (!current) return
+    setDeleting(true)
+    const supabase = createBrowserClient()
+    await supabase.from("shop_statuses").delete().eq("id", current.id)
+    setDeleting(false)
+    setDeleteConfirmOpen(false)
+    const updated = viewingStatuses.filter((s) => s.id !== current.id)
+    if (updated.length === 0) {
+      setViewOpen(false)
+    } else {
+      setViewingStatuses(updated)
+      setViewIndex((i) => Math.min(i, updated.length - 1))
+    }
+    fetchStatuses()
+  }
+
+  async function handleEditCaption() {
+    if (!current) return
+    setEditSaving(true)
+    const supabase = createBrowserClient()
+    const updates: Record<string, string | null> = {
+      caption: editCaptionValue.trim() || null,
+    }
+    if (current.media_type === "text") {
+      updates.text_content = editTextValue.trim() || null
+    }
+    const { error } = await supabase
+      .from("shop_statuses")
+      .update(updates)
+      .eq("id", current.id)
+    setEditSaving(false)
+    if (!error) {
+      setEditCaptionOpen(false)
+      setViewingStatuses((prev) =>
+        prev.map((s) =>
+          s.id === current.id
+            ? { ...s, caption: updates.caption ?? null, text_content: updates.text_content !== undefined ? (updates.text_content ?? null) : s.text_content }
+            : s
+        )
+      )
+      fetchStatuses()
+    }
+  }
+
+  function startProgress(durationMs: number = 5000) {
     setStoryProgress(0)
+    setMediaLoaded(false)
     if (progressRef.current) clearInterval(progressRef.current)
+    const step = (100 / durationMs) * 100 // percent per 100ms tick
     progressRef.current = setInterval(() => {
+      if (isPausedRef.current) return
       setStoryProgress((p) => {
         if (p >= 100) { clearInterval(progressRef.current!); return 100 }
-        return p + 2
+        return Math.min(p + step, 100)
       })
     }, 100)
+  }
+
+  function startProgressForStatus(status: VendorStatus) {
+    // Use actual video duration if known, else 5s for image/text
+    const dur =
+      status.media_type === "video"
+        ? (status.video_duration_seconds ?? MAX_VIDEO_DURATION) * 1000
+        : 5000
+    startProgress(dur)
+  }
+
+  function pauseProgress() {
+    isPausedRef.current = true
+    setIsPaused(true)
+    videoViewerRef.current?.pause()
+  }
+
+  function resumeProgress() {
+    isPausedRef.current = false
+    setIsPaused(false)
+    if (videoViewerRef.current && mediaLoaded) {
+      videoViewerRef.current.play().catch(() => {})
+    }
   }
 
   useEffect(() => {
@@ -207,11 +571,10 @@ export default function StatusRow({
       setViewIndex((i) => {
         if (i < viewingStatuses.length - 1) {
           const nextIndex = i + 1
-          // Increment view on the next status if it belongs to another vendor
           if (viewingStatuses[nextIndex]?.vendor_id !== currentVendorId) {
             incrementViewCount(viewingStatuses[nextIndex].id)
           }
-          startProgress()
+          startProgressForStatus(viewingStatuses[nextIndex])
           return nextIndex
         }
         setViewOpen(false)
@@ -219,6 +582,27 @@ export default function StatusRow({
       })
     }
   }, [storyProgress])
+
+  // Handle video ended → advance
+  function handleVideoEnded() {
+    advanceTo(viewIndex + 1)
+  }
+
+  // Update video ref and video progress bar when index changes
+  useEffect(() => {
+    if (!viewOpen) return
+    if (current?.media_type === "video") {
+      isVideoRef.current = true
+      setStoryProgress(0)
+      if (progressRef.current) clearInterval(progressRef.current)
+    } else {
+      isVideoRef.current = false
+    }
+  }, [viewIndex, viewOpen])
+
+  useEffect(() => {
+    setMediaLoaded(false)
+  }, [viewIndex, current?.id])
 
   useEffect(() => {
     return () => {
@@ -230,13 +614,15 @@ export default function StatusRow({
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > MAX_FILE_SIZE) { setError("File must be under 2 MB"); return }
     setError(null)
     setSelectedFile(file)
     setPreviewUrl(URL.createObjectURL(file))
+    setCroppedBlob(null)
+    setCroppedUrl(null)
   }
 
-  const current = viewingStatuses[viewIndex]
+  const activePreview = croppedUrl ?? previewUrl
+  const activeVideoPreview = trimmedVideoUrl ?? previewUrl
 
   return (
     <>
@@ -270,7 +656,7 @@ export default function StatusRow({
             </button>
           )}
 
-          {/* Other vendors with active statuses */}
+          {/* Other vendors */}
           {!loading && otherVendors.map((group) => {
             const vendor = group[0].vendor
             return (
@@ -306,7 +692,7 @@ export default function StatusRow({
         </div>
       </div>
 
-      {/* Floating background upload indicator */}
+      {/* Background upload toast */}
       {bgUpload && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-full bg-foreground text-background px-4 py-2.5 shadow-xl text-sm font-medium min-w-[220px] max-w-xs">
           {bgUpload.state === "uploading" && (
@@ -318,10 +704,7 @@ export default function StatusRow({
                   <span className="ml-2 text-xs opacity-70">{bgUpload.progress}%</span>
                 </div>
                 <div className="h-1 rounded-full bg-background/20 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-background transition-all duration-300"
-                    style={{ width: `${bgUpload.progress}%` }}
-                  />
+                  <div className="h-full rounded-full bg-background transition-all duration-300" style={{ width: `${bgUpload.progress}%` }} />
                 </div>
               </div>
             </>
@@ -330,18 +713,14 @@ export default function StatusRow({
             <>
               <CheckCircle className="h-4 w-4 shrink-0 text-green-400" />
               <span className="flex-1">{bgUpload.label} posted!</span>
-              <button onClick={() => setBgUpload(null)} className="opacity-60 hover:opacity-100">
-                <X className="h-3.5 w-3.5" />
-              </button>
+              <button onClick={() => setBgUpload(null)} className="opacity-60 hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
             </>
           )}
           {bgUpload.state === "error" && (
             <>
               <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
               <span className="flex-1 truncate">{bgUpload.error ?? "Upload failed"}</span>
-              <button onClick={() => setBgUpload(null)} className="opacity-60 hover:opacity-100">
-                <X className="h-3.5 w-3.5" />
-              </button>
+              <button onClick={() => setBgUpload(null)} className="opacity-60 hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
             </>
           )}
         </div>
@@ -351,74 +730,168 @@ export default function StatusRow({
       <Dialog open={viewOpen} onOpenChange={(o) => { setViewOpen(o); if (!o && progressRef.current) clearInterval(progressRef.current) }}>
         <DialogContent className="max-w-sm p-0 overflow-hidden rounded-2xl bg-black border-0">
           {current && (
-            <div className="relative flex flex-col h-[70vh]">
+            <div
+              className="relative flex flex-col h-[78vh] select-none"
+              onPointerDown={() => pauseProgress()}
+              onPointerUp={() => resumeProgress()}
+              onPointerLeave={() => resumeProgress()}
+            >
               {/* Progress bars */}
-              <div className="absolute top-0 left-0 right-0 z-20 flex gap-1 p-2">
-                {viewingStatuses.map((_, i) => (
+              <div className="absolute top-0 left-0 right-0 z-20 flex gap-1 p-2 pt-2.5">
+                {viewingStatuses.map((s, i) => (
                   <div key={i} className="flex-1 h-0.5 bg-white/30 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-white rounded-full transition-none"
-                      style={{ width: i < viewIndex ? "100%" : i === viewIndex ? `${storyProgress}%` : "0%" }}
+                      style={{
+                        width: i < viewIndex
+                          ? "100%"
+                          : i === viewIndex
+                            ? s.media_type === "video" ? `${storyProgress}%` : `${storyProgress}%`
+                            : "0%"
+                      }}
                     />
                   </div>
                 ))}
               </div>
 
-              {/* Vendor info */}
+              {/* Vendor header */}
               <div className="absolute top-6 left-0 right-0 z-20 flex items-center gap-2 px-3 py-2">
-                <div className="h-8 w-8 rounded-full overflow-hidden bg-white/20 flex items-center justify-center">
-                  {current.vendor.profile_picture_url ? (
-                    <img src={current.vendor.profile_picture_url} className="h-full w-full object-cover" alt="" />
-                  ) : (
-                    <span className="text-sm font-bold text-white">{current.vendor.shop_name[0]}</span>
-                  )}
+                <div className="h-8 w-8 rounded-full overflow-hidden bg-white/20 flex items-center justify-center shrink-0">
+                  {current.vendor.profile_picture_url
+                    ? <img src={current.vendor.profile_picture_url} className="h-full w-full object-cover" alt="" />
+                    : <span className="text-sm font-bold text-white">{current.vendor.shop_name[0]}</span>
+                  }
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-sm font-medium text-white">{current.vendor.shop_name}</span>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-sm font-medium text-white truncate">{current.vendor.shop_name}</span>
                   {current.vendor.is_verified && <VerificationBadge isVerified size="xs" showTooltip={false} />}
                 </div>
-                <button onClick={() => setViewOpen(false)} className="ml-auto text-white/80 hover:text-white">
-                  <X className="h-5 w-5" />
-                </button>
+                <div className="ml-auto flex items-center gap-2">
+                  {current.vendor_id === currentVendorId && (
+                    <div className="flex items-center gap-1 bg-black/40 rounded-full px-2 py-0.5">
+                      <Eye className="h-3.5 w-3.5 text-white" />
+                      <span className="text-xs text-white font-medium">{current.view_count ?? 0}</span>
+                    </div>
+                  )}
+                  {current.vendor_id === currentVendorId && (
+                    <button
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (progressRef.current) clearInterval(progressRef.current)
+                        setEditCaptionValue(current.caption ?? "")
+                        setEditTextValue(current.text_content ?? "")
+                        setEditCaptionOpen(true)
+                      }}
+                      className="p-1.5 rounded-full bg-black/40 text-white/90 hover:text-white hover:bg-black/60 transition-colors"
+                      aria-label="Edit status"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {current.vendor_id === currentVendorId && (
+                    <button
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (progressRef.current) clearInterval(progressRef.current)
+                        setDeleteConfirmOpen(true)
+                      }}
+                      className="p-1.5 rounded-full bg-black/40 text-white/90 hover:text-red-400 hover:bg-black/60 transition-colors"
+                      aria-label="Delete status"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => setViewOpen(false)}
+                    className="p-1.5 text-white/80 hover:text-white"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
 
-              {/* Content */}
-              <div className="flex-1 flex items-center justify-center">
+              {/* Media content */}
+              <div className="flex-1 flex items-center justify-center overflow-hidden bg-black relative">
+
+                {/* Circle loading spinner — shown while media loads */}
+                {!mediaLoaded && current.media_type !== "text" && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-black">
+                    <svg className="h-14 w-14 -rotate-90" viewBox="0 0 56 56">
+                      {/* Track */}
+                      <circle cx="28" cy="28" r="22" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="3" />
+                      {/* Spinner arc */}
+                      <circle
+                        cx="28" cy="28" r="22"
+                        fill="none"
+                        stroke="white"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeDasharray="138.2"
+                        strokeDashoffset="103.7"
+                        className="origin-center animate-spin"
+                        style={{ animationDuration: "900ms" }}
+                      />
+                    </svg>
+                  </div>
+                )}
+
                 {current.media_type === "image" && (
-                  <img src={current.media_url} alt={current.caption ?? ""} className="w-full h-full object-cover" />
+                  <img
+                    key={current.id}
+                    src={current.media_url}
+                    alt={current.caption ?? ""}
+                    className={`max-w-full max-h-full object-contain transition-opacity duration-300 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
+                    onLoad={() => setMediaLoaded(true)}
+                    draggable={false}
+                  />
                 )}
+
                 {current.media_type === "video" && (
-                  <video src={current.media_url} autoPlay muted loop className="w-full h-full object-cover" />
+                  <video
+                    key={current.id}
+                    ref={videoViewerRef}
+                    src={current.media_url}
+                    autoPlay
+                    muted={isMuted}
+                    playsInline
+                    className={`max-w-full max-h-full object-contain transition-opacity duration-300 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
+                    onCanPlay={() => setMediaLoaded(true)}
+                    draggable={false}
+                  />
                 )}
+
                 {current.media_type === "text" && (
                   <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-primary/80 to-primary p-6">
-                    <p className="text-center text-xl font-semibold text-white">{current.text_content}</p>
+                    <p className="text-center text-xl font-semibold text-white leading-relaxed">{current.text_content}</p>
                   </div>
                 )}
               </div>
 
               {/* Caption */}
               {current.caption && (
-                <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/70 px-4 py-3">
-                  <p className="text-sm text-white">{current.caption}</p>
+                <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-4 pb-4 pt-8">
+                  <p className="text-sm text-white leading-relaxed">{current.caption}</p>
                 </div>
               )}
 
-              {/* View count — only shown to the status owner */}
-              {current.vendor_id === currentVendorId && (
-                <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1 bg-black/50 rounded-full px-2 py-1">
-                  <Eye className="h-3.5 w-3.5 text-white" />
-                  <span className="text-xs text-white font-medium">{current.view_count ?? 0}</span>
-                </div>
-              )}
-
-              {/* Tap zones */}
+              {/* Tap zones — prev / next */}
               <button
+                aria-label="Previous"
                 className="absolute left-0 top-0 h-full w-1/3 z-10"
-                onClick={() => { if (viewIndex > 0) { setViewIndex(v => v - 1); startProgress() } }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => {
+                  if (viewIndex > 0) {
+                    setViewIndex(v => v - 1)
+                    startProgressForStatus(viewingStatuses[viewIndex - 1])
+                  }
+                }}
               />
               <button
                 className="absolute right-0 top-0 h-full w-1/3 z-10"
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => {
                   if (viewIndex < viewingStatuses.length - 1) {
                     const next = viewIndex + 1
@@ -426,18 +899,24 @@ export default function StatusRow({
                       incrementViewCount(viewingStatuses[next].id)
                     }
                     setViewIndex(next)
-                    startProgress()
+                    startProgressForStatus(viewingStatuses[next])
                   } else {
                     setViewOpen(false)
                   }
                 }}
+              />
+              <button
+                aria-label="Next"
+                className="absolute right-0 top-0 h-full w-1/3 z-10"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => advanceTo(viewIndex + 1)}
               />
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* My Store Action Sheet */}
+      {/* My Store action sheet */}
       <Dialog open={myActionOpen} onOpenChange={setMyActionOpen}>
         <DialogContent className="max-w-xs p-0 overflow-hidden rounded-2xl">
           <div className="p-5 space-y-1">
@@ -472,13 +951,58 @@ export default function StatusRow({
         </DialogContent>
       </Dialog>
 
-      {/* Create Status Dialog */}
+      {/* Edit Caption dialog */}
+      <Dialog open={editCaptionOpen} onOpenChange={(o) => { setEditCaptionOpen(o); if (!o && viewOpen) startProgress() }}>
+        <DialogContent className="max-w-xs">
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold">Edit Status</h3>
+            {viewingStatuses[viewIndex]?.media_type === "text" && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Text content</label>
+                <Textarea value={editTextValue} onChange={(e) => setEditTextValue(e.target.value)} rows={3} maxLength={280} placeholder="Status text..." />
+              </div>
+            )}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Caption</label>
+              <input
+                type="text"
+                value={editCaptionValue}
+                onChange={(e) => setEditCaptionValue(e.target.value)}
+                maxLength={120}
+                placeholder="Add a caption..."
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setEditCaptionOpen(false)} disabled={editSaving}>Cancel</Button>
+              <Button className="flex-1" onClick={handleEditCaption} disabled={editSaving}>{editSaving ? "Saving..." : "Save"}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={(o) => { setDeleteConfirmOpen(o); if (!o && viewOpen) startProgress() }}>
+        <DialogContent className="max-w-xs">
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold">Delete Status</h3>
+            <p className="text-sm text-muted-foreground">This status will be permanently deleted and cannot be recovered.</p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>Cancel</Button>
+              <Button variant="destructive" className="flex-1" onClick={handleDeleteStatus} disabled={deleting}>{deleting ? "Deleting..." : "Delete"}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Create Status dialog ──────────────────────────────────── */}
       <Dialog open={createOpen} onOpenChange={(o) => { setCreateOpen(o); if (!o) resetCreateForm() }}>
         <DialogContent className="max-w-sm">
           <div className="space-y-4">
             <h2 className="text-base font-semibold">Add Status</h2>
 
-            {!uploadType ? (
+            {/* Step 0: pick type */}
+            {!uploadType && (
               <div className="grid grid-cols-3 gap-3">
                 <button
                   onClick={() => { setUploadType("image"); fileInputRef.current?.click() }}
@@ -502,7 +1026,38 @@ export default function StatusRow({
                   <span className="text-xs">Text</span>
                 </button>
               </div>
-            ) : (
+            )}
+
+            {/* Step 1: crop (image only) */}
+            {uploadType === "image" && cropMode && previewUrl && (
+              <ImageCropper
+                src={previewUrl}
+                onConfirm={(blob, url) => {
+                  setCroppedBlob(blob)
+                  setCroppedUrl(url)
+                  setCropMode(false)
+                }}
+                onCancel={() => setCropMode(false)}
+              />
+            )}
+
+            {/* Step 1b: trim (video only) */}
+            {uploadType === "video" && trimMode && previewUrl && selectedFile && (
+              <VideoTrimmer
+                file={selectedFile}
+                previewUrl={previewUrl}
+                onConfirm={(trimmedFile, url, start, end) => {
+                  setTrimmedVideoBlob(trimmedFile)
+                  setTrimmedVideoUrl(url)
+                  setVideoDurationSeconds(Math.round(end - start))
+                  setTrimMode(false)
+                }}
+                onCancel={() => setTrimMode(false)}
+              />
+            )}
+
+            {/* Step 1: compose */}
+            {uploadType && !cropMode && !trimMode && (
               <div className="space-y-3">
                 {uploadType === "text" ? (
                   <Textarea
@@ -512,18 +1067,41 @@ export default function StatusRow({
                     rows={4}
                     maxLength={280}
                   />
-                ) : previewUrl ? (
-                  <div className="relative rounded-xl overflow-hidden aspect-square bg-muted">
-                    {uploadType === "image"
-                      ? <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                      : <video src={previewUrl} controls className="w-full h-full object-cover" />
-                    }
+                ) : (activePreview && uploadType === "image") || (activeVideoPreview && uploadType === "video") ? (
+                  <div className="relative rounded-xl overflow-hidden bg-black flex items-center justify-center" style={{ minHeight: 160 }}>
+                    {uploadType === "image" ? (
+                      <img src={activePreview!} alt="Preview" className="max-w-full max-h-60 object-contain" />
+                    ) : (
+                      <video src={activeVideoPreview!} controls className="max-w-full max-h-60 object-contain" />
+                    )}
                     <button
-                      onClick={() => { setSelectedFile(null); setPreviewUrl(null) }}
-                      className="absolute top-2 right-2 bg-black/50 rounded-full p-1 text-white"
+                      onClick={() => {
+                        setSelectedFile(null); setPreviewUrl(null)
+                        setCroppedBlob(null); setCroppedUrl(null)
+                        setTrimmedVideoBlob(null); setTrimmedVideoUrl(null)
+                      }}
+                      className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white"
                     >
                       <X className="h-4 w-4" />
                     </button>
+                    {/* Crop button for images */}
+                    {uploadType === "image" && (
+                      <button
+                        onClick={() => setCropMode(true)}
+                        className="absolute bottom-2 right-2 flex items-center gap-1 bg-black/60 rounded-full px-2.5 py-1 text-white text-xs font-medium"
+                      >
+                        <Crop className="h-3.5 w-3.5" /> Crop
+                      </button>
+                    )}
+                    {/* Trim button for videos */}
+                    {uploadType === "video" && (
+                      <button
+                        onClick={() => setTrimMode(true)}
+                        className="absolute bottom-2 right-2 flex items-center gap-1 bg-black/60 rounded-full px-2.5 py-1 text-white text-xs font-medium"
+                      >
+                        <Video className="h-3.5 w-3.5" /> Trim
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div
@@ -534,7 +1112,7 @@ export default function StatusRow({
                       ? <ImageIcon className="h-8 w-8 text-muted-foreground" />
                       : <Video className="h-8 w-8 text-muted-foreground" />
                     }
-                    <span className="text-xs text-muted-foreground">Tap to select (max 2 MB)</span>
+                    <span className="text-xs text-muted-foreground">Tap to select</span>
                   </div>
                 )}
 
@@ -558,12 +1136,8 @@ export default function StatusRow({
                 {error && <p className="text-xs text-destructive">{error}</p>}
 
                 <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1" onClick={() => setUploadType(null)}>
-                    Back
-                  </Button>
-                  <Button className="flex-1" onClick={handleSubmit}>
-                    Post Status
-                  </Button>
+                  <Button variant="outline" className="flex-1" onClick={() => setUploadType(null)}>Back</Button>
+                  <Button className="flex-1" onClick={handleSubmit}>Post Status</Button>
                 </div>
               </div>
             )}

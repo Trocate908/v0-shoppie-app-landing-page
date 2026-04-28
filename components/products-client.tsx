@@ -44,12 +44,21 @@ export default function ProductsClient({ products }: ProductsClientProps) {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  // Filter products based on debounced search query
+  // Filter products based on debounced search query, then shuffle by default
   const filteredProducts = useMemo(() => {
-    if (!debouncedQuery.trim()) return products
+    let result = debouncedQuery.trim()
+      ? products.filter((product) => product.name.toLowerCase().includes(debouncedQuery.toLowerCase()))
+      : [...products]
 
-    const query = debouncedQuery.toLowerCase()
-    return products.filter((product) => product.name.toLowerCase().includes(query))
+    // Fisher-Yates shuffle when not searching (gives random order each mount)
+    if (!debouncedQuery.trim()) {
+      for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]]
+      }
+    }
+
+    return result
   }, [products, debouncedQuery])
 
   // Handle search with transition for smoother UI

@@ -5,7 +5,6 @@ import { Toaster } from "@/components/ui/toaster"
 import { ThemeProvider } from "@/components/theme-provider"
 import { WebVitals } from "./web-vitals"
 import { PwaProvider } from "@/components/pwa-provider"
-import OfflineBar from "@/components/offline-bar"
 import InstallBanner from "@/components/install-banner"
 import { NotificationProvider } from "@/components/notification-provider"
 import "./globals.css"
@@ -102,7 +101,6 @@ export default function RootLayout({
         <ThemeProvider>
           <PwaProvider>
             <WebVitals />
-            <OfflineBar />
             {children}
             <InstallBanner />
             <NotificationProvider />
