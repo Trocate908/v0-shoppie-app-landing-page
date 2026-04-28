@@ -129,6 +129,28 @@ export function useFcm() {
     }
   }, [registerToken])
 
+  // Re-register whenever the Supabase auth user changes — this guarantees
+  // the FCM token is associated with the currently signed-in user, so
+  // notifications go to the right account when they swap shopper/vendor
+  // identities or sign out and back in.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (!("Notification" in window)) return
+    const supabase = createBrowserClient()
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return
+      if (Notification.permission !== "granted") return
+      // Force a fresh registration so push_tokens.user_id reflects reality.
+      try {
+        localStorage.removeItem(REGISTER_TS_KEY)
+      } catch {}
+      registerToken(true)
+    })
+    return () => {
+      sub.subscription.unsubscribe()
+    }
+  }, [registerToken])
+
   // Listen for foreground messages so the user gets feedback while the app is open.
   useEffect(() => {
     let unsub: (() => void) | undefined
