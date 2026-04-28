@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createServerClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { dispatchNotification } from "@/lib/notifications/dispatch"
+import { getPushConfigStatus } from "@/lib/push/server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic"
  *
  * The response includes:
  *   - whether you have a logged-in session
- *   - how many push tokens are registered for you
+ *   - how many push subscriptions are registered for you
  *   - what the dispatch reported (pushed / persisted / pruned)
  *   - hints if anything is misconfigured
  */
@@ -26,14 +27,27 @@ export async function GET() {
   } = await supabase.auth.getUser()
 
   const hints: string[] = []
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-    hints.push("FIREBASE_SERVICE_ACCOUNT_KEY is missing — pushes won't go out (in-app rows will still save).")
+  const pushCfg = getPushConfigStatus()
+  if (!pushCfg.hasPublicKey) {
+    hints.push(
+      "VAPID_PUBLIC_KEY (and NEXT_PUBLIC_VAPID_PUBLIC_KEY) are missing — browsers cannot subscribe. " +
+        "Hit GET /api/push/generate-vapid once to mint a keypair, then add the four env vars it returns.",
+    )
   }
-  if (!process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY) {
-    hints.push("NEXT_PUBLIC_FIREBASE_VAPID_KEY is missing — the browser cannot register a token.")
+  if (!pushCfg.hasPrivateKey) {
+    hints.push(
+      "VAPID_PRIVATE_KEY is missing — the server cannot sign push notifications, so nothing will deliver.",
+    )
+  }
+  if (!pushCfg.hasSubject) {
+    hints.push(
+      "VAPID_SUBJECT is missing (defaulting to mailto:contact@shoppieapp.co.zw) — push services prefer a real contact mailto:.",
+    )
   }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    hints.push("SUPABASE_SERVICE_ROLE_KEY is missing — the dispatcher cannot read other users' tokens.")
+    hints.push(
+      "SUPABASE_SERVICE_ROLE_KEY is missing — the dispatcher cannot read other users' subscriptions, so cross-user pushes will silently fail.",
+    )
   }
 
   if (!user) {
@@ -55,9 +69,10 @@ export async function GET() {
     return NextResponse.json({
       ok: false,
       reason:
-        "No push token registered for this user yet. Click 'Turn on notifications' in the soft prompt, " +
-        "or accept the browser's native permission prompt. Then revisit this URL.",
+        "No push subscription registered for this user yet. Tap 'Enable notifications' on /notifications/debug, " +
+        "or accept the browser's permission prompt — then revisit this URL.",
       userId: user.id,
+      pushConfig: pushCfg,
       hints,
     })
   }
@@ -82,9 +97,10 @@ export async function GET() {
       device_id: t.device_id,
       user_type: t.user_type,
       enabled: t.enabled,
-      tokenPreview: typeof t.token === "string" ? t.token.slice(0, 20) + "..." : null,
+      tokenPreview: typeof t.token === "string" ? t.token.slice(0, 32) + "..." : null,
     })),
     dispatch: result,
+    pushConfig: pushCfg,
     hints,
   })
 }

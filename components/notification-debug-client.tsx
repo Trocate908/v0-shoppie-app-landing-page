@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useFcm } from "@/hooks/use-fcm"
-import { ArrowLeft, CheckCircle2, XCircle, AlertCircle, RefreshCw, Bell, Send, Volume2 } from "lucide-react"
+import { ArrowLeft, CheckCircle2, XCircle, AlertCircle, RefreshCw, Bell, Send, Volume2, KeyRound, Copy, Check } from "lucide-react"
 import Link from "next/link"
 
 type Check = {
@@ -23,6 +23,8 @@ export default function NotificationDebugClient() {
   const [busy, setBusy] = useState(false)
   const [testJson, setTestJson] = useState<string | null>(null)
   const [log, setLog] = useState<string[]>([])
+  const [vapidEnvBlock, setVapidEnvBlock] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const appendLog = useCallback((line: string) => {
     setLog((prev) => [`[${new Date().toLocaleTimeString()}] ${line}`, ...prev].slice(0, 60))
@@ -60,19 +62,27 @@ export default function NotificationDebugClient() {
       })
     }
 
-    // 3. FCM service worker registered
+    // 3. Service worker + push subscription
     if ("serviceWorker" in navigator) {
-      const reg = await navigator.serviceWorker.getRegistration("/firebase-cloud-messaging-push-scope")
+      const reg = await navigator.serviceWorker.getRegistration("/")
       if (reg) {
         const swActive = reg.active ? "active" : reg.waiting ? "waiting" : reg.installing ? "installing" : "unknown"
         next.push({
-          label: "Firebase messaging service worker",
+          label: "Service worker",
           status: reg.active ? "ok" : "warn",
           detail: `state: ${swActive} • script: ${reg.active?.scriptURL ?? "n/a"}`,
         })
+        const sub = await reg.pushManager.getSubscription().catch(() => null)
+        next.push({
+          label: "Push subscription on this device",
+          status: sub ? "ok" : "warn",
+          detail: sub
+            ? `endpoint: …${sub.endpoint.slice(-32)}`
+            : "Not subscribed yet. Tap 'Enable notifications' below.",
+        })
       } else {
         next.push({
-          label: "Firebase messaging service worker",
+          label: "Service worker",
           status: "warn",
           detail: "Not registered yet. Tap 'Enable notifications' to register.",
         })
@@ -90,17 +100,17 @@ export default function NotificationDebugClient() {
             status: "fail",
             detail: "You must be signed in for cross-account push tests to work.",
           })
-        } else if (json.ok === false && json.reason?.includes("No push token")) {
+        } else if (json.ok === false && json.reason?.includes("No push subscription")) {
           next.push({
-            label: "Push token registered with backend",
+            label: "Push subscription registered with backend",
             status: "fail",
-            detail: "No FCM token in push_tokens table for this user. Tap 'Enable notifications'.",
+            detail: "No subscription in push_tokens for this user. Tap 'Enable notifications' below.",
           })
         } else if (json.ok === true) {
           next.push({
-            label: "Push token registered with backend",
+            label: "Push subscription registered with backend",
             status: "ok",
-            detail: `${json.tokenCount} token(s) on file. dispatch result: pushed=${json.dispatch?.pushed ?? "?"} persisted=${json.dispatch?.persisted ?? "?"}`,
+            detail: `${json.tokenCount} subscription(s) on file. dispatch result: pushed=${json.dispatch?.pushed ?? "?"} persisted=${json.dispatch?.persisted ?? "?"}`,
           })
         }
         if (Array.isArray(json.hints)) {
@@ -144,7 +154,7 @@ export default function NotificationDebugClient() {
         return
       }
       const reg =
-        (await navigator.serviceWorker.getRegistration("/firebase-cloud-messaging-push-scope")) ??
+        (await navigator.serviceWorker.getRegistration("/")) ??
         (await navigator.serviceWorker.ready)
       if (!reg) {
         appendLog("No service worker available. Hard-reload the page and try again.")
@@ -184,7 +194,37 @@ export default function NotificationDebugClient() {
     setBusy(false)
   }, [appendLog])
 
-  // Unregister all SWs and clear the FCM token (clean slate).
+  // Mint a fresh VAPID keypair so the user can paste them into env vars.
+  const handleGenerateVapid = useCallback(async () => {
+    setBusy(true)
+    appendLog("Requesting fresh VAPID keys from /api/push/generate-vapid ...")
+    try {
+      const res = await fetch("/api/push/generate-vapid", { cache: "no-store" })
+      if (!res.ok) {
+        appendLog(`Failed: HTTP ${res.status}`)
+      } else {
+        const json = await res.json()
+        setVapidEnvBlock(json.envBlock ?? null)
+        appendLog("Got fresh VAPID keys. Copy the env block, paste into Vars panel, then refresh.")
+      }
+    } catch (err) {
+      appendLog(`Generate VAPID failed: ${(err as Error).message ?? err}`)
+    }
+    setBusy(false)
+  }, [appendLog])
+
+  const handleCopyEnv = useCallback(async () => {
+    if (!vapidEnvBlock) return
+    try {
+      await navigator.clipboard.writeText(vapidEnvBlock)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      appendLog(`Copy failed: ${(err as Error).message ?? err}`)
+    }
+  }, [vapidEnvBlock, appendLog])
+
+  // Unregister all SWs and clear the push subscription (clean slate).
   const handleReset = useCallback(async () => {
     setBusy(true)
     try {
@@ -288,12 +328,50 @@ export default function NotificationDebugClient() {
           <div className="flex flex-col gap-2 p-4">
             <Button
               size="lg"
+              variant="outline"
+              className="justify-start"
+              onClick={handleGenerateVapid}
+              disabled={busy}
+            >
+              <KeyRound className="mr-2 h-4 w-4" />
+              0. Generate VAPID keys (run this once if env vars are missing)
+            </Button>
+            {vapidEnvBlock && (
+              <div className="my-1 rounded-lg border border-border bg-muted/40 p-3">
+                <p className="mb-2 text-xs font-medium text-foreground">
+                  Copy these four lines into your project Vars panel, then refresh this page:
+                </p>
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-background p-2 text-[11px] leading-relaxed">
+                  {vapidEnvBlock}
+                </pre>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-2 h-7 px-2 text-xs"
+                  onClick={handleCopyEnv}
+                >
+                  {copied ? (
+                    <>
+                      <Check className="mr-1 h-3 w-3" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="mr-1 h-3 w-3" />
+                      Copy
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+            <Button
+              size="lg"
               className="justify-start"
               onClick={handleEnable}
               disabled={busy}
             >
               <Bell className="mr-2 h-4 w-4" />
-              1. Enable notifications &amp; register token
+              1. Enable notifications &amp; subscribe
             </Button>
             <Button
               size="lg"
@@ -313,7 +391,7 @@ export default function NotificationDebugClient() {
               disabled={busy}
             >
               <Send className="mr-2 h-4 w-4" />
-              3. Send test push from server (full FCM pipeline)
+              3. Send test push from server (full Web Push pipeline)
             </Button>
             <Button
               size="sm"
@@ -369,7 +447,7 @@ export default function NotificationDebugClient() {
           <ul className="mt-2 list-disc space-y-1 pl-4">
             <li>If step 2 (local notification) fails → it&apos;s a permission/SW problem on your device, not the server.</li>
             <li>
-              If step 2 works but step 3 fails → the server pipeline (Firebase service account / token lookup) is wrong. Check the &quot;hints&quot; in the JSON above.
+              If step 2 works but step 3 fails → the server pipeline (VAPID keys / subscription lookup) is wrong. Check the &quot;hints&quot; in the JSON above. Tap &quot;Generate VAPID keys&quot; if you haven&apos;t set them yet.
             </li>
             <li>
               If both work but real messages still don&apos;t notify → make sure the SENDER and RECIPIENT are different accounts on different devices.
