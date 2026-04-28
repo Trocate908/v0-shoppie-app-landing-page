@@ -12,6 +12,40 @@ const SOFT_PROMPT_KEY = "shoppie:notif-soft-prompt"
 const REGISTER_TS_KEY = "shoppie:notif-registered-at"
 
 /**
+ * Synthesise a short, pleasant two-tone "ding" using the Web Audio API.
+ * No binary asset required and it works without any user gesture as long
+ * as the page has been interacted with at least once (which is true for
+ * any user that has just been chatting / sending messages).
+ */
+function playNotificationSound() {
+  if (typeof window === "undefined") return
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctx) return
+    const ctx = new Ctx()
+    const playTone = (freq: number, start: number, duration: number) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = "sine"
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + start)
+      gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + start + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + duration)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start(ctx.currentTime + start)
+      osc.stop(ctx.currentTime + start + duration + 0.05)
+    }
+    // Two-tone "ding" — high then higher.
+    playTone(880, 0, 0.18)
+    playTone(1320, 0.14, 0.22)
+    // Auto-close the context shortly after.
+    setTimeout(() => ctx.close().catch(() => {}), 600)
+  } catch {
+    /* ignored — sound is best-effort */
+  }
+}
+
+/**
  * useFcm wires the browser's FCM lifecycle:
  *  - reports current permission state
  *  - exposes an `enable()` action to request permission + register the token
@@ -98,9 +132,41 @@ export function useFcm() {
   // Listen for foreground messages so the user gets feedback while the app is open.
   useEffect(() => {
     let unsub: (() => void) | undefined
-    onForegroundMessage((payload) => {
+    onForegroundMessage(async (payload) => {
       const title = payload.title ?? "ShoppieApp"
       const body = payload.body ?? "You have a new update"
+      const link = payload.link ?? "/"
+      const image = payload.image
+
+      // Always play a short beep so the user notices, just like Facebook.
+      playNotificationSound()
+
+      // If the tab is not the active/visible tab, show a real system
+      // notification (Chrome will play the OS notification sound + vibrate).
+      const isHidden = typeof document !== "undefined" && document.visibilityState !== "visible"
+      if (isHidden && "serviceWorker" in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration("/firebase-cloud-messaging-push-scope")
+          if (reg) {
+            await reg.showNotification(title, {
+              body,
+              icon: "/logo.png",
+              badge: "/logo.png",
+              image,
+              tag: `shoppie-fg-${Date.now()}`,
+              requireInteraction: true,
+              renotify: true,
+              vibrate: [200, 100, 200, 100, 200],
+              data: { link },
+            } as NotificationOptions)
+            return
+          }
+        } catch (err) {
+          console.error("[FCM] foreground showNotification failed", err)
+        }
+      }
+
+      // Tab is focused — show an in-app toast.
       toast({ title, description: body })
     }).then((fn) => {
       unsub = fn
