@@ -1,49 +1,52 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  typescript: {
-    ignoreBuildErrors: true,
-  },
+// @ts-nocheck
+// This file was auto-created and injected by v0.
+// DO NOT MODIFY THIS FILE DIRECTLY.
+// EDIT THE USER CONFIG IN ./next.user-config.mjs INSTEAD.
+
+import userConfigImport from './next.user-config.mjs'
+import { fileURLToPath } from 'url'
+import path from 'path'
+
+const __v0_turbopack_root = undefined ?? path.dirname(fileURLToPath(import.meta.url))
+
+export default async function v0NextConfig(phase, { defaultConfig }) {
+  const userConfig = typeof userConfigImport === 'function'
+    ? await userConfigImport(phase, { defaultConfig })
+    : userConfigImport
+
+  return {
+  ...userConfig,
+  distDir: '.next',
+  devIndicators: false,
   images: {
-    formats: ['image/avif', 'image/webp'],
-    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    minimumCacheTTL: 60,
-    dangerouslyAllowSVG: true,
-    contentDispositionType: 'attachment',
-    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**.supabase.co',
-      },
-      {
-        protocol: 'https',
-        hostname: 'hebbkx1anhila5yf.public.blob.vercel-storage.com',
-      },
-      {
-        protocol: 'https',
-        hostname: 'res.cloudinary.com',
-      },
-      {
-        protocol: 'https',
-        hostname: 'images.pexels.com',
-      },
-      {
-        protocol: 'https',
-        hostname: 'photos.pexels.com',
-      },
-      {
-        protocol: 'https',
-        hostname: '**.pexels.com',
-      },
-    ],
+    ...userConfig.images,
+    unoptimized: process.env.NODE_ENV === 'development',
+  },
+  logging: {
+    ...userConfig.logging,
+    fetches: { fullUrl: true, hmrRefreshes: true },
+    browserToTerminal: true,
+  },
+  turbopack: {
+    ...userConfig.turbopack,
+    root: __v0_turbopack_root,
   },
   experimental: {
-    optimizePackageImports: ['lucide-react', '@/components/ui'],
+    ...userConfig.experimental,
+    transitionIndicator: true,
+    turbopackFileSystemCacheForDev: process.env.TURBOPACK_PERSISTENT_CACHE !== 'false' && process.env.TURBOPACK_PERSISTENT_CACHE !== '0',
+    serverActions: {
+      ...userConfig.experimental?.serverActions,
+      allowedOrigins: [
+        ...(userConfig.experimental?.serverActions?.allowedOrigins || []),
+        '*.vusercontent.net',
+      ],
+    },
   },
-  compress: true,
-  poweredByHeader: false,
-  reactStrictMode: true,
+  allowedDevOrigins: [
+    ...(userConfig.allowedDevOrigins || []),
+    '*.vusercontent.net',
+    '*.dev-vm.vusercontent.net',
+  ],
 }
-
-export default nextConfig
+}
