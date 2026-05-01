@@ -29,7 +29,7 @@ const nextConfig = {
       allowedOrigins: ["*.vusercontent.net"],
     },
   },
-  allowedDevOrigins: ["*.vusercontent.net", "*.dev-vm.vusercontent.net"],
+  allowedDevOrigins: ["*.vusercontent.net", "*.dev-vm.vusercontent.net", "*.spock.replit.dev", "*.replit.dev", "*.repl.co"],
   compress: true,
   poweredByHeader: false,
   reactStrictMode: true,
