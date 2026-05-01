@@ -1,13 +1,18 @@
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse, type NextRequest } from "next/server"
 
 /**
  * POST /api/notifications/register-token
  * Body: { token, deviceId, userType, userAgent }
  *
- * Saves (or upserts) the device's FCM token and links it to the current
- * authenticated user when one is present. Anonymous shoppers are tracked
- * by deviceId (a uuid stored in localStorage).
+ * Saves (or upserts) the device's Web Push subscription and links it to
+ * the current authenticated user when one is present.
+ *
+ * We use the admin client throughout: the push_tokens RLS policies require
+ * auth.uid() = user_id for SELECT (needed by upsert conflict resolution)
+ * which fails for anonymous users whose rows have user_id = NULL. The
+ * server enforces the same ownership logic explicitly instead.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -17,6 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "token required" }, { status: 400 })
     }
 
+    // Resolve the current authenticated user (if any) from the session cookie.
     const supabase = await createClient()
     const {
       data: { user },
@@ -39,16 +45,19 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     }
 
+    // Use admin client to bypass RLS (ownership is enforced by server logic above).
+    const admin = createAdminClient()
+
     // Step 1: drop any previous subscription rows for this device so we
     // don't accumulate stale entries when the browser rotates its push
     // subscription. The new row will be inserted next.
     if (deviceId) {
-      await supabase.from("push_tokens").delete().eq("device_id", deviceId).neq("token", token)
+      await admin.from("push_tokens").delete().eq("device_id", deviceId).neq("token", token)
     }
 
     // Step 2: upsert the current token (so re-registering the same device
     // is a no-op and just refreshes last_seen_at).
-    const { error } = await supabase
+    const { error } = await admin
       .from("push_tokens")
       .upsert(payload, { onConflict: "token" })
 

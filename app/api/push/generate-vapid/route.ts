@@ -13,11 +13,22 @@ export const dynamic = "force-dynamic"
  * IMPORTANT: regenerating keys after users have subscribed will invalidate
  * all existing subscriptions, so don't do it.
  *
- * In production you likely want to gate this behind an admin check; for
- * now we leave it open since the keys themselves don't expose anything
- * dangerous (they're meant to be set as VAPID details).
+ * This endpoint is disabled once VAPID keys are already configured to
+ * prevent accidental key rotation.
  */
 export async function GET() {
+  // Refuse to regenerate if keys are already set — doing so would
+  // invalidate every existing push subscription.
+  if (process.env.VAPID_PRIVATE_KEY || process.env.VAPID_PUBLIC_KEY) {
+    return NextResponse.json(
+      {
+        error:
+          "VAPID keys are already configured. Regenerating would invalidate all existing push subscriptions. Remove the VAPID_* environment variables first if you truly need to rotate keys.",
+      },
+      { status: 403 },
+    )
+  }
+
   const keys = generateVapidKeys()
   return NextResponse.json({
     publicKey: keys.publicKey,
