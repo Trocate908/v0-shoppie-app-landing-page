@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono, Dancing_Script } from "next/font/google"
+import Script from "next/script"
 import { Toaster } from "@/components/ui/toaster"
 import { ThemeProvider } from "@/components/theme-provider"
 import { WebVitals } from "./web-vitals"
@@ -98,6 +99,11 @@ export default function RootLayout({
         <meta name="msapplication-TileColor" content="#ffffff" />
       </head>
       <body className="font-sans antialiased">
+        {/* OneSignal Web SDK — handles push subscription & delivery */}
+        <Script
+          src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
+          strategy="afterInteractive"
+        />
         <ThemeProvider>
           <PwaProvider>
             <WebVitals />
