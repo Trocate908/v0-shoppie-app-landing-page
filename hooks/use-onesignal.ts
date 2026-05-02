@@ -4,8 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
 interface OneSignalNotifications {
   permission: boolean
   permissionNative: NotificationPermission
@@ -19,7 +17,6 @@ interface OneSignalSDK {
     appId: string
     notifyButton?: { enable: boolean }
     allowLocalhostAsSecureOrigin?: boolean
-    serviceWorkerPath?: string
   }): Promise<void>
   login(externalId: string): Promise<void>
   logout(): Promise<void>
@@ -33,14 +30,10 @@ declare global {
   }
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
 const PROMPT_DISMISSED_KEY = "shoppie:os-prompt-dismissed-v1"
-const PROMPT_COOLDOWN_MS   = 3 * 24 * 60 * 60 * 1000 // 3 days
+const PROMPT_COOLDOWN_MS   = 3 * 24 * 60 * 60 * 1000
 
 export type PushStatus = "idle" | "asking" | "granted" | "denied" | "unsupported" | "not_configured"
-
-// ── Shared Supabase client ───────────────────────────────────────────────────
 
 let _client: ReturnType<typeof createBrowserClient> | null = null
 function getClient() {
@@ -48,16 +41,15 @@ function getClient() {
   return _client
 }
 
-// ── Hook ─────────────────────────────────────────────────────────────────────
-
 export function useOneSignal() {
   const [status, setStatus] = useState<PushStatus>("idle")
-  const sdkRef  = useRef<OneSignalSDK | null>(null)
+  const sdkRef = useRef<OneSignalSDK | null>(null)
   const { toast } = useToast()
 
-  // The SDK is already initialised by the inline <script> in <head>.
-  // We just need to hook into the deferred queue to grab the SDK reference.
+  const appId =
+    process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || "854f1bd0-4101-471e-a326-c143940d4a29"
 
+  // 1. Hook into the deferred queue — SDK is already init'd by the <head> script
   useEffect(() => {
     if (typeof window === "undefined") return
 
@@ -66,18 +58,15 @@ export function useOneSignal() {
       return
     }
 
-    // Push into the deferred queue — SDK calls us once init() is complete.
     window.OneSignalDeferred = window.OneSignalDeferred ?? []
     window.OneSignalDeferred.push(async (sdk) => {
       sdkRef.current = sdk
 
-      // Sync initial permission status
       const native = sdk.Notifications.permissionNative
       if (native === "granted") setStatus("granted")
       else if (native === "denied") setStatus("denied")
       else setStatus("idle")
 
-      // Subscribe to future permission changes
       const onChange = (granted: boolean) => {
         setStatus(granted ? "granted" : "denied")
       }
@@ -85,8 +74,7 @@ export function useOneSignal() {
     })
   }, [])
 
-  // ── 2. Link the Supabase user to OneSignal external_id ─────────────────
-
+  // 2. Link Supabase user to OneSignal external_id
   useEffect(() => {
     const supabase = getClient()
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -102,8 +90,7 @@ export function useOneSignal() {
     return () => { subscription.unsubscribe() }
   }, [])
 
-  // ── 3. Expose enable() for our custom prompt ────────────────────────────
-
+  // 3. expose enable() for our custom prompt
   const enable = useCallback(async (): Promise<boolean> => {
     const sdk = sdkRef.current
     if (!sdk) return false
@@ -114,7 +101,6 @@ export function useOneSignal() {
       const granted = sdk.Notifications.permission
       setStatus(granted ? "granted" : "denied")
 
-      // Link user after permission granted
       if (granted) {
         const { data: { user } } = await getClient().auth.getUser()
         if (user?.id) {
@@ -130,8 +116,7 @@ export function useOneSignal() {
     }
   }, [toast])
 
-  // ── 4. Soft-prompt helpers ──────────────────────────────────────────────
-
+  // 4. Soft-prompt helpers
   const dismissSoftPrompt = useCallback(() => {
     try { localStorage.setItem(PROMPT_DISMISSED_KEY, String(Date.now())) } catch {}
   }, [])
