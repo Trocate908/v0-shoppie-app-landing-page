@@ -1,6 +1,6 @@
 import "server-only"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { sendWebPushToSubscriptions, type WebPushMessage } from "@/lib/push/server"
+import { sendOneSignalToUsers, isOneSignalConfigured } from "@/lib/push/onesignal"
 
 export type NotificationType =
   | "message"
@@ -16,22 +16,24 @@ export type DispatchTarget =
   | { deviceId: string }
   | { audience: "all_shoppers" | "all_vendors_with_products" | "all_vendors_without_products" | "all" }
 
-export type DispatchInput = WebPushMessage & {
+export type DispatchInput = {
   type: NotificationType
-  refId?: string             // optional dedupe key (e.g. product id)
+  title: string
+  body: string
+  link?: string
+  imageUrl?: string
+  data?: Record<string, string>
+  refId?: string             // dedupe key (e.g. conversation_id)
   dedupeWindowHours?: number // default 24
 }
 
-/**
- * Resolve a target into (user_ids, device_ids, push_tokens) by reading
- * push_tokens / vendors / products. Service role isn't used — we read
- * via the server client which has the necessary access for these tables
- * (push_tokens is read with RLS bypassed because we run with the user's
- * session and the table is service-managed; if your project disallows
- * this, swap in a service-role client).
- */
-async function resolveTargets(supabase: ReturnType<typeof createAdminClient>, target: DispatchTarget) {
-  const userIds = new Set<string>()
+// ── Target resolution ────────────────────────────────────────────────────────
+
+async function resolveTargets(
+  supabase: ReturnType<typeof createAdminClient>,
+  target: DispatchTarget,
+): Promise<{ userIds: string[]; deviceIds: string[] }> {
+  const userIds   = new Set<string>()
   const deviceIds = new Set<string>()
 
   if ("userId" in target) {
@@ -47,9 +49,9 @@ async function resolveTargets(supabase: ReturnType<typeof createAdminClient>, ta
         .select("user_id, device_id")
         .eq("enabled", true)
         .in("user_type", ["shopper", "anonymous"])
-      data?.forEach((row) => {
-        if (row.user_id) userIds.add(row.user_id)
-        else if (row.device_id) deviceIds.add(row.device_id)
+      data?.forEach((r) => {
+        if (r.user_id) userIds.add(r.user_id)
+        else if (r.device_id) deviceIds.add(r.device_id)
       })
     }
     if (target.audience === "all_vendors_with_products" || target.audience === "all") {
@@ -60,23 +62,18 @@ async function resolveTargets(supabase: ReturnType<typeof createAdminClient>, ta
       vendors?.forEach((v) => v.user_id && userIds.add(v.user_id as string))
     }
     if (target.audience === "all_vendors_without_products") {
-      const { data: vendors } = await supabase
-        .from("vendors")
-        .select("user_id, id")
+      const { data: vendors } = await supabase.from("vendors").select("user_id, id")
       const ids = (vendors ?? []).map((v) => v.id).filter(Boolean) as string[]
-      const { data: withProducts } = await supabase
-        .from("products")
-        .select("vendor_id")
-        .in("vendor_id", ids)
+      const { data: withProducts } = await supabase.from("products").select("vendor_id").in("vendor_id", ids)
       const has = new Set((withProducts ?? []).map((p) => p.vendor_id))
-      vendors?.forEach((v) => {
-        if (v.user_id && !has.has(v.id)) userIds.add(v.user_id as string)
-      })
+      vendors?.forEach((v) => { if (v.user_id && !has.has(v.id)) userIds.add(v.user_id as string) })
     }
   }
 
   return { userIds: Array.from(userIds), deviceIds: Array.from(deviceIds) }
 }
+
+// ── Deduplication ────────────────────────────────────────────────────────────
 
 async function isRecentlySent(
   supabase: ReturnType<typeof createAdminClient>,
@@ -92,31 +89,30 @@ async function isRecentlySent(
     .select("id", { count: "exact", head: true })
     .eq("type", type)
     .gte("sent_at", since)
-  if (refId) q = q.eq("ref_id", refId)
-  if (userId) q = q.eq("user_id", userId)
+  if (refId)   q = q.eq("ref_id", refId)
+  if (userId)  q = q.eq("user_id", userId)
   else if (deviceId) q = q.eq("device_id", deviceId)
   else return false
   const { count } = await q
   return (count ?? 0) > 0
 }
 
-/**
- * The core function. Persists in-app notifications, looks up FCM tokens,
- * and fires off pushes. Safe to call from cron jobs and webhooks.
- */
+// ── Core dispatch function ───────────────────────────────────────────────────
+
 export async function dispatchNotification(
   target: DispatchTarget,
   input: DispatchInput,
 ): Promise<{ pushed: number; persisted: number; pruned: number }> {
   const supabase = createAdminClient()
   const { userIds, deviceIds } = await resolveTargets(supabase, target)
+
   if (userIds.length === 0 && deviceIds.length === 0) {
     return { pushed: 0, persisted: 0, pruned: 0 }
   }
 
   const dedupeWindow = input.dedupeWindowHours ?? 24
 
-  // Filter out recipients that received this same type+refId recently.
+  // Filter recipients that got this same type+refId recently
   const eligibleUserIds: string[] = []
   for (const id of userIds) {
     if (!(await isRecentlySent(supabase, input.type, input.refId, id, null, dedupeWindow))) {
@@ -129,97 +125,60 @@ export async function dispatchNotification(
       eligibleDeviceIds.push(id)
     }
   }
+
   if (eligibleUserIds.length === 0 && eligibleDeviceIds.length === 0) {
     return { pushed: 0, persisted: 0, pruned: 0 }
   }
 
-  // Persist in-app notifications.
+  // Persist in-app notification rows
   const rows = [
     ...eligibleUserIds.map((uid) => ({
-      user_id: uid,
-      device_id: null,
-      type: input.type,
-      title: input.title,
-      body: input.body,
-      link: input.link ?? null,
-      image_url: input.imageUrl ?? null,
+      user_id: uid, device_id: null,
+      type: input.type, title: input.title, body: input.body,
+      link: input.link ?? null, image_url: input.imageUrl ?? null,
       metadata: input.data ?? null,
     })),
     ...eligibleDeviceIds.map((did) => ({
-      user_id: null,
-      device_id: did,
-      type: input.type,
-      title: input.title,
-      body: input.body,
-      link: input.link ?? null,
-      image_url: input.imageUrl ?? null,
+      user_id: null, device_id: did,
+      type: input.type, title: input.title, body: input.body,
+      link: input.link ?? null, image_url: input.imageUrl ?? null,
       metadata: input.data ?? null,
     })),
   ]
+
   let persisted = 0
   if (rows.length > 0) {
     const { count } = await supabase.from("notifications").insert(rows, { count: "exact" })
     persisted = count ?? rows.length
   }
 
-  // Look up tokens for the eligible recipients.
-  const tokens: { token: string; user_id: string | null; device_id: string | null }[] = []
-  if (eligibleUserIds.length > 0) {
-    const { data } = await supabase
-      .from("push_tokens")
-      .select("token, user_id, device_id")
-      .eq("enabled", true)
-      .in("user_id", eligibleUserIds)
-    if (data) tokens.push(...data)
-  }
-  if (eligibleDeviceIds.length > 0) {
-    const { data } = await supabase
-      .from("push_tokens")
-      .select("token, user_id, device_id")
-      .eq("enabled", true)
-      .is("user_id", null)
-      .in("device_id", eligibleDeviceIds)
-    if (data) tokens.push(...data)
-  }
-
+  // ── Push delivery via OneSignal ─────────────────────────────────────────
+  // OneSignal identifies users by their Supabase user ID (set as external_id
+  // in the browser SDK). No token lookup needed — OneSignal manages subscriptions.
   let pushed = 0
-  let pruned = 0
-  if (tokens.length > 0) {
-    const result = await sendWebPushToSubscriptions(
-      tokens.map((t) => t.token),
-      {
-        title: input.title,
-        body: input.body,
-        link: input.link,
-        imageUrl: input.imageUrl,
-        data: input.data,
-      },
-    )
-    pushed = result.successCount
-    if (result.invalidTokens.length > 0) {
-      pruned = result.invalidTokens.length
-      await supabase.from("push_tokens").delete().in("token", result.invalidTokens)
-    }
+  if (eligibleUserIds.length > 0 && isOneSignalConfigured()) {
+    const result = await sendOneSignalToUsers(eligibleUserIds, {
+      title: input.title,
+      body: input.body,
+      url: input.link,
+      imageUrl: input.imageUrl,
+    })
+    if (result.ok) pushed = result.notified
+    else console.warn("[dispatch] OneSignal push failed:", result.error)
   }
 
-  // Record the send for dedupe.
+  // Record sends for deduplication
   const sendRows = [
     ...eligibleUserIds.map((uid) => ({
-      user_id: uid,
-      device_id: null,
-      type: input.type,
-      ref_id: input.refId ?? null,
+      user_id: uid, device_id: null, type: input.type, ref_id: input.refId ?? null,
     })),
     ...eligibleDeviceIds.map((did) => ({
-      user_id: null,
-      device_id: did,
-      type: input.type,
-      ref_id: input.refId ?? null,
+      user_id: null, device_id: did, type: input.type, ref_id: input.refId ?? null,
     })),
   ]
   if (sendRows.length > 0) {
     await supabase.from("notification_sends").insert(sendRows)
   }
 
-  return { pushed, persisted, pruned }
+  return { pushed, persisted, pruned: 0 }
 }
