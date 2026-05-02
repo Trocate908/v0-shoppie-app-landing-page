@@ -55,42 +55,23 @@ export function useOneSignal() {
   const sdkRef  = useRef<OneSignalSDK | null>(null)
   const { toast } = useToast()
 
-  const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID
-
-  // ── 1. Init OneSignal SDK once ──────────────────────────────────────────
+  // The SDK is already initialised by the inline <script> in <head>.
+  // We just need to hook into the deferred queue to grab the SDK reference.
 
   useEffect(() => {
     if (typeof window === "undefined") return
-
-    if (!appId) {
-      setStatus("not_configured")
-      return
-    }
 
     if (!("Notification" in window) || !("serviceWorker" in navigator)) {
       setStatus("unsupported")
       return
     }
 
-    // Push into the deferred queue — SDK will call us when it's ready.
+    // Push into the deferred queue — SDK calls us once init() is complete.
     window.OneSignalDeferred = window.OneSignalDeferred ?? []
     window.OneSignalDeferred.push(async (sdk) => {
       sdkRef.current = sdk
 
-      try {
-        await sdk.init({
-          appId,
-          notifyButton: { enable: false },      // we show our own prompt
-          allowLocalhostAsSecureOrigin: true,   // works in dev / Replit
-          serviceWorkerPath: "/OneSignalSDKWorker.js",
-        })
-      } catch (err) {
-        console.error("[onesignal] init failed:", err)
-        setStatus("unsupported")
-        return
-      }
-
-      // Sync initial status
+      // Sync initial permission status
       const native = sdk.Notifications.permissionNative
       if (native === "granted") setStatus("granted")
       else if (native === "denied") setStatus("denied")
@@ -102,8 +83,7 @@ export function useOneSignal() {
       }
       sdk.Notifications.addEventListener("permissionChange", onChange)
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appId])
+  }, [])
 
   // ── 2. Link the Supabase user to OneSignal external_id ─────────────────
 
