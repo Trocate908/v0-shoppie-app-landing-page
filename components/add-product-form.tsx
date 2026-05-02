@@ -194,16 +194,20 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
           .eq("id", vendorId)
       }
 
-      const { error: insertError } = await supabase.from("products").insert({
-        vendor_id: vendorId,
-        name: formData.name,
-        description: formData.description,
-        price: Number.parseFloat(formData.price),
-        category: formData.category || "Other",
-        image_url: imageUrls[0] || null,
-        image_urls: imageUrls,
-        in_stock: formData.inStock,
-      })
+      const { data: newProduct, error: insertError } = await supabase
+        .from("products")
+        .insert({
+          vendor_id: vendorId,
+          name: formData.name,
+          description: formData.description,
+          price: Number.parseFloat(formData.price),
+          category: formData.category || "Other",
+          image_url: imageUrls[0] || null,
+          image_urls: imageUrls,
+          in_stock: formData.inStock,
+        })
+        .select("id")
+        .single()
 
       if (insertError) {
         toast({
@@ -219,6 +223,19 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
         title: "Product added",
         description: "Your product has been added successfully",
       })
+
+      // Fire new-product notification to all shoppers (fire-and-forget)
+      fetch("/api/notifications/new-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: newProduct?.id ?? "",
+          productName: formData.name,
+          shopName,
+          imageUrl: imageUrls[0] ?? null,
+          category: formData.category || null,
+        }),
+      }).catch(() => {})
 
       router.push("/vendor/products")
       router.refresh()
