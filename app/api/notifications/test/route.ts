@@ -1,75 +1,149 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServerClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { dispatchNotification } from "@/lib/notifications/dispatch"
-import { isOneSignalConfigured } from "@/lib/push/onesignal"
+import { getPushConfigStatus } from "@/lib/push/server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * GET /api/notifications/test
+ * GET /api/notifications/test?deviceId=...
  *
- * Sends a real push notification to the currently signed-in user via OneSignal.
- * Use this to verify the end-to-end pipeline after setting up OneSignal.
+ * Diagnostic + test endpoint. Works for both:
+ *  - Authenticated users: sends a push to the signed-in account
+ *  - Anonymous users:     sends a push to the supplied deviceId
  *
- * Requirements:
- *  1. NEXT_PUBLIC_ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY env vars are set
- *  2. The user is signed in
- *  3. The user has allowed notifications in their browser (on the real site URL)
+ * Returns a JSON dump of the full pipeline state so you can see exactly
+ * what's working and what isn't.
  */
 export async function GET(req: NextRequest) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
-  const configured = isOneSignalConfigured()
+  const url = new URL(req.url)
+  const deviceId = url.searchParams.get("deviceId") ?? undefined
+
   const hints: string[] = []
+  const pushCfg = getPushConfigStatus()
 
-  if (!process.env.ONESIGNAL_APP_ID) {
-    hints.push("ONESIGNAL_APP_ID is not set. Add it in Replit Secrets.")
+  if (!pushCfg.hasPublicKey) {
+    hints.push(
+      "VAPID_PUBLIC_KEY (and NEXT_PUBLIC_VAPID_PUBLIC_KEY) are missing — browsers cannot subscribe.",
+    )
   }
-  if (!process.env.ONESIGNAL_REST_API_KEY) {
-    hints.push("ONESIGNAL_REST_API_KEY is not set. Add it in Replit Secrets.")
+  if (!pushCfg.hasPrivateKey) {
+    hints.push(
+      "VAPID_PRIVATE_KEY is missing — the server cannot sign push notifications.",
+    )
   }
-  if (!process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID) {
-    hints.push("NEXT_PUBLIC_ONESIGNAL_APP_ID is not set (browser SDK won't init).")
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    hints.push(
+      "SUPABASE_SERVICE_ROLE_KEY is missing — cross-user dispatch will silently fail.",
+    )
   }
 
-  if (!configured) {
+  const admin = createAdminClient()
+
+  // ── Authenticated user test ──────────────────────────────────────────────
+  if (user) {
+    const { data: tokens } = await admin
+      .from("push_tokens")
+      .select("token, device_id, user_type, enabled, last_seen_at")
+      .eq("user_id", user.id)
+
+    if (!tokens || tokens.length === 0) {
+      return NextResponse.json({
+        ok: false,
+        reason:
+          "No push subscription registered for this user yet. " +
+          "Tap 'Enable notifications' on /notifications then visit this URL again.",
+        userId: user.id,
+        pushConfig: pushCfg,
+        hints,
+      })
+    }
+
+    const result = await dispatchNotification(
+      { userId: user.id },
+      {
+        type: "custom",
+        title: "ShoppieApp test push 🔔",
+        body: "Push notifications are working! You will see these even when the app is closed.",
+        link: "/notifications",
+        refId: `test-${Date.now()}`,
+        dedupeWindowHours: 0,
+      },
+    )
+
     return NextResponse.json({
-      ok: false,
-      reason: "OneSignal is not configured. Set ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY in Replit Secrets.",
+      ok: true,
+      mode: "authenticated",
+      userId: user.id,
+      tokenCount: tokens.length,
+      tokens: tokens.map((t) => ({
+        device_id: t.device_id,
+        user_type: t.user_type,
+        enabled: t.enabled,
+        last_seen_at: t.last_seen_at,
+        tokenPreview: typeof t.token === "string" ? t.token.slice(0, 40) + "..." : null,
+      })),
+      dispatch: result,
+      pushConfig: pushCfg,
       hints,
-      setupUrl: "https://onesignal.com",
     })
   }
 
-  if (!user) {
+  // ── Anonymous / device-based test ────────────────────────────────────────
+  if (deviceId) {
+    const { data: tokens } = await admin
+      .from("push_tokens")
+      .select("token, device_id, user_type, enabled, last_seen_at")
+      .is("user_id", null)
+      .eq("device_id", deviceId)
+
+    if (!tokens || tokens.length === 0) {
+      return NextResponse.json({
+        ok: false,
+        reason:
+          "No push subscription registered for this device yet. " +
+          "Tap 'Enable notifications' then try again.",
+        deviceId,
+        pushConfig: pushCfg,
+        hints,
+      })
+    }
+
+    const result = await dispatchNotification(
+      { deviceId },
+      {
+        type: "custom",
+        title: "ShoppieApp test push 🔔",
+        body: "Push notifications are working! You will see these even when the app is closed.",
+        link: "/notifications",
+        refId: `test-${Date.now()}`,
+        dedupeWindowHours: 0,
+      },
+    )
+
     return NextResponse.json({
-      ok: false,
-      reason: "Not signed in. Sign in first then visit this URL.",
+      ok: true,
+      mode: "anonymous",
+      deviceId,
+      tokenCount: tokens.length,
+      dispatch: result,
+      pushConfig: pushCfg,
       hints,
     })
   }
 
-  const result = await dispatchNotification(
-    { userId: user.id },
-    {
-      type: "custom",
-      title: "ShoppieApp ✅",
-      body: "Push notifications are working! You will see this even when the app is closed.",
-      link: "/?tab=messages",
-      refId: `test-${Date.now()}`,
-      dedupeWindowHours: 0,
-    },
-  )
-
+  // No user or deviceId
   return NextResponse.json({
-    ok: true,
-    userId: user.id,
-    dispatch: result,
+    ok: false,
+    reason: "Sign in, or pass ?deviceId=<your-device-id> to test anonymously.",
+    pushConfig: pushCfg,
     hints,
-    note: result.pushed === 0
-      ? "Notification persisted but 0 devices received a push. Make sure you have opened the app in your real browser (not this iframe), allowed notifications, and are signed in there."
-      : `Push delivered to ${result.pushed} device(s). Check your browser/phone for the notification.`,
   })
 }

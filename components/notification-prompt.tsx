@@ -3,32 +3,37 @@
 import { useEffect, useState } from "react"
 import { Bell, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useOneSignal } from "@/hooks/use-onesignal"
+import { useFcm } from "@/hooks/use-fcm"
 
 /**
  * A dismissable banner that asks for notification permission.
- * Shows 2s after mount. Re-shows every 3 days until granted or permanently denied.
+ * Shows 1.5s after mount (down from 4s — users should see this quickly).
+ * Re-shows every 3 days until the user grants or permanently denies.
  */
 export function NotificationPrompt() {
-  const { status, enable, dismissSoftPrompt, shouldShowSoftPrompt } = useOneSignal()
+  const { status, enable, dismissSoftPrompt, shouldShowSoftPrompt } = useFcm()
   const [visible, setVisible] = useState(false)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (status === "granted" || status === "denied" || status === "unsupported" || status === "not_configured") return
+    if (status === "granted" || status === "denied" || status === "unsupported") return
     if (!shouldShowSoftPrompt()) return
-    const t = setTimeout(() => setVisible(true), 2000)
+    // Show after a short delay so it doesn't pop immediately on page load
+    const t = setTimeout(() => setVisible(true), 1500)
     return () => clearTimeout(t)
   }, [status, shouldShowSoftPrompt])
 
   if (!visible) return null
-  if (status === "granted" || status === "denied" || status === "unsupported" || status === "not_configured") return null
+  if (status === "granted" || status === "denied" || status === "unsupported") return null
 
   const onEnable = async () => {
     setBusy(true)
     const ok = await enable()
     setBusy(false)
     setVisible(false)
+    // Only dismiss the prompt if the user actually granted permission.
+    // If they denied at the OS level we show it again next cycle so they
+    // can see the "go to browser settings" message.
     if (ok) dismissSoftPrompt()
   }
 
@@ -55,13 +60,14 @@ export function NotificationPrompt() {
           <Bell className="h-5 w-5 text-primary" />
         </div>
         <div className="flex-1">
-          <p className="text-sm font-semibold text-foreground">Stay in the loop</p>
+          <p className="text-sm font-semibold text-foreground">Get notified instantly</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Get notified instantly when someone messages you — even when the app is closed.
+            New messages, trending deals, and shop activity — even when the app is closed,
+            just like Facebook and Instagram.
           </p>
           <div className="mt-3 flex items-center gap-2">
             <Button size="sm" onClick={onEnable} disabled={busy}>
-              {busy ? "Enabling…" : "Allow notifications"}
+              {busy ? "Enabling…" : "Turn on notifications"}
             </Button>
             <Button size="sm" variant="ghost" onClick={onLater}>
               Not now
