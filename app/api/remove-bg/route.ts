@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
 
     const apiKey = process.env.REMOVE_BG_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: "Remove.bg API key not configured" }, { status: 500 })
+      return NextResponse.json({ error: "There was an error, try agan later" }, { status: 500 })
     }
 
     const removeBgForm = new FormData()
