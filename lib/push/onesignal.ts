@@ -1,77 +1,99 @@
 import "server-only"
 
+const ONESIGNAL_APP_ID     = process.env.ONESIGNAL_APP_ID
+const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY
 const API_URL = "https://onesignal.com/api/v1/notifications"
-const BASE = "https://shoppieapp.co.zw"
 
-function config(): { appId: string; apiKey: string } | null {
-  const appId  = process.env.ONESIGNAL_APP_ID
-  const apiKey = process.env.ONESIGNAL_REST_API_KEY
-  if (!appId || !apiKey) return null
-  return { appId, apiKey }
+export interface OneSignalMessage {
+  title: string
+  body: string
+  url?: string
+  imageUrl?: string
+  data?: Record<string, string>
 }
 
-export function isOneSignalConfigured(): boolean {
-  return config() !== null
+export interface OneSignalResult {
+  pushed: number
+  errors: number
 }
 
-/**
- * Send a push notification to one or more users identified by their
- * Supabase user IDs (stored as OneSignal external_id after login()).
- */
-export async function sendOneSignalToUsers(
-  externalIds: string[],
-  payload: {
-    title: string
-    body: string
-    url?: string
-    imageUrl?: string
-  },
-): Promise<{ ok: boolean; notified: number; error?: string }> {
-  if (externalIds.length === 0) return { ok: true, notified: 0 }
-
-  const cfg = config()
-  if (!cfg) {
-    console.warn("[onesignal] ONESIGNAL_APP_ID or ONESIGNAL_REST_API_KEY not set — push skipped")
-    return { ok: false, notified: 0, error: "OneSignal not configured" }
+function buildPayload(msg: OneSignalMessage) {
+  return {
+    app_id: ONESIGNAL_APP_ID,
+    headings: { en: msg.title },
+    contents: { en: msg.body },
+    ...(msg.url
+      ? { url: msg.url }
+      : {}),
+    ...(msg.imageUrl
+      ? { big_picture: msg.imageUrl, ios_attachments: { image: msg.imageUrl } }
+      : {}),
+    ...(msg.data ? { data: msg.data } : {}),
   }
+}
 
-  // Deduplicate IDs before sending
-  const ids = Array.from(new Set(externalIds))
-
-  const body: Record<string, unknown> = {
-    app_id: cfg.appId,
-    target_channel: "push",
-    include_aliases: { external_id: ids },
-    contents: { en: payload.body },
-    headings: { en: payload.title },
-    url: payload.url ? new URL(payload.url, BASE).href : BASE,
-    chrome_web_icon: `${BASE}/logo.png`,
-    firefox_icon: `${BASE}/logo.png`,
-    web_push_topic: "shoppie-message",
+async function callApi(payload: Record<string, unknown>): Promise<OneSignalResult> {
+  if (!ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) {
+    console.warn("[onesignal] ONESIGNAL_APP_ID or ONESIGNAL_REST_API_KEY not set — skipping push")
+    return { pushed: 0, errors: 0 }
   }
-  if (payload.imageUrl) body.big_picture = payload.imageUrl
-
   try {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: {
-        Authorization: `Basic ${cfg.apiKey}`,
         "Content-Type": "application/json",
+        Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     })
-
-    const json = await res.json()
-
+    const json = await res.json() as { recipients?: number; errors?: string[]; id?: string }
     if (!res.ok) {
-      const msg = (json.errors ?? []).join(", ") || `HTTP ${res.status}`
-      console.error("[onesignal] API error:", msg)
-      return { ok: false, notified: 0, error: msg }
+      console.error("[onesignal] API error", res.status, json)
+      return { pushed: 0, errors: 1 }
     }
-
-    return { ok: true, notified: json.recipients ?? 0 }
+    return { pushed: json.recipients ?? 0, errors: 0 }
   } catch (err) {
     console.error("[onesignal] fetch error:", err)
-    return { ok: false, notified: 0, error: (err as Error).message }
+    return { pushed: 0, errors: 1 }
   }
+}
+
+/**
+ * Send a push to specific users identified by their Supabase user ID.
+ * OneSignal links a user's device to their user ID via sdk.login(userId)
+ * called in the browser hook (use-onesignal.ts).
+ */
+export async function sendOneSignalToUsers(
+  userIds: string[],
+  msg: OneSignalMessage,
+): Promise<OneSignalResult> {
+  if (userIds.length === 0) return { pushed: 0, errors: 0 }
+
+  const BATCH_SIZE = 2000
+  let pushed = 0
+  let errors = 0
+
+  for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+    const batch = userIds.slice(i, i + BATCH_SIZE)
+    const r = await callApi({
+      ...buildPayload(msg),
+      include_aliases: { external_id: batch },
+      target_channel: "push",
+    })
+    pushed += r.pushed
+    errors += r.errors
+  }
+
+  return { pushed, errors }
+}
+
+/**
+ * Broadcast to ALL subscribed users via OneSignal's built-in "All" segment.
+ * Use this for audience-wide notifications (trending products, new products, etc.)
+ */
+export async function sendOneSignalToAll(msg: OneSignalMessage): Promise<OneSignalResult> {
+  return callApi({
+    ...buildPayload(msg),
+    included_segments: ["All"],
+  })
 }

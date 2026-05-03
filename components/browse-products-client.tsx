@@ -5,6 +5,7 @@ import { PRODUCT_CATEGORIES } from "@/lib/constants"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { AppFooter } from "@/components/app-footer"
 import {
   Dialog,
   DialogContent,
@@ -56,6 +57,7 @@ import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { getCurrencyForCountry, convertPrice, formatPrice, CURRENCIES, type Currency } from "@/lib/currency"
+import { ChevronDown, RefreshCw } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { VerificationBadge } from "@/components/verification-badge"
 import ProductCarousel from "./product-carousel"
@@ -151,6 +153,11 @@ export default function BrowseProductsClient({
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>(
     initialVisitorCountry ? getCurrencyForCountry(initialVisitorCountry) : CURRENCIES.USD,
   )
+  const [liveRates, setLiveRates] = useState<Record<string, number>>({})
+  const [ratesDate, setRatesDate] = useState<string>("")
+  const [ratesSource, setRatesSource] = useState<"live" | "fallback" | "">("")
+  const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false)
+  const [currencySearch, setCurrencySearch] = useState("")
 
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false)
 
@@ -206,6 +213,20 @@ export default function BrowseProductsClient({
       { timeout: 8000 }
     )
   }, [detectedCountry])
+
+  // Fetch live exchange rates on mount
+  useEffect(() => {
+    fetch("/api/currency/rates")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.rates) {
+          setLiveRates(data.rates)
+          setRatesDate(data.date ?? "")
+          setRatesSource(data.source === "live" ? "live" : "fallback")
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const sortedProducts = useMemo(() => {
     if (!detectedCountry) return initialProducts
@@ -336,16 +357,69 @@ export default function BrowseProductsClient({
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <Select value={selectedCurrency.code} onValueChange={(code) => setSelectedCurrency(CURRENCIES[code])}>
-                <SelectTrigger className="h-9 w-[72px] rounded-xl text-xs border-border">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.values(CURRENCIES).map((currency) => (
-                    <SelectItem key={currency.code} value={currency.code}>{currency.code}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* ── Currency picker ── */}
+              <Dialog open={currencyPickerOpen} onOpenChange={(o) => { setCurrencyPickerOpen(o); if (!o) setCurrencySearch("") }}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-9 gap-1 rounded-xl px-2.5 text-xs border-border font-semibold">
+                    <span>{selectedCurrency.flag}</span>
+                    <span>{selectedCurrency.code}</span>
+                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-sm p-0 gap-0">
+                  <DialogHeader className="px-4 pt-4 pb-2">
+                    <DialogTitle className="text-base">Select Currency</DialogTitle>
+                    {ratesDate && (
+                      <DialogDescription className="flex items-center gap-1 text-xs">
+                        <RefreshCw className="h-3 w-3" />
+                        {ratesSource === "live" ? `Live rates · ${ratesDate}` : "Approximate rates"}
+                      </DialogDescription>
+                    )}
+                  </DialogHeader>
+                  {/* Search bar */}
+                  <div className="px-4 pb-2">
+                    <Input
+                      autoFocus
+                      placeholder="Search currency…"
+                      value={currencySearch}
+                      onChange={(e) => setCurrencySearch(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  {/* Currency list */}
+                  <div className="overflow-y-auto max-h-72 px-2 pb-4">
+                    {Object.values(CURRENCIES)
+                      .filter((c) => {
+                        const q = currencySearch.toLowerCase()
+                        return !q || c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
+                      })
+                      .map((currency) => (
+                        <button
+                          key={currency.code}
+                          onClick={() => { setSelectedCurrency(currency); setCurrencyPickerOpen(false); setCurrencySearch("") }}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-muted ${selectedCurrency.code === currency.code ? "bg-primary/10 text-primary font-semibold" : "text-foreground"}`}
+                        >
+                          <span className="text-base">{currency.flag}</span>
+                          <span className="font-mono text-xs w-10 shrink-0">{currency.code}</span>
+                          <span className="truncate text-muted-foreground text-xs">{currency.name}</span>
+                          {liveRates[currency.code] && (
+                            <span className="ml-auto text-xs text-muted-foreground shrink-0">
+                              {liveRates[currency.code] >= 100
+                                ? Math.round(liveRates[currency.code]).toLocaleString()
+                                : liveRates[currency.code].toFixed(2)}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    {Object.values(CURRENCIES).filter((c) => {
+                      const q = currencySearch.toLowerCase()
+                      return !q || c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
+                    }).length === 0 && (
+                      <p className="py-6 text-center text-sm text-muted-foreground">No currencies found</p>
+                    )}
+                  </div>
+                </DialogContent>
+              </Dialog>
               <Button
                 variant="ghost"
                 size="sm"
@@ -706,7 +780,7 @@ export default function BrowseProductsClient({
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
               {filteredProducts.map((product) => {
-                const convertedPrice = convertPrice(product.price, selectedCurrency.code)
+                const convertedPrice = convertPrice(product.price, selectedCurrency.code, liveRates)
                 const formattedPrice = formatPrice(convertedPrice, selectedCurrency)
                 const isActivelyVerified =
                   !!product.vendor.is_verified &&
@@ -836,15 +910,7 @@ export default function BrowseProductsClient({
         </div>
       </main>
 
-      {/* ── Footer ── */}
-      <footer className="border-t border-border bg-background/60 px-4 py-5 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl flex flex-col items-center justify-between gap-3 sm:flex-row">
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} ShoppieApp. All rights reserved.</p>
-          <Link href="/terms" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            Terms &amp; Conditions
-          </Link>
-        </div>
-      </footer>
+      <AppFooter />
     </>
   )
 }

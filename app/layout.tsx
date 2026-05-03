@@ -100,14 +100,7 @@ export default function RootLayout({
         <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer />
         <script
           dangerouslySetInnerHTML={{
-            __html: `
-              window.OneSignalDeferred = window.OneSignalDeferred || [];
-              OneSignalDeferred.push(async function(OneSignal) {
-                await OneSignal.init({
-                  appId: "854f1bd0-4101-471e-a326-c143940d4a29",
-                });
-              });
-            `,
+            __html: `window.OneSignalDeferred=window.OneSignalDeferred||[];OneSignalDeferred.push(async function(OneSignal){await OneSignal.init({appId:"854f1bd0-4101-471e-a326-c143940d4a29"});});`,
           }}
         />
       </head>
