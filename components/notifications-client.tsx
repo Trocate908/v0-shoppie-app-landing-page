@@ -6,7 +6,7 @@ import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { ArrowLeft, Bell, BellOff, CheckCheck, Flame, MessageCircle, Package, Sparkles, Store } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useOneSignal } from "@/hooks/use-onesignal"
+import { useFcm } from "@/hooks/use-fcm"
 import { getDeviceId } from "@/lib/device-id"
 import { cn } from "@/lib/utils"
 
@@ -44,7 +44,7 @@ function formatRelative(iso: string): string {
 
 export default function NotificationsClient() {
   const router = useRouter()
-  const { status, enable } = useOneSignal()
+  const { status, enable } = useFcm()
   const [items, setItems] = useState<Notification[] | null>(null)
   const [enabling, setEnabling] = useState(false)
 
@@ -54,12 +54,17 @@ export default function NotificationsClient() {
       ? `/api/notifications/list?deviceId=${encodeURIComponent(deviceId)}`
       : "/api/notifications/list"
     const res = await fetch(url, { cache: "no-store" })
-    if (!res.ok) { setItems([]); return }
+    if (!res.ok) {
+      setItems([])
+      return
+    }
     const json = (await res.json()) as { notifications: Notification[] }
     setItems(json.notifications ?? [])
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+  }, [load])
 
   const markAllRead = async () => {
     await fetch("/api/notifications/mark-read", {
@@ -89,7 +94,7 @@ export default function NotificationsClient() {
   }
 
   const hasItems = items && items.length > 0
-  const unread   = items?.filter((n) => !n.read).length ?? 0
+  const unread = items?.filter((n) => !n.read).length ?? 0
 
   return (
     <div className="flex min-h-dvh flex-col bg-background pb-20">
@@ -97,8 +102,11 @@ export default function NotificationsClient() {
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
         <div className="flex items-center justify-between gap-2 px-4 py-3">
           <div className="flex items-center gap-2">
-            <Link href="/" aria-label="Back"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted">
+            <Link
+              href="/"
+              aria-label="Back"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted"
+            >
               <ArrowLeft className="h-4 w-4" />
             </Link>
             <h1 className="text-lg font-semibold text-foreground">Notifications</h1>
@@ -113,7 +121,7 @@ export default function NotificationsClient() {
       </header>
 
       {/* Permission banner */}
-      {status !== "granted" && status !== "unsupported" && status !== "not_configured" && (
+      {status !== "granted" && status !== "unsupported" && (
         <div className="mx-4 mt-4 rounded-2xl border border-border bg-card p-4">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
@@ -125,12 +133,12 @@ export default function NotificationsClient() {
               </p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 {status === "denied"
-                  ? "Re-enable notifications in your browser settings, then reload the page."
-                  : "Turn on push notifications for new messages, trending products, and shop updates."}
+                  ? "Re-enable notifications in your browser settings to hear about new messages and trending products."
+                  : "Turn on push notifications for new messages, trending products and shop updates."}
               </p>
               {status !== "denied" && (
                 <Button size="sm" className="mt-3" onClick={onEnable} disabled={enabling}>
-                  {enabling ? "Enabling…" : "Turn on notifications"}
+                  {enabling ? "Enabling..." : "Turn on notifications"}
                 </Button>
               )}
             </div>
@@ -143,7 +151,10 @@ export default function NotificationsClient() {
         {items === null ? (
           <ul className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
-              <li key={i} className="h-20 animate-pulse rounded-2xl border border-border bg-muted/40" />
+              <li
+                key={i}
+                className="h-20 animate-pulse rounded-2xl border border-border bg-muted/40"
+              />
             ))}
           </ul>
         ) : !hasItems ? (
@@ -153,8 +164,8 @@ export default function NotificationsClient() {
             </div>
             <p className="text-sm font-semibold text-foreground">No notifications yet</p>
             <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
-              We&apos;ll let you know when there&apos;s something new — new messages, trending
-              products, or activity on your shop.
+              We&apos;ll let you know when there&apos;s something new — trending products,
+              messages from shoppers, or activity on your shop.
             </p>
           </div>
         ) : (

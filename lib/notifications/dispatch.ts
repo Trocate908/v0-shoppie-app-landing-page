@@ -70,9 +70,14 @@ async function resolveUserIds(
     if (audience === "all_vendors_without_products") {
       const { data: vendors } = await supabase.from("vendors").select("user_id, id")
       const ids = (vendors ?? []).map((v) => v.id).filter(Boolean) as string[]
-      const { data: withProducts } = await supabase.from("products").select("vendor_id").in("vendor_id", ids)
+      const { data: withProducts } = await supabase
+        .from("products")
+        .select("vendor_id")
+        .in("vendor_id", ids)
       const has = new Set((withProducts ?? []).map((p) => p.vendor_id))
-      vendors?.forEach((v) => { if (v.user_id && !has.has(v.id)) userIds.add(v.user_id as string) })
+      vendors?.forEach((v) => {
+        if (v.user_id && !has.has(v.id)) userIds.add(v.user_id as string)
+      })
     }
   }
 
