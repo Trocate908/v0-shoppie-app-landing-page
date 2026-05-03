@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Store, MapPin, Heart } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
+import { AppFooter } from "@/components/app-footer"
 import { useRouter } from "next/navigation"
 import ProfileButton from "@/components/profile-button"
 import FavoriteButton from "@/components/favorite-button"
@@ -195,19 +196,7 @@ export default function WishlistClient({ products }: WishlistClientProps) {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-border bg-background px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <p className="text-sm text-muted-foreground">&copy; 2026 ShoppieApp. All rights reserved.</p>
-            <div className="flex gap-4">
-              <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
-                Terms & Conditions
-              </Link>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <AppFooter />
     </>
   )
 }
