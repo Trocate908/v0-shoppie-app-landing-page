@@ -2,21 +2,34 @@ import { NextRequest, NextResponse } from "next/server"
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData()
-    const file = formData.get("image_file")
-
-    if (!file || !(file instanceof Blob)) {
-      return NextResponse.json({ error: "No image file provided" }, { status: 400 })
-    }
-
     const apiKey = process.env.REMOVE_BG_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: "There was an error, try agan later" }, { status: 500 })
+      return NextResponse.json({ error: "Background removal is not configured." }, { status: 500 })
+    }
+
+    const formData = await req.formData()
+    const imageFile = formData.get("image_file")
+    const imageUrl = formData.get("image_url")
+
+    if (!imageFile && !imageUrl) {
+      return NextResponse.json({ error: "No image provided" }, { status: 400 })
     }
 
     const removeBgForm = new FormData()
-    removeBgForm.append("image_file", file)
     removeBgForm.append("size", "auto")
+
+    if (imageUrl && typeof imageUrl === "string") {
+      // Remote URL — let remove.bg fetch it server-to-server (no browser CORS issues)
+      removeBgForm.append("image_url", imageUrl)
+    } else if (imageFile && typeof imageFile !== "string") {
+      // Local file upload
+      if (imageFile.size === 0) {
+        return NextResponse.json({ error: "Image file is empty" }, { status: 400 })
+      }
+      removeBgForm.append("image_file", imageFile)
+    } else {
+      return NextResponse.json({ error: "Invalid image input" }, { status: 400 })
+    }
 
     const response = await fetch("https://api.remove.bg/v1.0/removebg", {
       method: "POST",
@@ -27,10 +40,13 @@ export async function POST(req: NextRequest) {
     if (!response.ok) {
       const errText = await response.text()
       console.error("[remove-bg] API error:", response.status, errText)
-      return NextResponse.json(
-        { error: `Remove.bg error: ${response.statusText}` },
-        { status: response.status },
-      )
+      let friendlyError = `Remove.bg error (${response.status})`
+      try {
+        const parsed = JSON.parse(errText)
+        const msg = parsed?.errors?.[0]?.title || parsed?.error || errText
+        if (msg) friendlyError = msg
+      } catch { if (errText) friendlyError = errText }
+      return NextResponse.json({ error: friendlyError }, { status: response.status })
     }
 
     const imageBuffer = await response.arrayBuffer()

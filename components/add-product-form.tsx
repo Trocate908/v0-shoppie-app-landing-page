@@ -137,38 +137,42 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
     const file = imageFiles[index]
     const preview = imagePreviews[index]
 
-    // For Pexels / already-uploaded URLs, fetch the image first
-    let blob: Blob
-    if (preview.startsWith("https://")) {
-      setRemovingBgIndex(index)
-      try {
-        const res = await fetch(preview)
-        blob = await res.blob()
-      } catch {
-        toast({ title: "Could not load image", variant: "destructive" })
-        setRemovingBgIndex(null)
-        return
-      }
-    } else {
-      blob = file
-    }
-
     setRemovingBgIndex(index)
     try {
       const fd = new FormData()
-      fd.append("image_file", blob, "image.png")
+
+      if (preview.startsWith("https://")) {
+        // Remote URL (Cloudinary / Pexels) — pass URL directly so the server
+        // fetches it, avoiding any browser CORS issues
+        fd.append("image_url", preview)
+      } else {
+        // Local file (blob: URL) — send the actual file bytes
+        if (!file || file.size === 0) {
+          toast({ title: "Could not read image", description: "Please re-add the image and try again.", variant: "destructive" })
+          return
+        }
+        fd.append("image_file", file, "image.png")
+      }
 
       const res = await fetch("/api/remove-bg", { method: "POST", body: fd })
       if (!res.ok) {
-        const { error } = await res.json().catch(() => ({ error: res.statusText }))
-        toast({ title: "Background removal failed", description: error, variant: "destructive" })
+        const data = await res.json().catch(() => ({}))
+        toast({
+          title: "Background removal failed",
+          description: data.error || `Error ${res.status}`,
+          variant: "destructive",
+        })
         return
       }
 
       const resultBlob = await res.blob()
-      const newFile = new File([resultBlob], `${file.name.replace(/\.[^.]+$/, "")}_nobg.png`, {
-        type: "image/png",
-      })
+      if (resultBlob.size === 0) {
+        toast({ title: "Background removal failed", description: "Received empty response. Please try again.", variant: "destructive" })
+        return
+      }
+
+      const baseName = file?.name?.replace(/\.[^.]+$/, "") || "image"
+      const newFile = new File([resultBlob], `${baseName}_nobg.png`, { type: "image/png" })
       const newPreview = URL.createObjectURL(resultBlob)
 
       setImageFiles((prev) => prev.map((f, i) => (i === index ? newFile : f)))
@@ -176,7 +180,7 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
 
       toast({ title: "Background removed!", description: "Looking clean." })
     } catch {
-      toast({ title: "Unexpected error", description: "Background removal failed.", variant: "destructive" })
+      toast({ title: "Unexpected error", description: "Background removal failed. Please try again.", variant: "destructive" })
     } finally {
       setRemovingBgIndex(null)
     }
