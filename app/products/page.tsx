@@ -6,6 +6,7 @@ import { ArrowLeft, MapPin, Store, ShoppingBag, Tag, Users } from "lucide-react"
 import Link from "next/link"
 import ProfileButton from "@/components/profile-button"
 import Image from "next/image"
+import { AppFooter } from "@/components/app-footer"
 
 export const metadata = {
   title: "Products - ShoppieApp",
@@ -249,15 +250,7 @@ export default async function ProductsPage({
         </div>
       </main>
 
-      {/* ── Footer ── */}
-      <footer className="border-t border-border bg-card/50 py-5 text-center text-xs text-muted-foreground">
-        <div className="flex items-center justify-center gap-1.5">
-          <div className="relative h-5 w-5 overflow-hidden rounded-md">
-            <Image src="/logo.png" alt="ShoppieApp" fill className="object-cover" />
-          </div>
-          <span>© {new Date().getFullYear()} ShoppieApp · Local marketplace</span>
-        </div>
-      </footer>
+      <AppFooter />
     </div>
   )
 }

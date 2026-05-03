@@ -5,6 +5,7 @@ import { PRODUCT_CATEGORIES } from "@/lib/constants"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { AppFooter } from "@/components/app-footer"
 import {
   Dialog,
   DialogContent,
@@ -836,15 +837,7 @@ export default function BrowseProductsClient({
         </div>
       </main>
 
-      {/* ── Footer ── */}
-      <footer className="border-t border-border bg-background/60 px-4 py-5 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl flex flex-col items-center justify-between gap-3 sm:flex-row">
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} ShoppieApp. All rights reserved.</p>
-          <Link href="/terms" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            Terms &amp; Conditions
-          </Link>
-        </div>
-      </footer>
+      <AppFooter />
     </>
   )
 }
