@@ -8,20 +8,12 @@ import { useToast } from "@/hooks/use-toast"
 
 type Status = "idle" | "asking" | "granted" | "denied" | "unsupported"
 
-const SOFT_PROMPT_KEY = "shoppie:notif-soft-prompt"
-const REGISTER_TS_KEY = "shoppie:notif-registered-at"
+// v2 keys — bumping the version forces all users who previously dismissed
+// the soft prompt (when VAPID keys were missing and push silently failed) to
+// see the prompt again and re-subscribe with the now-working configuration.
+const SOFT_PROMPT_KEY = "shoppie:notif-soft-prompt-v2"
+const REGISTER_TS_KEY = "shoppie:notif-registered-at-v2"
 
-/**
- * usePush wires the browser's native Web Push lifecycle:
- *  - reports current permission state
- *  - exposes an `enable()` action to request permission + subscribe + persist
- *  - automatically (re)registers the subscription on app load if permission is already granted
- *  - listens for SW messages so the app can react when a push arrives while open
- *
- * Note: hook name is preserved (`useFcm`) for backwards compatibility with
- * existing imports. The implementation, however, is 100% native Web Push —
- * no Firebase Cloud Messaging or Firebase Web SDK involved anymore.
- */
 function playNotificationSound() {
   if (typeof window === "undefined") return
   try {
@@ -122,21 +114,16 @@ export function useFcm() {
     }
     const perm = Notification.permission
     if (perm === "granted") {
-      // Re-register at most once per 24h to refresh the subscription.
+      // Re-register at most once per 12h to refresh the subscription.
       const lastRaw = (() => {
-        try {
-          return localStorage.getItem(REGISTER_TS_KEY)
-        } catch {
-          return null
-        }
+        try { return localStorage.getItem(REGISTER_TS_KEY) } catch { return null }
       })()
       const last = lastRaw ? Number(lastRaw) : 0
-      const stale = !last || Date.now() - last > 24 * 60 * 60 * 1000
+      const stale = !last || Date.now() - last > 12 * 60 * 60 * 1000
       if (stale && !registeredRef.current) {
         registeredRef.current = true
         registerToken(true)
       } else {
-        // Surface the existing subscription if any.
         getCurrentSubscription().then((s) => s && setToken(s))
         setStatus("granted")
       }
@@ -145,8 +132,7 @@ export function useFcm() {
     }
   }, [registerToken])
 
-  // Re-register whenever the Supabase auth user changes — guarantees the
-  // subscription is associated with the currently-signed-in user.
+  // Re-register whenever the Supabase auth user changes.
   useEffect(() => {
     if (typeof window === "undefined") return
     if (!isPushSupported()) return
@@ -154,36 +140,40 @@ export function useFcm() {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return
       if (Notification.permission !== "granted") return
-      try {
-        localStorage.removeItem(REGISTER_TS_KEY)
-      } catch {}
+      try { localStorage.removeItem(REGISTER_TS_KEY) } catch {}
       registerToken(true)
     })
-    return () => {
-      sub.subscription.unsubscribe()
-    }
+    return () => { sub.subscription.unsubscribe() }
   }, [registerToken])
 
-  // Listen for SW push messages so we can show a soft toast when the tab
-  // is open & focused (the SW always shows the system notification too).
+  // Listen for SW push messages (in-app real-time update when tab is open).
   useEffect(() => {
     if (typeof window === "undefined") return
     if (!("serviceWorker" in navigator)) return
+
     const onMessage = (e: MessageEvent) => {
       const data = e.data
-      if (!data || data.type !== "shoppie-push") return
-      const payload = data.payload ?? {}
-      const title = payload.title ?? "ShoppieApp"
-      const body = payload.body ?? "You have a new update"
-      const focused = document.visibilityState === "visible" && document.hasFocus()
-      if (focused) {
-        playNotificationSound()
-        toast({ title, description: body })
+      // New push notification arrived
+      if (data?.type === "shoppie-push") {
+        const payload = data.payload ?? {}
+        const title = payload.title ?? "ShoppieApp"
+        const body  = payload.body  ?? "You have a new update"
+        const focused = document.visibilityState === "visible" && document.hasFocus()
+        if (focused) {
+          playNotificationSound()
+          toast({ title, description: body })
+        }
+      }
+      // Browser rotated the push subscription — re-register silently
+      if (data?.type === "shoppie-subscription-changed") {
+        try { localStorage.removeItem(REGISTER_TS_KEY) } catch {}
+        registerToken(true)
       }
     }
+
     navigator.serviceWorker.addEventListener("message", onMessage)
     return () => navigator.serviceWorker.removeEventListener("message", onMessage)
-  }, [toast])
+  }, [toast, registerToken])
 
   const enable = useCallback(async () => {
     setStatus("asking")
@@ -192,9 +182,7 @@ export function useFcm() {
   }, [registerToken])
 
   const dismissSoftPrompt = useCallback(() => {
-    try {
-      localStorage.setItem(SOFT_PROMPT_KEY, String(Date.now()))
-    } catch {}
+    try { localStorage.setItem(SOFT_PROMPT_KEY, String(Date.now())) } catch {}
   }, [])
 
   const shouldShowSoftPrompt = useCallback(() => {
@@ -203,8 +191,8 @@ export function useFcm() {
     if (Notification.permission !== "default") return false
     try {
       const last = Number(localStorage.getItem(SOFT_PROMPT_KEY) ?? 0)
-      // Re-show after 7 days
-      return !last || Date.now() - last > 7 * 24 * 60 * 60 * 1000
+      // Re-show after 3 days (down from 7 — ensures users see it sooner)
+      return !last || Date.now() - last > 3 * 24 * 60 * 60 * 1000
     } catch {
       return true
     }

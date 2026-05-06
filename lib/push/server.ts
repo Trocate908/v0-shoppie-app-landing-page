@@ -11,42 +11,31 @@ type WebPushSubscription = {
 /**
  * Native Web Push server helpers.
  *
- * Why we replaced FCM:
- *  - FCM Web is just a thin wrapper around the W3C Web Push protocol.
- *  - It requires a service-account JSON, a separate /firebase-messaging-sw.js,
- *    and the Firebase Web SDK on the client. Any one of those silently
- *    breaks the chain (and ours did, repeatedly).
- *  - Native Web Push needs ONLY two env vars: a VAPID public/private key
- *    pair we generate ourselves. That's it.
- *
- * Setup:
- *   1. Hit GET /api/push/generate-vapid (admin) once, copy the keys it returns
- *   2. Add VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, NEXT_PUBLIC_VAPID_PUBLIC_KEY,
- *      VAPID_SUBJECT to your Vercel project env vars
- *   3. Done — every browser that subscribes will receive pushes
+ * NOTE: configure() deliberately does NOT cache its result. This means it
+ * re-reads env vars and re-calls webpush.setVapidDetails() on every push.
+ * The overhead is negligible (two string reads + one tiny object assign) but
+ * the benefit is huge: you can add/rotate VAPID env vars without restarting
+ * the server, and there is no risk of a stale "not configured" state from the
+ * very first request that arrived before the env vars were available.
  */
 
-let configured = false
-let configError: string | null = null
-
-function configure(): boolean {
-  if (configured) return true
+function configure(): { ok: boolean; error: string | null } {
   const subject = process.env.VAPID_SUBJECT || "mailto:contact@shoppieapp.co.zw"
   const publicKey = process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
   const privateKey = process.env.VAPID_PRIVATE_KEY
-  if (!publicKey || !privateKey) {
-    configError = !publicKey
-      ? "VAPID_PUBLIC_KEY (or NEXT_PUBLIC_VAPID_PUBLIC_KEY) is missing"
-      : "VAPID_PRIVATE_KEY is missing"
-    return false
+
+  if (!publicKey) {
+    return { ok: false, error: "VAPID_PUBLIC_KEY (or NEXT_PUBLIC_VAPID_PUBLIC_KEY) is missing" }
   }
+  if (!privateKey) {
+    return { ok: false, error: "VAPID_PRIVATE_KEY is missing" }
+  }
+
   try {
     webpush.setVapidDetails(subject, publicKey, privateKey)
-    configured = true
-    return true
+    return { ok: true, error: null }
   } catch (err) {
-    configError = `Failed to configure VAPID details: ${(err as Error).message}`
-    return false
+    return { ok: false, error: `Failed to configure VAPID: ${(err as Error).message}` }
   }
 }
 
@@ -57,11 +46,10 @@ export function getPushConfigStatus(): {
   hasPrivateKey: boolean
   hasSubject: boolean
 } {
-  // Trigger configure to fill error.
-  configure()
+  const { ok, error } = configure()
   return {
-    ok: configured,
-    error: configError,
+    ok,
+    error,
     hasPublicKey: !!(process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
     hasPrivateKey: !!process.env.VAPID_PRIVATE_KEY,
     hasSubject: !!process.env.VAPID_SUBJECT,
@@ -87,8 +75,9 @@ export async function sendWebPushToSubscriptions(
   subscriptionStrings: string[],
   msg: WebPushMessage,
 ): Promise<{ successCount: number; failureCount: number; invalidTokens: string[] }> {
-  if (!configure()) {
-    console.warn("[push] sendWebPushToSubscriptions skipped — not configured:", configError)
+  const { ok, error } = configure()
+  if (!ok) {
+    console.warn("[push] sendWebPushToSubscriptions skipped — not configured:", error)
     return { successCount: 0, failureCount: 0, invalidTokens: [] }
   }
 
@@ -117,8 +106,7 @@ export async function sendWebPushToSubscriptions(
           return
         }
       } catch {
-        // Legacy FCM tokens (pre-migration) live in the same column as plain
-        // strings — they are not valid Web Push subscriptions, prune them.
+        // Legacy FCM tokens (pre-migration) — not valid Web Push subscriptions.
         invalidTokens.push(raw)
         failureCount++
         return
