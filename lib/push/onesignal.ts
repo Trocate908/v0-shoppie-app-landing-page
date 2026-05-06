@@ -22,9 +22,29 @@ function buildPayload(msg: OneSignalMessage) {
     app_id: ONESIGNAL_APP_ID,
     headings: { en: msg.title },
     contents: { en: msg.body },
-    ...(msg.url
-      ? { url: msg.url }
-      : {}),
+
+    // ── Android Chrome reliability tuning ─────────────────────────────────
+    // priority: 10 = "high" — bypasses Android Doze mode so the push wakes
+    // the device immediately instead of being batched. Without this, pushes
+    // can be delayed up to 15 minutes (or dropped entirely) on phones in
+    // power-save mode.
+    priority: 10,
+    // ttl: 24 hours — if the device is offline (e.g. phone in airplane
+    // mode), the push service will retry for up to a day instead of the
+    // default 4 weeks (which causes a flood when the user reconnects).
+    ttl: 24 * 60 * 60,
+    // chrome_web_badge / chrome_web_icon ensure a visible icon on Android,
+    // not the generic Chrome bell which Android collapses with other sites.
+    chrome_web_icon: msg.imageUrl ?? "https://shoppieapp.co.zw/logo.png",
+    chrome_web_badge: "https://shoppieapp.co.zw/logo.png",
+    // Web push needs an explicit url at the top level for Chrome to open
+    // the right page when the user taps the notification.
+    web_url: msg.url,
+    // Don't collapse same-topic pushes on Android — every message should
+    // produce its own notification line.
+    web_push_topic: msg.data?.tag ?? null,
+
+    ...(msg.url ? { url: msg.url } : {}),
     ...(msg.imageUrl
       ? { big_picture: msg.imageUrl, ios_attachments: { image: msg.imageUrl } }
       : {}),

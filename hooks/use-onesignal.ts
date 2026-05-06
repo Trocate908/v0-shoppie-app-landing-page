@@ -71,16 +71,33 @@ export function useOneSignal() {
         setStatus(granted ? "granted" : "denied")
       }
       sdk.Notifications.addEventListener("permissionChange", onChange)
+
+      // CRITICAL: link the already-signed-in user to OneSignal as soon as
+      // the SDK is ready. The auth-state listener below fires SIGNED_IN
+      // only on an explicit sign-in, NOT on page reloads where the user
+      // is already authenticated. Without this call, the OneSignal
+      // external_id stays null on every reload, which is why targeted
+      // pushes (e.g. new-message notifications) silently drop on Android.
+      try {
+        const {
+          data: { user },
+        } = await getClient().auth.getUser()
+        if (user?.id) {
+          await sdk.login(user.id)
+        }
+      } catch {
+        /* best-effort */
+      }
     })
   }, [])
 
-  // 2. Link Supabase user to OneSignal external_id
+  // 2. Keep the OneSignal external_id in sync with Supabase auth.
   useEffect(() => {
     const supabase = getClient()
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       const sdk = sdkRef.current
       if (!sdk) return
-      if (event === "SIGNED_IN" && session?.user?.id) {
+      if ((event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") && session?.user?.id) {
         try { await sdk.login(session.user.id) } catch {}
       }
       if (event === "SIGNED_OUT") {
