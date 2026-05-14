@@ -6,9 +6,9 @@ export const revalidate = 3600
 
 // Manual overrides for currencies you want to force
 const MANUAL_RATES: Record<string, number> = {
-  // 1 USD = 20.00 ZiG
-  ZWL: 20.0, // If your frontend still uses "ZWL"
-  ZIG: 20.0, // If your frontend uses the newer "ZIG" code
+  // 1 USD = 40.00 ZiG
+  ZWL: 40.0, // If your frontend still uses "ZWL"
+  ZIG: 40.0, // If your frontend uses the newer "ZIG" code
 }
 
 export async function GET() {
