@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { WebVitals } from "./web-vitals"
 import { PwaProvider } from "@/components/pwa-provider"
 import InstallBanner from "@/components/install-banner"
+import { NotificationProvider } from "@/components/notification-provider"
 import "./globals.css"
 
 const _geist = Geist({ 
@@ -95,6 +96,13 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/logo.png" />
         <meta name="msapplication-TileImage" content="/logo.png" />
         <meta name="msapplication-TileColor" content="#ffffff" />
+        {/* OneSignal Web SDK */}
+        <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.OneSignalDeferred=window.OneSignalDeferred||[];OneSignalDeferred.push(async function(OneSignal){await OneSignal.init({appId:"854f1bd0-4101-471e-a326-c143940d4a29"});});`,
+          }}
+        />
       </head>
       <body className="font-sans antialiased">
         <ThemeProvider>
@@ -102,6 +110,7 @@ export default function RootLayout({
             <WebVitals />
             {children}
             <InstallBanner />
+            <NotificationProvider />
             <Toaster />
           </PwaProvider>
         </ThemeProvider>

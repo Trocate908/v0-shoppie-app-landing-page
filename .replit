@@ -1,0 +1,42 @@
+modules = ["nodejs-20", "web", "python-3.12"]
+[agent]
+expertMode = true
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./node_modules/.bin/next dev --port 5000"
+waitForPort = 5000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[userenv]
+
+[userenv.shared]
+VAPID_PUBLIC_KEY = "BFpRYWfwDxJqf9O3oqg-cDp9wWBoREYpP1EcE-pfpzsCDONqt3j8qS3cJkEoDI39yLMpuyUQ7ITs1K--5-vhsk8"
+NEXT_PUBLIC_VAPID_PUBLIC_KEY = "BFpRYWfwDxJqf9O3oqg-cDp9wWBoREYpP1EcE-pfpzsCDONqt3j8qS3cJkEoDI39yLMpuyUQ7ITs1K--5-vhsk8"
+VAPID_PRIVATE_KEY = "0p9DYEqUd7knqk2KaZ0rYfDLdyhmhLREcOkIrGVsyQQ"
+VAPID_SUBJECT = "mailto:contact@shoppieapp.co.zw"

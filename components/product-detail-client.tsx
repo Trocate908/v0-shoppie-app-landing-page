@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ArrowLeft, Store, MapPin, Shield } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { AppFooter } from "@/components/app-footer"
 import { createBrowserClient } from "@/lib/supabase/client"
 import ProfileButton from "@/components/profile-button"
 import WhatsAppButton from "@/components/whatsapp-button"
@@ -277,19 +278,7 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-border bg-background px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <p className="text-sm text-muted-foreground">&copy; 2026 ShoppieApp. All rights reserved.</p>
-            <div className="flex gap-4">
-              <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
-                Terms & Conditions
-              </Link>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <AppFooter />
     </>
   )
 }

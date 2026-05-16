@@ -1,5 +1,8 @@
 import { createServerClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { dispatchNotification } from "@/lib/notifications/dispatch"
+
+export const runtime = "nodejs"
 
 type Params = { params: Promise<{ conversationId: string }> }
 
@@ -123,6 +126,49 @@ export async function POST(request: Request, { params }: Params) {
     .from("conversations")
     .update({ last_message_at: message.created_at })
     .eq("id", conversationId)
+
+  // Fire a push notification to the other participant. We don't await the
+  // result for token lookup before responding — but we DO await the dispatch
+  // so failures are logged. Wrapped in try/catch so notification problems
+  // never break the message send itself.
+  const recipientId =
+    conversation.buyer_id === user.id ? conversation.vendor_id : conversation.buyer_id
+
+  try {
+    // Look up the sender's display name (vendor shop name if vendor, otherwise email).
+    const [{ data: senderVendor }, { data: senderProfile }] = await Promise.all([
+      supabase.from("vendors").select("shop_name").eq("user_id", user.id).maybeSingle(),
+      supabase.from("profiles").select("full_name, username").eq("id", user.id).maybeSingle(),
+    ])
+    const senderName =
+      senderVendor?.shop_name ??
+      senderProfile?.full_name ??
+      senderProfile?.username ??
+      user.email?.split("@")[0] ??
+      "Someone"
+
+    const preview =
+      (content?.trim() && content.trim().slice(0, 140)) ||
+      (image_url ? "Sent you an image" : "New message")
+
+    await dispatchNotification(
+      { userId: recipientId },
+      {
+        type: "message",
+        refId: message.id, // unique per message → never deduped
+        dedupeWindowHours: 0,
+        title: `New message from ${senderName}`,
+        body: preview,
+        link: `/?tab=messages&cid=${conversationId}`,
+        data: {
+          conversationId,
+          messageId: message.id,
+        },
+      },
+    )
+  } catch (err) {
+    console.error("[messages] notification dispatch failed", err)
+  }
 
   return NextResponse.json({ message })
 }
