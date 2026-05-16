@@ -118,11 +118,19 @@ export default function ChatWindow({
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [deletingChat, setDeletingChat] = useState(false)
   const [confirmDeleteChat, setConfirmDeleteChat] = useState(false)
+  // Typing indicator: true when the OTHER participant is currently typing
+  const [isOtherTyping, setIsOtherTyping] = useState(false)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Typing broadcast machinery
+  const typingChannelRef = useRef<ReturnType<
+    ReturnType<typeof createBrowserClient>["channel"]
+  > | null>(null)
+  const lastTypingSentAtRef = useRef<number>(0)
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const otherName = conversation.is_buyer
     ? (conversation.vendors?.shop_name ?? "Vendor")
@@ -151,6 +159,24 @@ export default function ChatWindow({
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
+
+  // When the tab becomes visible while this chat is open, mark all incoming
+  // unread messages as read (they were only marked delivered while hidden).
+  useEffect(() => {
+    function handleVisibility() {
+      if (typeof document === "undefined" || document.hidden) return
+      const supabase = createBrowserClient()
+      supabase
+        .from("messages")
+        .update({ delivered: true, read: true })
+        .eq("conversation_id", conversation.id)
+        .neq("sender_id", currentUserId)
+        .eq("read", false)
+        .then(() => {})
+    }
+    document.addEventListener("visibilitychange", handleVisibility)
+    return () => document.removeEventListener("visibilitychange", handleVisibility)
+  }, [conversation.id, currentUserId])
 
   // Watch scroll position to toggle "scroll to bottom" button
   useEffect(() => {
@@ -187,9 +213,12 @@ export default function ChatWindow({
           })
 
           if (newMsg.sender_id !== currentUserId) {
+            // Always mark as delivered — the receiver's client received it
+            const markRead =
+              typeof document !== "undefined" && !document.hidden
             supabase
               .from("messages")
-              .update({ delivered: true, read: true })
+              .update(markRead ? { delivered: true, read: true } : { delivered: true })
               .eq("id", newMsg.id)
               .then(() => {})
           }
