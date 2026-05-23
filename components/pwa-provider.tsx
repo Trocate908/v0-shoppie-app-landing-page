@@ -13,7 +13,9 @@ interface PwaContextValue {
   isOnline: boolean
   promptInstall: () => Promise<void>
   pushSupported: boolean
+  pushSubscribed: boolean
   subscribeToPush: () => Promise<void>
+  unsubscribeFromPush: () => Promise<void>
 }
 
 const PwaContext = createContext<PwaContextValue>({
@@ -22,11 +24,36 @@ const PwaContext = createContext<PwaContextValue>({
   isOnline: true,
   promptInstall: async () => {},
   pushSupported: false,
+  pushSubscribed: false,
   subscribeToPush: async () => {},
+  unsubscribeFromPush: async () => {},
 })
 
 export function usePwa() {
   return useContext(PwaContext)
+}
+
+/** Convert a URL-safe base64 VAPID public key to Uint8Array for PushManager. */
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i)
+  }
+  return outputArray
+}
+
+/** Stable device identifier stored in localStorage. */
+function getDeviceId(): string {
+  const key = "shoppie_device_id"
+  let id = localStorage.getItem(key)
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem(key, id)
+  }
+  return id
 }
 
 export function PwaProvider({ children }: { children: ReactNode }) {
@@ -35,6 +62,7 @@ export function PwaProvider({ children }: { children: ReactNode }) {
   const [isInstalled, setIsInstalled] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
   const [pushSupported, setPushSupported] = useState(false)
+  const [pushSubscribed, setPushSubscribed] = useState(false)
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -67,16 +95,27 @@ export function PwaProvider({ children }: { children: ReactNode }) {
     }
     window.addEventListener("appinstalled", onAppInstalled)
 
-    // NOTE: We deliberately do NOT register /sw.js here any more. The
-    // OneSignal SDK registers /OneSignalSDKWorker.js at scope "/" and that
-    // worker now contains BOTH the OneSignal push-handler imports AND our
-    // PWA caching logic (see public/OneSignalSDKWorker.js). Having two
-    // service workers fighting for scope "/" was the cause of intermittent
-    // / lost notifications on Android Chrome.
+    // Register service worker only in production-like environments
+    if ("serviceWorker" in navigator) {
+      fetch("/sw.js", { method: "HEAD" })
+        .then((res) => {
+          const ct = res.headers.get("content-type") ?? ""
+          if (!res.ok || !ct.includes("javascript")) return
+          return navigator.serviceWorker
+            .register("/sw.js", { scope: "/" })
+            .then((reg) => {
+              // Check if already subscribed
+              return reg.pushManager.getSubscription().then((sub) => {
+                if (sub) setPushSubscribed(true)
+              })
+            })
+        })
+        .catch(() => {})
+    }
 
-    // Push notification support
+    // Push notification support — requires VAPID public key + service worker
     if ("PushManager" in window && "Notification" in window) {
-      setPushSupported(true)
+      setPushSupported(!!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)
     }
 
     return () => {
@@ -99,26 +138,80 @@ export function PwaProvider({ children }: { children: ReactNode }) {
   }, [deferredPrompt])
 
   /**
-   * Placeholder for push notification subscription.
-   * Wire up a real VAPID backend to complete this.
+   * Subscribe this device to VAPID Web Push and persist the subscription to
+   * the server via POST /api/push/subscribe.
    */
   const subscribeToPush = useCallback(async () => {
     if (!pushSupported) return
+
+    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    if (!vapidPublicKey) {
+      console.warn("[PWA] NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set — push unavailable.")
+      return
+    }
+
     const permission = await Notification.requestPermission()
     if (permission !== "granted") return
 
-    const registration = await navigator.serviceWorker.ready
-    // TODO: Replace with your VAPID public key
-    // const subscription = await registration.pushManager.subscribe({
-    //   userVisibleOnly: true,
-    //   applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    // })
-    // await fetch("/api/push/subscribe", { method: "POST", body: JSON.stringify(subscription) })
-    console.log("[PWA] Push permission granted. Wire up VAPID key to complete subscription.")
+    try {
+      const registration = await navigator.serviceWorker.ready
+      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey)
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey,
+      })
+
+      const deviceId = getDeviceId()
+
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription, deviceId, userType: "buyer" }),
+      })
+
+      setPushSubscribed(true)
+    } catch (err) {
+      console.error("[PWA] Push subscription failed:", err)
+    }
   }, [pushSupported])
 
+  /**
+   * Unsubscribe from push on this device and disable the token server-side.
+   */
+  const unsubscribeFromPush = useCallback(async () => {
+    try {
+      const registration = await navigator.serviceWorker.ready
+      const subscription = await registration.pushManager.getSubscription()
+      if (subscription) {
+        await subscription.unsubscribe()
+      }
+
+      const deviceId = getDeviceId()
+      await fetch("/api/push/subscribe", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId }),
+      })
+
+      setPushSubscribed(false)
+    } catch (err) {
+      console.error("[PWA] Push unsubscription failed:", err)
+    }
+  }, [])
+
   return (
-    <PwaContext.Provider value={{ isInstallable, isInstalled, isOnline, promptInstall, pushSupported, subscribeToPush }}>
+    <PwaContext.Provider
+      value={{
+        isInstallable,
+        isInstalled,
+        isOnline,
+        promptInstall,
+        pushSupported,
+        pushSubscribed,
+        subscribeToPush,
+        unsubscribeFromPush,
+      }}
+    >
       {children}
     </PwaContext.Provider>
   )

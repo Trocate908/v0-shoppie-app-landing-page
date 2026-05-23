@@ -11,11 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Mail, CheckCircle2, Mail as MailIcon, Lock, Store as StoreIcon } from "lucide-react"
+import { Mail, CheckCircle2 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { Checkbox } from "@/components/ui/checkbox"
-import { AuthShell } from "@/components/auth-shell"
 
 const COUNTRIES = [
   "Afghanistan",
@@ -457,9 +456,9 @@ export default function VendorSignupPage() {
       if (signInError) {
         toast({
           title: "Account Created",
-          description: "Please Check your Email inbox 📥 and login to continue.",
+          description: "Please login to continue.",
         })
-        await new Promise((resolve) => setTimeout(resolve, 2000))
+        await new Promise((resolve) => setTimeout(resolve, 1500))
         window.location.href = "/vendor/login"
         return
       }
@@ -517,6 +516,9 @@ export default function VendorSignupPage() {
         description: "Please check your email to confirm your account.",
         duration: 8000,
       })
+
+      await new Promise((resolve) => setTimeout(resolve, 3000))
+      window.location.href = "/vendor/dashboard"
     } catch (error: unknown) {
       console.error("[v0] Signup error:", error)
       toast({
@@ -530,60 +532,54 @@ export default function VendorSignupPage() {
 
   if (showEmailConfirmation) {
     return (
-      <AuthShell
-        variant="signup"
-        eyebrow="Almost done"
-        headline="One more step to launch your shop."
-        subheadline="We've sent you a confirmation link so we know it&rsquo;s really you. Once verified, your shop is live."
-      >
-        <Card className="border-border/60 shadow-xl shadow-primary/5">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
-              <CheckCircle2 className="h-8 w-8 text-primary" />
-            </div>
-            <CardTitle className="text-2xl font-bold tracking-tight">Check your email</CardTitle>
-            <CardDescription className="text-sm leading-relaxed">
-              We&apos;ve sent a confirmation link to your inbox.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Alert>
-              <Mail className="h-4 w-4" />
-              <AlertTitle>Email sent to</AlertTitle>
-              <AlertDescription className="font-medium break-all">{userEmail}</AlertDescription>
-            </Alert>
+      <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+        <div className="w-full max-w-md">
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
+                <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+              <CardTitle className="text-2xl">Check Your Email</CardTitle>
+              <CardDescription>We've sent a confirmation link to your email</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <Mail className="h-4 w-4" />
+                <AlertTitle>Email Sent to</AlertTitle>
+                <AlertDescription className="font-medium">{userEmail}</AlertDescription>
+              </Alert>
+              
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>Please check your email and click the confirmation link to verify your account.</p>
+                <p className="font-medium">Don't forget to check your spam or junk folder if you don't see it in your inbox.</p>
+              </div>
 
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p>Open that email and tap the confirmation link to verify your account.</p>
-              <p className="font-medium text-foreground">
-                Tip: check your spam or promotions folder if you don&apos;t see it within a minute.
-              </p>
-            </div>
-
-            <Button
-              onClick={() => (window.location.href = "/vendor/login")}
-              className="h-11 w-full text-base font-semibold"
-            >
-              Continue to sign in
-            </Button>
-          </CardContent>
-        </Card>
-      </AuthShell>
+              <div className="pt-4">
+                <Button
+                  onClick={() => window.location.href = "/vendor/login"}
+                  className="w-full"
+                  variant="outline"
+                >
+                  Go to Login
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     )
   }
 
   return (
-    <AuthShell variant="signup">
-      <Card className="border-border/60 shadow-xl shadow-primary/5">
-        <CardHeader className="space-y-2 pb-4">
-          <CardTitle className="text-2xl font-bold tracking-tight">
-            Create your vendor account
-          </CardTitle>
-          <CardDescription className="text-sm leading-relaxed">
-            Tell us a bit about your shop and we&apos;ll get you set up to start selling.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl">Vendor Sign Up</CardTitle>
+              <CardDescription>Create your vendor account</CardDescription>
+            </CardHeader>
+            <CardContent>
               <Tabs value={authMethod} onValueChange={(v) => setAuthMethod(v as "email" | "phone")}>
                 {/* Temporarily hidden - will be enabled after Twilio SMS subscription */}
                 {/* <TabsList className="grid w-full grid-cols-2">
@@ -596,78 +592,47 @@ export default function VendorSignupPage() {
                     <div className="flex flex-col gap-4">
                       <div className="grid gap-2">
                         <Label htmlFor="email">Email</Label>
-                        <div className="relative">
-                          <MailIcon
-                            aria-hidden="true"
-                            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                          />
-                          <Input
-                            id="email"
-                            type="email"
-                            placeholder="vendor@example.com"
-                            required
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="h-11 pl-9"
-                            autoComplete="email"
-                          />
-                        </div>
+                        <Input
+                          id="email"
+                          type="email"
+                          placeholder="vendor@example.com"
+                          required
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                        />
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="password">Password</Label>
-                        <div className="relative">
-                          <Lock
-                            aria-hidden="true"
-                            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                          />
-                          <Input
-                            id="password"
-                            type="password"
-                            required
-                            minLength={6}
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="h-11 pl-9"
-                            autoComplete="new-password"
-                          />
-                        </div>
+                        <Input
+                          id="password"
+                          type="password"
+                          required
+                          minLength={6}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                        />
                       </div>
                       <div className="grid gap-2">
-                        <Label htmlFor="repeat-password">Repeat password</Label>
-                        <div className="relative">
-                          <Lock
-                            aria-hidden="true"
-                            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                          />
-                          <Input
-                            id="repeat-password"
-                            type="password"
-                            required
-                            minLength={6}
-                            value={repeatPassword}
-                            onChange={(e) => setRepeatPassword(e.target.value)}
-                            className="h-11 pl-9"
-                            autoComplete="new-password"
-                          />
-                        </div>
+                        <Label htmlFor="repeat-password">Repeat Password</Label>
+                        <Input
+                          id="repeat-password"
+                          type="password"
+                          required
+                          minLength={6}
+                          value={repeatPassword}
+                          onChange={(e) => setRepeatPassword(e.target.value)}
+                        />
                       </div>
                       <div className="grid gap-2">
-                        <Label htmlFor="shop-name">Shop name</Label>
-                        <div className="relative">
-                          <StoreIcon
-                            aria-hidden="true"
-                            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                          />
-                          <Input
-                            id="shop-name"
-                            type="text"
-                            placeholder="My Shop"
-                            required
-                            value={shopName}
-                            onChange={(e) => setShopName(e.target.value)}
-                            className="h-11 pl-9"
-                          />
-                        </div>
+                        <Label htmlFor="shop-name">Shop Name</Label>
+                        <Input
+                          id="shop-name"
+                          type="text"
+                          placeholder="My Shop"
+                          required
+                          value={shopName}
+                          onChange={(e) => setShopName(e.target.value)}
+                        />
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="shop-description">Shop Description (optional)</Label>
@@ -732,12 +697,8 @@ export default function VendorSignupPage() {
                           of Shoppie. By signing up, you confirm that all information provided is accurate.
                         </label>
                       </div>
-                      <Button
-                        type="submit"
-                        className="h-11 w-full text-base font-semibold shadow-sm"
-                        disabled={isLoading || !agreedToTerms}
-                      >
-                        {isLoading ? "Creating account..." : "Create account"}
+                      <Button type="submit" className="w-full" disabled={isLoading || !agreedToTerms}>
+                        {isLoading ? "Creating account..." : "Sign up"}
                       </Button>
                     </div>
                   </form>
@@ -895,27 +856,26 @@ export default function VendorSignupPage() {
                     </div>
                   </form>
                 </TabsContent> */}
-          </Tabs>
-        </CardContent>
-      </Card>
-      {showEmailConfirmation && (
-        <Alert variant="default" className="mt-4">
-          <Mail className="h-4 w-4" />
-          <AlertTitle>Check Your Email</AlertTitle>
-          <AlertDescription>
-            We have sent a confirmation link to {userEmail}. Please click the link to verify your email.
-          </AlertDescription>
-        </Alert>
-      )}
-      <div className="mt-6 text-center text-sm text-muted-foreground">
-        Already have an account?{" "}
-        <Link
-          href="/vendor/login"
-          className="font-semibold text-primary underline-offset-4 hover:underline"
-        >
-          Sign in
-        </Link>
+              </Tabs>
+            </CardContent>
+          </Card>
+          {showEmailConfirmation && (
+            <Alert variant="default">
+              <Mail className="h-4 w-4" />
+              <AlertTitle>Check Your Email</AlertTitle>
+              <AlertDescription>
+                We have sent a confirmation link to {userEmail}. Please click the link to verify your email.
+              </AlertDescription>
+            </Alert>
+          )}
+          <div className="mt-4 text-center text-sm">
+            Already have an account?{" "}
+            <Link href="/vendor/login" className="underline underline-offset-4">
+              Login
+            </Link>
+          </div>
+        </div>
       </div>
-    </AuthShell>
+    </div>
   )
 }

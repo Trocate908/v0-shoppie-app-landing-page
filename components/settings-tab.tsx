@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useTheme } from "@/components/theme-provider"
-import { Moon, Sun, LogOut, Info, FileText, Phone, MapPin, Heart, ChevronRight, Store, Plus, RefreshCw, Check, Trash2, Wrench, Bug } from "lucide-react"
-import { isDevModeEnabled, setDevModeEnabled, subscribeToDevMode } from "@/lib/dev-mode"
+import { Moon, Sun, LogOut, Info, FileText, Phone, MapPin, Heart, ChevronRight, Store, Plus, RefreshCw, Check, Trash2 } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { createBrowserClient } from "@/lib/supabase/client"
@@ -24,15 +23,12 @@ export default function SettingsTab() {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([])
   const [switchingTo, setSwitchingTo] = useState<string | null>(null)
-  const [devMode, setDevMode] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
 
   useEffect(() => {
     setMounted(true)
     setSavedAccounts(getSavedAccounts())
-    setDevMode(isDevModeEnabled())
-    const unsubDev = subscribeToDevMode(setDevMode)
     const supabase = createBrowserClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
@@ -51,9 +47,6 @@ export default function SettingsTab() {
           })
       }
     })
-    return () => {
-      unsubDev()
-    }
   }, [])
 
   const isDark = theme === "dark"
@@ -314,49 +307,6 @@ export default function SettingsTab() {
               </span>
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </Link>
-          </div>
-        </section>
-
-        {/* Developer Options — sits below the About / Contact us section. */}
-        <section className="mb-2">
-          <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Developer Options
-          </p>
-          <div className="overflow-hidden rounded-xl border border-border bg-card divide-y divide-border">
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-3">
-                <Wrench className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="text-sm text-foreground">Enable Developer Options</p>
-                  <p className="text-xs text-muted-foreground">
-                    Unlocks diagnostics for advanced troubleshooting.
-                  </p>
-                </div>
-              </div>
-              {mounted && (
-                <Switch
-                  checked={devMode}
-                  onCheckedChange={(checked) => {
-                    setDevModeEnabled(checked)
-                    setDevMode(checked)
-                  }}
-                  aria-label="Toggle developer options"
-                />
-              )}
-            </div>
-
-            {devMode && (
-              <Link
-                href="/notifications/debug"
-                className="flex items-center justify-between px-4 py-3 text-sm text-foreground hover:bg-muted/50 transition-colors"
-              >
-                <span className="flex items-center gap-3">
-                  <Bug className="h-4 w-4 text-muted-foreground" />
-                  Notification Diagnostics
-                </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </Link>
-            )}
           </div>
         </section>
 

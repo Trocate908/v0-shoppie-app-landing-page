@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Upload, Loader2, X, Shield, Images, Camera, MessageCircle, Wand2 } from "lucide-react"
+import { ArrowLeft, Upload, Loader2, X, Shield, Images, Camera, MessageCircle } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
@@ -40,7 +40,6 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
   const [currentImageSrc, setCurrentImageSrc] = useState<string>("")
   const [currentFileName, setCurrentFileName] = useState<string>("")
   const [whatsappNumber, setWhatsappNumber] = useState("")
-  const [removingBgIndex, setRemovingBgIndex] = useState<number | null>(null)
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -133,59 +132,6 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
     setCropperOpen(true)
   }
 
-  const handleRemoveBg = async (index: number) => {
-    const file = imageFiles[index]
-    const preview = imagePreviews[index]
-
-    setRemovingBgIndex(index)
-    try {
-      const fd = new FormData()
-
-      if (preview.startsWith("https://")) {
-        // Remote URL (Cloudinary / Pexels) — pass URL directly so the server
-        // fetches it, avoiding any browser CORS issues
-        fd.append("image_url", preview)
-      } else {
-        // Local file (blob: URL) — send the actual file bytes
-        if (!file || file.size === 0) {
-          toast({ title: "Could not read image", description: "Please re-add the image and try again.", variant: "destructive" })
-          return
-        }
-        fd.append("image_file", file, "image.png")
-      }
-
-      const res = await fetch("/api/remove-bg", { method: "POST", body: fd })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        toast({
-          title: "Background removal failed",
-          description: data.error || `Error ${res.status}`,
-          variant: "destructive",
-        })
-        return
-      }
-
-      const resultBlob = await res.blob()
-      if (resultBlob.size === 0) {
-        toast({ title: "Background removal failed", description: "Received empty response. Please try again.", variant: "destructive" })
-        return
-      }
-
-      const baseName = file?.name?.replace(/\.[^.]+$/, "") || "image"
-      const newFile = new File([resultBlob], `${baseName}_nobg.png`, { type: "image/png" })
-      const newPreview = URL.createObjectURL(resultBlob)
-
-      setImageFiles((prev) => prev.map((f, i) => (i === index ? newFile : f)))
-      setImagePreviews((prev) => prev.map((p, i) => (i === index ? newPreview : p)))
-
-      toast({ title: "Background removed!", description: "Looking clean." })
-    } catch {
-      toast({ title: "Unexpected error", description: "Background removal failed. Please try again.", variant: "destructive" })
-    } finally {
-      setRemovingBgIndex(null)
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -248,20 +194,16 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
           .eq("id", vendorId)
       }
 
-      const { data: newProduct, error: insertError } = await supabase
-        .from("products")
-        .insert({
-          vendor_id: vendorId,
-          name: formData.name,
-          description: formData.description,
-          price: Number.parseFloat(formData.price),
-          category: formData.category || "Other",
-          image_url: imageUrls[0] || null,
-          image_urls: imageUrls,
-          in_stock: formData.inStock,
-        })
-        .select("id")
-        .single()
+      const { error: insertError } = await supabase.from("products").insert({
+        vendor_id: vendorId,
+        name: formData.name,
+        description: formData.description,
+        price: Number.parseFloat(formData.price),
+        category: formData.category || "Other",
+        image_url: imageUrls[0] || null,
+        image_urls: imageUrls,
+        in_stock: formData.inStock,
+      })
 
       if (insertError) {
         toast({
@@ -277,19 +219,6 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
         title: "Product added",
         description: "Your product has been added successfully",
       })
-
-      // Fire new-product notification to all shoppers (fire-and-forget)
-      fetch("/api/notifications/new-product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productId: newProduct?.id ?? "",
-          productName: formData.name,
-          shopName,
-          imageUrl: imageUrls[0] ?? null,
-          category: formData.category || null,
-        }),
-      }).catch(() => {})
 
       router.push("/vendor/products")
       router.refresh()
@@ -455,12 +384,6 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
                   )}
                   <Input id="image" type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
                   {imagePreviews.length > 0 && (
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Wand2 className="h-3 w-3 text-violet-500" />
-                      Tap the purple wand on any image to remove its background automatically
-                    </p>
-                  )}
-                  {imagePreviews.length > 0 && (
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                       {imagePreviews.map((preview, index) => (
                         <div
@@ -472,9 +395,7 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
                             alt={`Preview ${index + 1}`}
                             fill
                             className="object-cover"
-                            unoptimized={preview.startsWith("blob:")}
                           />
-                          {/* Remove image button */}
                           <Button
                             type="button"
                             variant="destructive"
@@ -483,21 +404,6 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
                             onClick={() => removeImage(index)}
                           >
                             <X className="h-3 w-3" />
-                          </Button>
-                          {/* Remove background button */}
-                          <Button
-                            type="button"
-                            size="icon"
-                            className="absolute left-1 top-1 h-6 w-6 bg-violet-600 hover:bg-violet-700 text-white border-0"
-                            onClick={() => handleRemoveBg(index)}
-                            disabled={removingBgIndex === index}
-                            title="Remove background"
-                          >
-                            {removingBgIndex === index ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Wand2 className="h-3 w-3" />
-                            )}
                           </Button>
                           {index === 0 && (
                             <div className="absolute bottom-1 left-1 rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">

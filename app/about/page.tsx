@@ -3,7 +3,6 @@ import Image from "next/image"
 import ProfileButton from "@/components/profile-button"
 import { Mail, Phone, MessageCircle, Code2, Globe, Sparkles } from "lucide-react"
 import type { Metadata } from "next"
-import { AppFooter } from "@/components/app-footer"
 
 export const metadata: Metadata = {
   title: "About Us - ShoppieApp | Milton Mukundwa - Developer & Founder",
@@ -316,7 +315,25 @@ export default function AboutPage() {
           </div>
         </main>
 
-        <AppFooter />
+        {/* Footer */}
+        <footer className="border-t border-border bg-background px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl">
+            <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
+              <p className="text-sm text-muted-foreground">&copy; 2026 ShoppieApp. All rights reserved.</p>
+              <div className="flex gap-4">
+                <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground">
+                  About Us
+                </Link>
+                <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
+                  Terms & Conditions
+                </Link>
+                <Link href="/contact" className="text-sm text-muted-foreground hover:text-foreground">
+                  Contact
+                </Link>
+              </div>
+            </div>
+          </div>
+        </footer>
       </div>
     </>
   )

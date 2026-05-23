@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import Image from "next/image"
 import Link from "next/link"
 import type { NavTab } from "@/components/bottom-nav"
-import { NotificationBell } from "@/components/notification-bell"
 
 interface HomeTabProps {
   onNavigate: (tab: NavTab) => void
@@ -21,15 +20,12 @@ export default function HomeTab({ onNavigate }: HomeTabProps) {
             <Image src="/logo.png" alt="ShoppieApp" width={28} height={28} className="h-7 w-7" priority />
             <span className="text-lg font-bold text-foreground">ShoppieApp</span>
           </div>
-          <div className="flex items-center gap-2">
-            <NotificationBell />
-            <Link
-              href="/vendor/login"
-              className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
-            >
-              Vendor Login
-            </Link>
-          </div>
+          <Link
+            href="/vendor/login"
+            className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+          >
+            Vendor Login
+          </Link>
         </div>
       </header>
 

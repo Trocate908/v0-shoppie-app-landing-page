@@ -10,6 +10,8 @@ import MessagesTab from "@/components/messages-tab"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { useNotifications } from "@/hooks/use-notifications"
 import { useToast } from "@/hooks/use-toast"
+import { usePwa } from "@/components/pwa-provider"
+import { deliveryTracker } from "@/lib/message-delivery"
 
 interface Location {
   id: string
@@ -76,6 +78,7 @@ export default function AppShell({ products, locations }: AppShellProps) {
   const currentUserIdRef = useRef<string | null>(null)
   const { notify } = useNotifications()
   const { toast } = useToast()
+  const { subscribeToPush, pushSupported, pushSubscribed } = usePwa()
 
   // Keep refs in sync
   useEffect(() => {
@@ -89,6 +92,19 @@ export default function AppShell({ products, locations }: AppShellProps) {
       currentUserIdRef.current = data.user?.id ?? null
     })
   }, [])
+
+  // Auto-subscribe to VAPID Web Push as soon as the user is authenticated and
+  // the PWA service worker is ready.  This runs once; subscribeToPush() is
+  // idempotent — if already subscribed it's a no-op.
+  useEffect(() => {
+    if (!pushSupported || pushSubscribed) return
+    const supabase = getSupabaseClient()
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        subscribeToPush()
+      }
+    })
+  }, [pushSupported, pushSubscribed, subscribeToPush])
 
   // Cache of conversations so realtime message INSERTs can resolve the
   // sender's display name without an extra round-trip.
@@ -224,6 +240,33 @@ export default function AppShell({ products, locations }: AppShellProps) {
               toast({
                 title: notifTitle,
                 description: notifBody,
+              })
+            }
+
+            // Send VAPID Web Push to all subscribed devices (for users who are
+            // not currently on the app). This complements the browser
+            // notification above which only shows when the tab is hidden.
+            if (currentUserIdRef.current) {
+              fetch("/api/push/send", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  userId: currentUserIdRef.current,
+                  title: notifTitle,
+                  body: notifBody,
+                  url: `/?tab=messages&cid=${msg.conversation_id}`,
+                  tag: `msg-${msg.conversation_id}`,
+                }),
+              }).catch(() => {})
+            }
+
+            // Emit delivery event so chat-window can update delivery indicators
+            if (msg.conversation_id) {
+              deliveryTracker.emit({
+                type: "message:delivered",
+                messageId: "", // Realtime payload doesn't include msg id
+                conversationId: msg.conversation_id,
+                timestamp: Date.now(),
               })
             }
           }

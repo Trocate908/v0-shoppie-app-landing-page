@@ -1,14 +1,13 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { Home, Store, Settings, MessageCircle } from "lucide-react"
+import { Home, Store, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const tabs = [
-  { id: "home",     label: "Home",     icon: Home,          href: "/" },
-  { id: "store",    label: "Store",    icon: Store,         href: "/browse" },
-  { id: "messages", label: "Messages", icon: MessageCircle, href: "/?tab=messages" },
-  { id: "settings", label: "Settings", icon: Settings,      href: "/?tab=settings" },
+  { id: "home", label: "Home", icon: Home, href: "/" },
+  { id: "store", label: "Store", icon: Store, href: "/browse" },
+  { id: "settings", label: "Settings", icon: Settings, href: "/?tab=settings" },
 ]
 
 export default function BrowseNavBar() {

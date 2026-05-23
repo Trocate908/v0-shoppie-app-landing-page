@@ -1,19 +1,8 @@
-// ShoppieApp Service Worker — single source of truth.
-// IMPORTANT: This file is the ONLY service worker registered at scope "/".
-// We do NOT register a separate /sw.js any more, because Android Chrome
-// rejects two competing workers at the same scope and silently unsubscribes
-// the device after a few "missed" pushes.
-//
-// Order matters: importScripts MUST be called first so OneSignal can take
-// over the push and notificationclick events before any of our own handlers
-// run.
-importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js")
-
-// ── PWA caching (was previously in /sw.js) ───────────────────────────────────
-const CACHE_VERSION = "v3"
-const STATIC_CACHE  = `shoppie-static-${CACHE_VERSION}`
+// ShoppieApp Service Worker
+const CACHE_VERSION = "v1"
+const STATIC_CACHE = `shoppie-static-${CACHE_VERSION}`
 const DYNAMIC_CACHE = `shoppie-dynamic-${CACHE_VERSION}`
-const IMAGE_CACHE   = `shoppie-images-${CACHE_VERSION}`
+const IMAGE_CACHE = `shoppie-images-${CACHE_VERSION}`
 
 const STATIC_ASSETS = [
   "/",
@@ -28,15 +17,17 @@ const CACHE_LIMITS = {
   [IMAGE_CACHE]: 100,
 }
 
+// ── Install ──────────────────────────────────────────────────────────────────
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(STATIC_CACHE)
-      .then((cache) => cache.addAll(STATIC_ASSETS).catch(() => {}))
+      .then((cache) => cache.addAll(STATIC_ASSETS))
       .then(() => self.skipWaiting())
   )
 })
 
+// ── Activate ─────────────────────────────────────────────────────────────────
 self.addEventListener("activate", (event) => {
   const allowed = [STATIC_CACHE, DYNAMIC_CACHE, IMAGE_CACHE]
   event.waitUntil(
@@ -49,15 +40,12 @@ self.addEventListener("activate", (event) => {
   )
 })
 
+// ── Fetch ─────────────────────────────────────────────────────────────────────
 self.addEventListener("fetch", (event) => {
   const { request } = event
   const url = new URL(request.url)
 
-  // Don't intercept anything OneSignal needs.
-  if (url.hostname.includes("onesignal.com") || url.pathname.includes("OneSignalSDK")) {
-    return
-  }
-
+  // Skip non-GET, browser-extension, and Supabase API requests
   if (
     request.method !== "GET" ||
     url.protocol === "chrome-extension:" ||
@@ -66,10 +54,7 @@ self.addEventListener("fetch", (event) => {
     return
   }
 
-  if (url.pathname === "/sw.js" || url.pathname.startsWith("/api/")) {
-    return
-  }
-
+  // Image caching — cache first, then network
   if (
     request.destination === "image" ||
     url.hostname === "res.cloudinary.com" ||
@@ -79,6 +64,7 @@ self.addEventListener("fetch", (event) => {
     return
   }
 
+  // Static assets — cache first
   if (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
@@ -88,14 +74,17 @@ self.addEventListener("fetch", (event) => {
     return
   }
 
+  // HTML navigation — network first with offline fallback
   if (request.mode === "navigate") {
     event.respondWith(networkFirstWithOfflineFallback(request))
     return
   }
 
+  // Everything else — network first with dynamic cache
   event.respondWith(networkFirst(request, DYNAMIC_CACHE))
 })
 
+// ── Strategies ────────────────────────────────────────────────────────────────
 async function cacheFirst(request, cacheName) {
   const cached = await caches.match(request)
   if (cached) return cached
@@ -139,10 +128,7 @@ async function networkFirstWithOfflineFallback(request) {
     const cached = await caches.match(request)
     if (cached) return cached
     const offlinePage = await caches.match("/offline")
-    return (
-      offlinePage ||
-      new Response("<h1>You are offline</h1>", { headers: { "Content-Type": "text/html" } })
-    )
+    return offlinePage || new Response("<h1>You are offline</h1>", { headers: { "Content-Type": "text/html" } })
   }
 }
 
@@ -153,3 +139,37 @@ async function trimCache(cacheName, maxItems) {
     await cache.delete(keys[0])
   }
 }
+
+// ── Push Notifications ────────────────────────────────────────────────────────
+self.addEventListener("push", (event) => {
+  if (!event.data) return
+  let data = { title: "ShoppieApp", body: "New update available!", icon: "/icons/icon-192x192.png" }
+  try {
+    data = { ...data, ...event.data.json() }
+  } catch {
+    data.body = event.data.text()
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: data.icon || "/icons/icon-192x192.png",
+      badge: "/icons/icon-192x192.png",
+      vibrate: [100, 50, 100],
+      data: { url: data.url || "/" },
+    })
+  )
+})
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close()
+  const targetUrl = event.notification.data?.url || "/"
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clients) => {
+        const existing = clients.find((c) => c.url === targetUrl && "focus" in c)
+        if (existing) return existing.focus()
+        return self.clients.openWindow(targetUrl)
+      })
+  )
+})

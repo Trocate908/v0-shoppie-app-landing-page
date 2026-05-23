@@ -52,6 +52,7 @@ import { cn } from "@/lib/utils"
 import { usePresence, formatLastSeen } from "@/hooks/use-presence"
 import { VerificationBadge } from "@/components/verification-badge"
 import { EmojiPicker } from "@/components/emoji-picker"
+import { deliveryTracker } from "@/lib/message-delivery"
 
 interface Message {
   id: string
@@ -221,6 +222,14 @@ export default function ChatWindow({
               .update(markRead ? { delivered: true, read: true } : { delivered: true })
               .eq("id", newMsg.id)
               .then(() => {})
+            
+            // Emit delivery event so other components can update UI indicators
+            deliveryTracker.emit({
+              type: "message:delivered",
+              messageId: newMsg.id,
+              conversationId: conversation.id,
+              timestamp: Date.now(),
+            })
           }
         }
       )
@@ -237,6 +246,16 @@ export default function ChatWindow({
           setMessages((prev) =>
             prev.map((m) => (m.id === updated.id ? updated : m))
           )
+          
+          // If message was marked as read, emit event for UI updates
+          if (updated.read && !updated.deleted) {
+            deliveryTracker.emit({
+              type: "message:read",
+              messageId: updated.id,
+              conversationId: conversation.id,
+              timestamp: Date.now(),
+            })
+          }
         }
       )
       .on(
@@ -463,6 +482,22 @@ export default function ChatWindow({
     inputRef.current?.focus()
   }
 
+  function handleInputChange(e: ChangeEvent<HTMLTextAreaElement>) {
+    setInput(e.target.value)
+    
+    // Emit typing indicator via delivery tracker (Socket.io-like)
+    // Throttle to once per second to avoid spam
+    const now = Date.now()
+    if (now - lastTypingSentAtRef.current > 1000) {
+      lastTypingSentAtRef.current = now
+      deliveryTracker.emitTyping(
+        conversation.id,
+        currentUserId,
+        otherName
+      )
+    }
+  }
+
   function handleFilePick(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -681,11 +716,13 @@ export default function ChatWindow({
             <Textarea
               ref={inputRef}
               value={editingMessage ? editContent : input}
-              onChange={(e) =>
-                editingMessage
-                  ? setEditContent(e.target.value)
-                  : setInput(e.target.value)
-              }
+              onChange={(e) => {
+                if (editingMessage) {
+                  setEditContent(e.target.value)
+                } else {
+                  handleInputChange(e)
+                }
+              }}
               onKeyDown={handleKeyDown}
               onFocus={() => setShowEmoji(false)}
               placeholder={editingMessage ? "Edit message…" : "Message"}
