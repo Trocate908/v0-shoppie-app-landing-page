@@ -43,7 +43,17 @@ self.addEventListener("push", (event) => {
 
   if (payload.image) options.image = payload.image
 
-  event.waitUntil(self.registration.showNotification(title, options))
+  // Show the notification AND broadcast to all open windows in one handler
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title, options),
+      clients.matchAll({ type: "window" }).then((windowClients) => {
+        for (const client of windowClients) {
+          client.postMessage({ type: "PUSH_RECEIVED" })
+        }
+      }),
+    ])
+  )
 })
 
 self.addEventListener("notificationclick", (event) => {
@@ -65,17 +75,6 @@ self.addEventListener("notificationclick", (event) => {
           return clients.openWindow(url)
         }
       })
-  )
-})
-
-// Broadcast to all open windows so the notification bell updates immediately
-self.addEventListener("push", (event) => {
-  event.waitUntil(
-    clients.matchAll({ type: "window" }).then((windowClients) => {
-      for (const client of windowClients) {
-        client.postMessage({ type: "PUSH_RECEIVED" })
-      }
-    })
   )
 })
 

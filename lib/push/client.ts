@@ -27,9 +27,9 @@ async function ensureServiceWorker(): Promise<ServiceWorkerRegistration | null> 
   let reg = await navigator.serviceWorker.getRegistration("/")
   if (!reg) {
     try {
-      reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" })
+      reg = await navigator.serviceWorker.register("/OneSignalSDKWorker.js", { scope: "/" })
     } catch (err) {
-      console.error("[push] failed to register /sw.js:", err)
+      console.error("[push] failed to register service worker:", err)
       return null
     }
   }
