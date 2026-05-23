@@ -90,6 +90,15 @@ export default function AppShell({ products, locations }: AppShellProps) {
     })
   }, [])
 
+  // Cache of conversations so realtime message INSERTs can resolve the
+  // sender's display name without an extra round-trip.
+  type CachedConv = {
+    id: string
+    is_buyer: boolean
+    vendors: { shop_name: string } | null
+  }
+  const conversationsCacheRef = useRef<Map<string, CachedConv>>(new Map())
+
   // Fetch unread count from the conversations API
   const fetchUnreadCount = useCallback(async () => {
     try {
@@ -99,7 +108,12 @@ export default function AppShell({ products, locations }: AppShellProps) {
         return
       }
       const data = await res.json()
-      const conversations: { id: string; unread_count: number }[] = data.conversations ?? []
+      const conversations: (CachedConv & { unread_count: number })[] =
+        data.conversations ?? []
+      // Refresh the cache so incoming realtime messages can look up sender names
+      conversationsCacheRef.current = new Map(
+        conversations.map((c) => [c.id, { id: c.id, is_buyer: c.is_buyer, vendors: c.vendors }])
+      )
       // Conversations that are currently open should not count toward the badge
       const total = conversations.reduce((sum, c) => {
         if (c.id === openConversationIdRef.current) return sum
@@ -180,10 +194,27 @@ export default function AppShell({ products, locations }: AppShellProps) {
               }
             }
 
+            // Resolve the sender's display name from the cache so the
+            // notification says "New message from Shop Name" rather than a
+            // generic label. If the conversation isn't cached yet, fall back
+            // to "Someone".
+            const convo = msg.conversation_id
+              ? conversationsCacheRef.current.get(msg.conversation_id)
+              : undefined
+            const senderLabel = convo
+              ? convo.is_buyer
+                ? convo.vendors?.shop_name ?? "Vendor"
+                : "Customer"
+              : "Someone"
+            const notifTitle = `New message from ${senderLabel}`
+            const notifBody = msg.content?.trim() || "Sent an image"
+
             // Browser notification (shown when tab is hidden)
+            // Hook also forwards "title|body" to window.AppInventor for native
+            // wrappers — see hooks/use-notifications.ts.
             notify({
-              title: "New message",
-              body: msg.content ?? "You have a new message",
+              title: notifTitle,
+              body: notifBody,
               tag: `msg-${msg.conversation_id}`,
               onClick: openInApp,
             })
@@ -191,8 +222,8 @@ export default function AppShell({ products, locations }: AppShellProps) {
             // In-app toast (shown while app is visible)
             if (typeof document !== "undefined" && !document.hidden) {
               toast({
-                title: "New message",
-                description: msg.content ?? "You have a new message",
+                title: notifTitle,
+                description: notifBody,
               })
             }
           }
