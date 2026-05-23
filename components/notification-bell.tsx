@@ -19,13 +19,13 @@ type Notification = {
 
 interface NotificationBellProps {
   className?: string
-  /** When true, renders a small unread badge dot (no number) */
   compact?: boolean
 }
 
 /**
- * Header button that links to /notifications and shows an unread badge.
- * Polls /api/notifications/list every 60s while mounted.
+ * Header button linking to /notifications with an unread badge.
+ * Polls every 60s as a baseline, and updates immediately when a
+ * real-time push or socket event fires (via "shoppie:notification").
  */
 export function NotificationBell({ className, compact = false }: NotificationBellProps) {
   const [unread, setUnread] = useState(0)
@@ -47,12 +47,22 @@ export function NotificationBell({ className, compact = false }: NotificationBel
 
   useEffect(() => {
     fetchUnread()
-    const id = setInterval(fetchUnread, 60_000)
+
+    // Baseline poll every 60s
+    const pollId = setInterval(fetchUnread, 60_000)
+
+    // Instant update on tab focus
     const onFocus = () => fetchUnread()
     window.addEventListener("focus", onFocus)
+
+    // Real-time: triggered by Socket.io events + service worker push messages
+    const onPush = () => fetchUnread()
+    window.addEventListener("shoppie:notification", onPush)
+
     return () => {
-      clearInterval(id)
+      clearInterval(pollId)
       window.removeEventListener("focus", onFocus)
+      window.removeEventListener("shoppie:notification", onPush)
     }
   }, [fetchUnread])
 

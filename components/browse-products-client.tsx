@@ -352,9 +352,6 @@ export default function BrowseProductsClient({
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-base font-extrabold leading-tight text-foreground sm:text-lg">Store</h1>
-              <p className="truncate text-[11px] leading-tight text-muted-foreground">
-                {initialProducts.length.toLocaleString()} products from local vendors
-              </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {/* ── Currency picker ── */}
