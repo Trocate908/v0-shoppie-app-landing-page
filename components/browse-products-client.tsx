@@ -202,7 +202,6 @@ export default function BrowseProductsClient({
           const country: string = data?.address?.country ?? ""
           if (country) {
             setDetectedCountry(country)
-            setSelectedCurrency(getCurrencyForCountry(country))
             setGeoStatus("success")
           } else {
             setGeoStatus("error")
@@ -523,7 +522,6 @@ export default function BrowseProductsClient({
                                   const city: string = data?.address?.city ?? data?.address?.town ?? data?.address?.state ?? ""
                                   if (country) {
                                     setDetectedCountry(country)
-                                    setSelectedCurrency(getCurrencyForCountry(country))
                                     setSelectedCountry(country)
                                     if (city) setSelectedCity(city)
                                     setGeoStatus("success")
