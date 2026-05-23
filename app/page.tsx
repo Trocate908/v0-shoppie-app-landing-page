@@ -52,7 +52,7 @@ async function getAllProducts() {
     `)
     .eq("in_stock", true)
     .order("created_at", { ascending: false })
-    .limit(60)
+    .limit(500)
 
   if (error) return []
   return (data || []) as unknown as Product[]
