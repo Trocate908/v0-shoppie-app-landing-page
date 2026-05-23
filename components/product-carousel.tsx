@@ -7,19 +7,31 @@ import Image from "next/image"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
+const FALLBACK = "/logo.png"
+
 type ProductCarouselProps = {
   images: string[]
   productName: string
   autoSlide?: boolean
+  priority?: boolean
+  aspectClass?: string
 }
 
-export default function ProductCarousel({ images, productName, autoSlide = false }: ProductCarouselProps) {
+export default function ProductCarousel({ images, productName, autoSlide = false, priority = false, aspectClass = "aspect-[3/4]" }: ProductCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isHovered, setIsHovered] = useState(false)
+  const [failedSrcs, setFailedSrcs] = useState<Set<string>>(new Set())
   const touchStartX = useRef(0)
   const touchEndX = useRef(0)
 
-  const displayImages = images.length > 0 ? images.slice(0, 3) : ["/placeholder.svg"]
+  const rawImages = images.length > 0 ? images.slice(0, 3) : []
+  const displayImages = rawImages.length > 0 ? rawImages : [FALLBACK]
+
+  const getDisplaySrc = (src: string) => (failedSrcs.has(src) ? FALLBACK : src)
+
+  const handleError = (src: string) => {
+    setFailedSrcs((prev) => new Set([...prev, src]))
+  }
 
   useEffect(() => {
     if (!autoSlide || isHovered || displayImages.length <= 1) return
@@ -65,15 +77,20 @@ export default function ProductCarousel({ images, productName, autoSlide = false
   }
 
   if (displayImages.length === 1) {
+    const src = displayImages[0]
+    const displaySrc = getDisplaySrc(src)
+    const isFallback = displaySrc === FALLBACK
     return (
-      <div className="relative aspect-square w-full overflow-hidden bg-muted">
+      <div className={`relative ${aspectClass} w-full overflow-hidden bg-muted`}>
         <Image
-          src={displayImages[0] || "/placeholder.svg"}
+          src={displaySrc}
           alt={productName}
           fill
-          className="object-cover"
-          loading="lazy"
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+          className={isFallback ? "object-contain p-6" : "object-cover"}
+          priority={priority}
+          loading={priority ? "eager" : "lazy"}
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          onError={() => handleError(src)}
         />
       </div>
     )
@@ -81,7 +98,7 @@ export default function ProductCarousel({ images, productName, autoSlide = false
 
   return (
     <div
-      className="group relative aspect-square w-full overflow-hidden bg-muted"
+      className={`group relative ${aspectClass} w-full overflow-hidden bg-muted`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onTouchStart={handleTouchStart}
@@ -89,23 +106,29 @@ export default function ProductCarousel({ images, productName, autoSlide = false
       onTouchEnd={handleTouchEnd}
     >
       <div className="relative h-full w-full">
-        {displayImages.map((image, index) => (
-          <div
-            key={index}
-            className={`absolute inset-0 transition-opacity duration-500 ${
-              index === currentIndex ? "opacity-100" : "opacity-0"
-            }`}
-          >
-            <Image
-              src={image || "/placeholder.svg"}
-              alt={`${productName} - Image ${index + 1}`}
-              fill
-              className="object-cover"
-              loading="lazy"
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            />
-          </div>
-        ))}
+        {displayImages.map((image, index) => {
+          const displaySrc = getDisplaySrc(image)
+          const isFallback = displaySrc === FALLBACK
+          return (
+            <div
+              key={index}
+              className={`absolute inset-0 transition-opacity duration-500 ${
+                index === currentIndex ? "opacity-100" : "opacity-0"
+              }`}
+            >
+              <Image
+                src={displaySrc}
+                alt={`${productName} - Image ${index + 1}`}
+                fill
+                className={isFallback ? "object-contain p-6" : "object-cover"}
+                priority={priority && index === 0}
+                loading={priority && index === 0 ? "eager" : "lazy"}
+                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                onError={() => handleError(image)}
+              />
+            </div>
+          )
+        })}
       </div>
 
       <div className="absolute inset-0 flex items-center justify-between p-2 opacity-0 transition-opacity group-hover:opacity-100">
