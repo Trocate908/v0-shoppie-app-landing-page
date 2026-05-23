@@ -11,9 +11,10 @@ type ProductCarouselProps = {
   images: string[]
   productName: string
   autoSlide?: boolean
+  priority?: boolean
 }
 
-export default function ProductCarousel({ images, productName, autoSlide = false }: ProductCarouselProps) {
+export default function ProductCarousel({ images, productName, autoSlide = false, priority = false }: ProductCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isHovered, setIsHovered] = useState(false)
   const touchStartX = useRef(0)
@@ -72,8 +73,9 @@ export default function ProductCarousel({ images, productName, autoSlide = false
           alt={productName}
           fill
           className="object-cover"
-          loading="lazy"
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+          priority={priority}
+          loading={priority ? "eager" : "lazy"}
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
         />
       </div>
     )
@@ -101,8 +103,9 @@ export default function ProductCarousel({ images, productName, autoSlide = false
               alt={`${productName} - Image ${index + 1}`}
               fill
               className="object-cover"
-              loading="lazy"
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              priority={priority && index === 0}
+              loading={priority && index === 0 ? "eager" : "lazy"}
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
             />
           </div>
         ))}

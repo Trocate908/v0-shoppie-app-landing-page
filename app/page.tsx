@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { Skeleton } from "@/components/ui/skeleton"
 import AppShell from "@/components/app-shell"
 
-export const revalidate = 60
+export const revalidate = 120
 
 export const metadata = {
   title: "ShoppieApp - Find Local Products Near You",
@@ -52,7 +52,7 @@ async function getAllProducts() {
     `)
     .eq("in_stock", true)
     .order("created_at", { ascending: false })
-    .limit(200)
+    .limit(60)
 
   if (error) return []
   return (data || []) as unknown as Product[]
