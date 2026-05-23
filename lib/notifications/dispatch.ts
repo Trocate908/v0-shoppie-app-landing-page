@@ -1,6 +1,7 @@
 import "server-only"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { sendOneSignalToUsers, sendOneSignalToAll, type OneSignalMessage } from "@/lib/push/onesignal"
+import { sendWebPushToSubscriptions, type WebPushMessage } from "@/lib/push/server"
+import { emitToUser } from "@/lib/socket-server"
 
 export type NotificationType =
   | "message"
@@ -19,7 +20,6 @@ export type DispatchInput = {
   type: NotificationType
   title: string
   body: string
-  /** Relative or absolute link — stored in the notifications table and opened when tapped. */
   link?: string
   imageUrl?: string
   data?: Record<string, string>
@@ -35,7 +35,40 @@ function toAbsolute(link?: string): string | undefined {
   return `${SITE_URL}${link.startsWith("/") ? "" : "/"}${link}`
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Token helpers ───────────────────────────────────────────────────────────
+
+async function getTokensForUsers(
+  supabase: ReturnType<typeof createAdminClient>,
+  userIds: string[],
+): Promise<{ userId: string; token: string }[]> {
+  if (userIds.length === 0) return []
+  const { data } = await supabase
+    .from("push_tokens")
+    .select("user_id, token")
+    .eq("enabled", true)
+    .in("user_id", userIds)
+  return (data ?? []).map((r) => ({ userId: r.user_id as string, token: r.token as string }))
+}
+
+async function getAllTokens(
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<string[]> {
+  const { data } = await supabase
+    .from("push_tokens")
+    .select("token")
+    .eq("enabled", true)
+  return (data ?? []).map((r) => r.token as string)
+}
+
+async function pruneInvalidTokens(
+  supabase: ReturnType<typeof createAdminClient>,
+  invalidTokens: string[],
+) {
+  if (invalidTokens.length === 0) return
+  await supabase.from("push_tokens").delete().in("token", invalidTokens)
+}
+
+// ── Audience resolver ───────────────────────────────────────────────────────
 
 async function resolveUserIds(
   supabase: ReturnType<typeof createAdminClient>,
@@ -116,15 +149,20 @@ export async function dispatchNotification(
   const supabase = createAdminClient()
   const dedupeWindow = input.dedupeWindowHours ?? 24
 
-  // ── Audience broadcasts use OneSignal's "All" segment directly ──────────
-  // We skip per-user dedup and in-app persistence for broadcast pushes to
-  // avoid resolving thousands of user IDs. A daily refId dedup is good enough.
+  const vapidMsg: WebPushMessage = {
+    title: input.title,
+    body: input.body,
+    link: toAbsolute(input.link),
+    imageUrl: input.imageUrl,
+    data: input.data,
+  }
+
+  // ── Audience broadcasts ─────────────────────────────────────────────────
   const isAudienceBroadcast =
     "audience" in target &&
     (target.audience === "all_shoppers" || target.audience === "all")
 
   if (isAudienceBroadcast) {
-    // Global dedup — check if we already sent this refId globally today
     if (dedupeWindow > 0 && input.refId) {
       const since = new Date(Date.now() - dedupeWindow * 3_600_000).toISOString()
       const { count } = await supabase
@@ -136,15 +174,10 @@ export async function dispatchNotification(
       if ((count ?? 0) > 0) return { pushed: 0, persisted: 0, pruned: 0 }
     }
 
-    const result = await sendOneSignalToAll({
-      title: input.title,
-      body: input.body,
-      url: toAbsolute(input.link),
-      imageUrl: input.imageUrl,
-      data: input.data,
-    })
+    const tokens = await getAllTokens(supabase)
+    const { successCount, invalidTokens } = await sendWebPushToSubscriptions(tokens, vapidMsg)
+    await pruneInvalidTokens(supabase, invalidTokens)
 
-    // Record one global dedup row so we don't re-send within the window
     if (input.refId) {
       await supabase.from("notification_sends").insert({
         user_id: null,
@@ -154,7 +187,7 @@ export async function dispatchNotification(
       })
     }
 
-    return { pushed: result.pushed, persisted: 0, pruned: 0 }
+    return { pushed: successCount, persisted: 0, pruned: invalidTokens.length }
   }
 
   // ── Targeted (userId / userIds / vendor audiences) ──────────────────────
@@ -188,14 +221,21 @@ export async function dispatchNotification(
     persisted = count ?? rows.length
   }
 
-  // Send push via OneSignal (targets by Supabase user ID = OneSignal external_id)
-  const result = await sendOneSignalToUsers(eligibleUserIds, {
-    title: input.title,
-    body: input.body,
-    url: toAbsolute(input.link),
-    imageUrl: input.imageUrl,
-    data: input.data,
-  })
+  // Emit real-time socket event so connected clients update instantly
+  for (const uid of eligibleUserIds) {
+    emitToUser(uid, "notification", {
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      link: input.link ?? null,
+    })
+  }
+
+  // Send VAPID push to users' registered browser subscriptions
+  const tokenRows = await getTokensForUsers(supabase, eligibleUserIds)
+  const tokens = tokenRows.map((r) => r.token)
+  const { successCount, invalidTokens } = await sendWebPushToSubscriptions(tokens, vapidMsg)
+  await pruneInvalidTokens(supabase, invalidTokens)
 
   // Record dedup
   const sendRows = eligibleUserIds.map((uid) => ({
@@ -208,5 +248,5 @@ export async function dispatchNotification(
     await supabase.from("notification_sends").insert(sendRows)
   }
 
-  return { pushed: result.pushed, persisted, pruned: 0 }
+  return { pushed: successCount, persisted, pruned: invalidTokens.length }
 }
