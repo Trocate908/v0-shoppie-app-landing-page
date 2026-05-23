@@ -1,16 +1,7 @@
-// ShoppieApp Service Worker — single source of truth.
-// IMPORTANT: This file is the ONLY service worker registered at scope "/".
-// We do NOT register a separate /sw.js any more, because Android Chrome
-// rejects two competing workers at the same scope and silently unsubscribes
-// the device after a few "missed" pushes.
-//
-// Order matters: importScripts MUST be called first so OneSignal can take
-// over the push and notificationclick events before any of our own handlers
-// run.
-importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js")
+// ShoppieApp Service Worker — native VAPID web push + PWA caching.
+// Registered at scope "/" so it handles the full origin.
 
-// ── PWA caching (was previously in /sw.js) ───────────────────────────────────
-const CACHE_VERSION = "v3"
+const CACHE_VERSION = "v4"
 const STATIC_CACHE  = `shoppie-static-${CACHE_VERSION}`
 const DYNAMIC_CACHE = `shoppie-dynamic-${CACHE_VERSION}`
 const IMAGE_CACHE   = `shoppie-images-${CACHE_VERSION}`
@@ -27,6 +18,68 @@ const CACHE_LIMITS = {
   [DYNAMIC_CACHE]: 60,
   [IMAGE_CACHE]: 100,
 }
+
+// ── Native VAPID Push ─────────────────────────────────────────────────────────
+
+self.addEventListener("push", (event) => {
+  if (!event.data) return
+
+  let payload
+  try {
+    payload = event.data.json()
+  } catch {
+    payload = { title: "ShoppieApp", body: event.data.text() }
+  }
+
+  const title = payload.title || "ShoppieApp"
+  const options = {
+    body: payload.body || "",
+    icon: "/logo.png",
+    badge: "/logo.png",
+    tag: payload.tag || `shoppie-${Date.now()}`,
+    data: { link: payload.link || "/", ...(payload.data || {}) },
+    requireInteraction: false,
+  }
+
+  if (payload.image) options.image = payload.image
+
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close()
+
+  const link = event.notification.data?.link || "/"
+  const url = link.startsWith("http") ? link : self.location.origin + link
+
+  event.waitUntil(
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((windowClients) => {
+        for (const client of windowClients) {
+          if (client.url === url && "focus" in client) {
+            return client.focus()
+          }
+        }
+        if (clients.openWindow) {
+          return clients.openWindow(url)
+        }
+      })
+  )
+})
+
+// Broadcast to all open windows so the notification bell updates immediately
+self.addEventListener("push", (event) => {
+  event.waitUntil(
+    clients.matchAll({ type: "window" }).then((windowClients) => {
+      for (const client of windowClients) {
+        client.postMessage({ type: "PUSH_RECEIVED" })
+      }
+    })
+  )
+})
+
+// ── PWA Caching ───────────────────────────────────────────────────────────────
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -52,11 +105,6 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event
   const url = new URL(request.url)
-
-  // Don't intercept anything OneSignal needs.
-  if (url.hostname.includes("onesignal.com") || url.pathname.includes("OneSignalSDK")) {
-    return
-  }
 
   if (
     request.method !== "GET" ||
