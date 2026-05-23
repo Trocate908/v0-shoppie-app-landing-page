@@ -31,6 +31,7 @@ const nextConfig = {
     "*.dev-vm.vusercontent.net",
     "*.spock.replit.dev",
     "*.replit.dev",
+    "*.riker.replit.dev",
     "*.repl.co",
   ],
   compress: true,
