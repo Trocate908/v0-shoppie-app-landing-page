@@ -772,7 +772,7 @@ export default function BrowseProductsClient({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-x-2 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {filteredProducts.map((product, index) => {
                 const convertedPrice = convertPrice(product.price, selectedCurrency.code, liveRates)
                 const formattedPrice = formatPrice(convertedPrice, selectedCurrency)
@@ -785,13 +785,12 @@ export default function BrowseProductsClient({
                   <div
                     key={product.id}
                     data-product-id={product.id}
-                    className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-black/8"
+                    className="group relative flex flex-col overflow-hidden rounded-xl bg-card cursor-pointer"
                     onClick={() => { trackProductView(product.id); router.push(`/product/${product.id}`) }}
-                    style={{ cursor: "pointer" }}
                   >
-                    {/* Image area */}
-                    <div className="relative overflow-hidden">
-                      <div className="transition-transform duration-500 ease-out group-hover:scale-[1.04]">
+                    {/* ── Image area ── */}
+                    <div className="relative overflow-hidden rounded-xl">
+                      <div className="transition-transform duration-500 ease-out group-hover:scale-[1.03]">
                         <ProductCarousel
                           images={
                             product.image_urls && product.image_urls.length > 0
@@ -801,101 +800,54 @@ export default function BrowseProductsClient({
                           productName={product.name}
                           autoSlide={false}
                           priority={index < 4}
+                          aspectClass="aspect-[3/4]"
                         />
                       </div>
 
-                      {/* Gradient for bottom legibility */}
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
-
-                      {/* Top-right: favorite + share */}
-                      <div className="absolute right-2 top-2 flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                        <FavoriteButton productId={product.id} variant="outline" />
-                        <ShareButton
-                          type="product"
-                          productId={product.id}
-                          productName={product.name}
-                          productPrice={product.price}
-                          variant="outline"
-                        />
-                      </div>
-
-                      {/* Top-left: stock / verified ribbons */}
-                      <div className="absolute left-2 top-2 flex flex-col items-start gap-1.5">
+                      {/* Top-left: badges */}
+                      <div className="absolute left-1.5 top-1.5 flex flex-col items-start gap-1">
                         {!product.in_stock && (
-                          <Badge variant="destructive" className="h-6 rounded-full px-2 text-[10px] font-semibold shadow-md">
-                            Out of Stock
-                          </Badge>
+                          <span className="rounded-sm bg-black/75 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
+                            Sold Out
+                          </span>
                         )}
                         {isActivelyVerified && product.in_stock && (
-                          <Badge className="h-6 gap-1 rounded-full bg-background/95 px-2 text-[10px] font-semibold text-primary shadow-md backdrop-blur hover:bg-background/95">
-                            <BadgeCheck className="h-3 w-3" /> Verified
-                          </Badge>
+                          <span className="flex items-center gap-0.5 rounded-sm bg-primary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                            <BadgeCheck className="h-2.5 w-2.5" /> Verified
+                          </span>
                         )}
                       </div>
 
-                      {/* Bottom-left: price pill */}
-                      <div className="absolute bottom-2 left-2">
-                        <div className="rounded-full bg-background/95 px-3 py-1 text-sm font-extrabold leading-tight text-primary shadow-lg backdrop-blur">
-                          {formattedPrice}
-                        </div>
+                      {/* Top-right: wishlist heart */}
+                      <div
+                        className="absolute right-1.5 top-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <FavoriteButton productId={product.id} variant="ghost" />
                       </div>
                     </div>
 
-                    {/* Card body */}
-                    <div className="flex flex-1 flex-col p-3 sm:p-3.5">
-                      {product.category && (
-                        <span className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                          {product.category}
-                        </span>
-                      )}
-                      <h3 className="line-clamp-2 min-h-[2.4rem] text-sm font-semibold leading-snug text-foreground group-hover:text-primary transition-colors">
+                    {/* ── Card body ── */}
+                    <div className="flex flex-col gap-0.5 px-1 pt-2 pb-2.5">
+                      {/* Price — most prominent */}
+                      <p className="text-sm font-bold text-primary leading-tight">
+                        {formattedPrice}
+                      </p>
+
+                      {/* Product name */}
+                      <h3 className="line-clamp-2 text-[12px] leading-snug text-foreground/90 group-hover:text-primary transition-colors">
                         {product.name}
                       </h3>
 
-                      <div className="mt-1 flex items-center gap-1 text-xs">
-                        <span className="truncate font-medium text-foreground/80">{product.vendor.shop_name}</span>
+                      {/* Shop + location — muted */}
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="truncate text-[10px] text-muted-foreground leading-none">
+                          {product.vendor.shop_name}
+                        </span>
                         {product.vendor.is_verified && (
                           <VerificationBadge isVerified={product.vendor.is_verified} size="xs" showTooltip={false} />
                         )}
                       </div>
-
-                      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                        <MapPin className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{product.vendor.location.market_name}, {product.vendor.location.city}</span>
-                      </div>
-
-                      {/* Star rating row */}
-                      <div className="mt-1.5 flex items-center gap-0.5">
-                        {[1,2,3,4,5].map((s) => (
-                          <Star key={s} className={["h-3 w-3", s <= 4 ? "fill-amber-400 text-amber-400" : "fill-muted text-muted"].join(" ")} />
-                        ))}
-                      </div>
-
-                      {/* Open/Closed pill */}
-                      <div className="mt-2">
-                        <span className={[
-                          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                          product.vendor.is_open ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground",
-                        ].join(" ")}>
-                          <span className={["h-1.5 w-1.5 rounded-full", product.vendor.is_open ? "bg-emerald-500" : "bg-muted-foreground"].join(" ")} />
-                          {product.vendor.is_open ? "Open now" : "Closed"}
-                        </span>
-                      </div>
-
-                      {/* WhatsApp CTA */}
-                      {product.vendor.whatsapp_number && (
-                        <div className="mt-3" onClick={(e) => e.stopPropagation()}>
-                          <WhatsAppButton
-                            phoneNumber={product.vendor.whatsapp_number}
-                            shopName={product.vendor.shop_name}
-                            productName={product.name}
-                            label="Chat on WhatsApp"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 w-full rounded-xl text-xs"
-                          />
-                        </div>
-                      )}
                     </div>
                   </div>
                 )

@@ -14,9 +14,10 @@ type ProductCarouselProps = {
   productName: string
   autoSlide?: boolean
   priority?: boolean
+  aspectClass?: string
 }
 
-export default function ProductCarousel({ images, productName, autoSlide = false, priority = false }: ProductCarouselProps) {
+export default function ProductCarousel({ images, productName, autoSlide = false, priority = false, aspectClass = "aspect-[3/4]" }: ProductCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isHovered, setIsHovered] = useState(false)
   const [failedSrcs, setFailedSrcs] = useState<Set<string>>(new Set())
@@ -80,7 +81,7 @@ export default function ProductCarousel({ images, productName, autoSlide = false
     const displaySrc = getDisplaySrc(src)
     const isFallback = displaySrc === FALLBACK
     return (
-      <div className="relative aspect-square w-full overflow-hidden bg-muted">
+      <div className={`relative ${aspectClass} w-full overflow-hidden bg-muted`}>
         <Image
           src={displaySrc}
           alt={productName}
@@ -97,7 +98,7 @@ export default function ProductCarousel({ images, productName, autoSlide = false
 
   return (
     <div
-      className="group relative aspect-square w-full overflow-hidden bg-muted"
+      className={`group relative ${aspectClass} w-full overflow-hidden bg-muted`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onTouchStart={handleTouchStart}
