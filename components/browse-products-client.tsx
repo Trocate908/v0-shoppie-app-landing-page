@@ -127,6 +127,8 @@ const CATEGORY_COLORS: Record<string, { bg: string; icon: string; border: string
   Other:             { bg: "bg-slate-100 dark:bg-slate-800",      icon: "text-slate-500",                      border: "border-slate-200 dark:border-slate-700" },
 }
 
+let _sharedBrowserClient: ReturnType<typeof createBrowserClient> | null = null
+
 export default function BrowseProductsClient({
   products: initialProducts,
   locations,
@@ -314,7 +316,7 @@ export default function BrowseProductsClient({
   const trackProductView = async (productId: string) => {
     if (trackedViews.has(productId)) return
     try {
-      const supabase = createBrowserClient()
+      const supabase = _sharedBrowserClient ?? (_sharedBrowserClient = createBrowserClient())
       const { error } = await supabase.from("product_views").insert({ product_id: productId })
       if (!error) setTrackedViews((prev) => new Set(prev).add(productId))
     } catch (error) {
@@ -744,9 +746,6 @@ export default function BrowseProductsClient({
           <div className="flex items-center justify-between">
             <div className="flex items-baseline gap-2">
               <h2 className="font-serif text-2xl italic leading-none text-primary">Explore</h2>
-              <span className="text-xs font-medium text-muted-foreground">
-                {filteredProducts.length.toLocaleString()} {filteredProducts.length === 1 ? "item" : "items"}
-              </span>
             </div>
             <div className="hidden h-px flex-1 bg-border sm:block ml-4" />
           </div>
@@ -776,7 +775,7 @@ export default function BrowseProductsClient({
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredProducts.map((product) => {
+              {filteredProducts.map((product, index) => {
                 const convertedPrice = convertPrice(product.price, selectedCurrency.code, liveRates)
                 const formattedPrice = formatPrice(convertedPrice, selectedCurrency)
                 const isActivelyVerified =
@@ -803,6 +802,7 @@ export default function BrowseProductsClient({
                           }
                           productName={product.name}
                           autoSlide={false}
+                          priority={index < 4}
                         />
                       </div>
 
