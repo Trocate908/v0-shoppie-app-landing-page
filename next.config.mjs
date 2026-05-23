@@ -31,6 +31,7 @@ const nextConfig = {
     "*.dev-vm.vusercontent.net",
     "*.spock.replit.dev",
     "*.replit.dev",
+    "*.riker.replit.dev",
     "*.repl.co",
   ],
   compress: true,
@@ -39,10 +40,18 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // Service Worker must be served with no-cache so browsers always
-        // fetch the latest version, and Service-Worker-Allowed: / so it
-        // can claim the full origin (required by some browsers).
-        source: "/sw.js",
+        // OneSignal service workers (now the sole SWs at scope "/") must be
+        // served with no-cache so browsers always fetch the latest version
+        // and Service-Worker-Allowed: / so they can claim the full origin.
+        source: "/OneSignalSDKWorker.js",
+        headers: [
+          { key: "Service-Worker-Allowed", value: "/" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
+      {
+        source: "/OneSignalSDKUpdaterWorker.js",
         headers: [
           { key: "Service-Worker-Allowed", value: "/" },
           { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },

@@ -107,6 +107,9 @@ export default function MessagesTab({
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<FilterTab>("all")
   const openedIds = useRef<Set<string>>(new Set())
+  // IDs of conversations that have been deleted — any fetch that returns them
+  // will be filtered out, so stale reads can't resurrect a deleted chat.
+  const deletedIds = useRef<Set<string>>(new Set())
   const didAutoOpen = useRef(false)
 
   const sortConversations = (list: Conversation[]): Conversation[] =>
@@ -128,7 +131,11 @@ export default function MessagesTab({
       const data = await res.json()
       setIsAuthenticated(true)
       const incoming: Conversation[] = data.conversations ?? []
-      const patched = incoming.map((c) =>
+      // Drop anything the user already deleted this session — protects against
+      // stale realtime reads or race conditions re-inserting deleted chats.
+      const filtered = incoming.filter((c) => !deletedIds.current.has(c.id))
+      // Zero out unread for conversations we've already opened this session
+      const patched = filtered.map((c) =>
         openedIds.current.has(c.id) ? { ...c, unread_count: 0 } : c
       )
       setConversations(sortConversations(patched))
@@ -154,10 +161,34 @@ export default function MessagesTab({
     if (!isAuthenticated || !userId) return
     const supabase = getSharedSupabaseClient()
     const channel = supabase
-      .channel("messages_tab_list_v3")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
-        fetchConversations()
-      })
+      .channel("messages_tab_list_v2")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const msg = payload.new as { sender_id?: string }
+          // Only refresh the list when someone else sent the message
+          if (msg.sender_id !== userId) {
+            fetchConversations()
+          } else {
+            // Own message: still refresh to update the preview text + timestamp, but
+            // fetchConversations will correctly return unread_count=0 for own messages
+            // because the API already uses neq("sender_id", user.id)
+            fetchConversations()
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "conversations" },
+        (payload) => {
+          const removed = payload.old as { id?: string }
+          if (!removed?.id) return
+          // Remove instantly from local state + record so future fetches skip it.
+          deletedIds.current.add(removed.id)
+          setConversations((prev) => prev.filter((c) => c.id !== removed.id))
+        }
+      )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [isAuthenticated, userId, fetchConversations])
@@ -190,12 +221,18 @@ export default function MessagesTab({
 
   async function deleteConversation() {
     if (!deleteTarget) return
+    const targetId = deleteTarget.id
     setDeleting(true)
     try {
-      const res = await fetch(`/api/messages/conversations/${deleteTarget.id}`, { method: "DELETE" })
+      const res = await fetch(`/api/messages/conversations/${targetId}`, { method: "DELETE" })
       if (res.ok) {
-        setConversations((prev) => prev.filter((c) => c.id !== deleteTarget.id))
-        openedIds.current.delete(deleteTarget.id)
+        // Mark as deleted so future fetches / realtime refreshes filter it out
+        deletedIds.current.add(targetId)
+        setConversations((prev) => prev.filter((c) => c.id !== targetId))
+        openedIds.current.delete(targetId)
+      } else {
+        // Surface the real error so we don't silently "succeed"
+        console.log("[v0] deleteConversation failed:", res.status, await res.text().catch(() => ""))
       }
     } finally {
       setDeleting(false)

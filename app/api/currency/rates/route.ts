@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server"
 import { STATIC_FALLBACK_RATES } from "@/lib/currency"
 
-// Cache for 1 hour via Next.js route cache
+// Cache the route for 1 hour
 export const revalidate = 3600
+
+// Manual overrides for currencies you want to force
+const MANUAL_RATES: Record<string, number> = {
+  // 1 USD = 40.00 ZiG
+  ZWL: 40.0, // If your frontend still uses "ZWL"
+  ZIG: 40.0, // If your frontend uses the newer "ZIG" code
+}
 
 export async function GET() {
   try {
@@ -10,21 +17,46 @@ export async function GET() {
       next: { revalidate: 3600 },
     })
 
+    // If API fails, return fallback + manual overrides
     if (!res.ok) {
-      return NextResponse.json({ rates: STATIC_FALLBACK_RATES, source: "fallback" })
+      return NextResponse.json({
+        rates: {
+          USD: 1,
+          ...STATIC_FALLBACK_RATES,
+          ...MANUAL_RATES,
+        },
+        source: "fallback",
+      })
     }
 
     const data = await res.json()
 
-    // Merge live rates with static fallback for currencies Frankfurter doesn't cover
+    // Merge in this order:
+    // 1. Base USD
+    // 2. Static fallback rates
+    // 3. Live API rates
+    // 4. Manual overrides (always win)
     const merged: Record<string, number> = {
       USD: 1,
       ...STATIC_FALLBACK_RATES,
-      ...data.rates, // live rates override static fallbacks where available
+      ...data.rates,
+      ...MANUAL_RATES,
     }
 
-    return NextResponse.json({ rates: merged, source: "live", date: data.date })
+    return NextResponse.json({
+      rates: merged,
+      source: "live",
+      date: data.date,
+    })
   } catch {
-    return NextResponse.json({ rates: STATIC_FALLBACK_RATES, source: "fallback" })
+    // Network or parsing error
+    return NextResponse.json({
+      rates: {
+        USD: 1,
+        ...STATIC_FALLBACK_RATES,
+        ...MANUAL_RATES,
+      },
+      source: "fallback",
+    })
   }
-}
+        }

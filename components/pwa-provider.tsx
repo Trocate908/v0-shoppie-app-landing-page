@@ -67,23 +67,12 @@ export function PwaProvider({ children }: { children: ReactNode }) {
     }
     window.addEventListener("appinstalled", onAppInstalled)
 
-    // Register service worker only in production-like environments where
-    // /sw.js is actually served as JavaScript (not an HTML 404 page).
-    if ("serviceWorker" in navigator) {
-      // First do a lightweight HEAD check — if the server returns a non-JS
-      // content-type (e.g. the preview sandbox returning text/html for a
-      // missing static file), skip registration entirely to avoid the
-      // "unsupported MIME type" error.
-      fetch("/sw.js", { method: "HEAD" })
-        .then((res) => {
-          const ct = res.headers.get("content-type") ?? ""
-          if (!res.ok || !ct.includes("javascript")) return // not available here — skip silently
-          return navigator.serviceWorker.register("/sw.js", { scope: "/" })
-        })
-        .catch(() => {
-          // Network error or sw.js unavailable — ignore silently
-        })
-    }
+    // NOTE: We deliberately do NOT register /sw.js here any more. The
+    // OneSignal SDK registers /OneSignalSDKWorker.js at scope "/" and that
+    // worker now contains BOTH the OneSignal push-handler imports AND our
+    // PWA caching logic (see public/OneSignalSDKWorker.js). Having two
+    // service workers fighting for scope "/" was the cause of intermittent
+    // / lost notifications on Android Chrome.
 
     // Push notification support
     if ("PushManager" in window && "Notification" in window) {
