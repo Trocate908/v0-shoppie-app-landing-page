@@ -13,8 +13,9 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // OPTIMIZED: Single query with all necessary data
-  // Fetch conversations and their related data in one round trip
+  // Fetch conversations with their related data.
+  // Messages are ordered newest-first and capped at 200 per conversation
+  // so that unread counts are accurate without pulling unbounded history.
   const { data: conversations, error } = await supabase
     .from("conversations")
     .select(
@@ -36,6 +37,9 @@ export async function GET() {
     )
     .or(`buyer_id.eq.${user.id},vendor_id.eq.${user.id}`)
     .order("last_message_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false, foreignTable: "messages" })
+    .limit(100)
+    .limit(200, { foreignTable: "messages" })
 
   if (error) {
     console.error("[messages/conversations] Query error:", error)
