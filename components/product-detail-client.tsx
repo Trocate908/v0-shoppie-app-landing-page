@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ArrowLeft, Store, MapPin, Shield } from "lucide-react"
+import { ArrowLeft, Store, MapPin, Shield, ChevronRight } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AppFooter } from "@/components/app-footer"
@@ -14,6 +14,7 @@ import ProfileButton from "@/components/profile-button"
 import WhatsAppButton from "@/components/whatsapp-button"
 import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
+import FollowShopButton from "@/components/follow-shop-button"
 import { VerificationBadge } from "@/components/verification-badge"
 import ProductCarousel from "@/components/product-carousel"
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed"
@@ -164,8 +165,15 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
               <Card className="p-4">
                 <div className="space-y-3">
                   <h3 className="font-semibold text-foreground">Sold by</h3>
-                  <div className="flex items-center gap-2">
-                    <p className="text-lg font-medium text-primary">{product.vendor.shop_name}</p>
+
+                  {/* Shop name — tappable link to shop profile */}
+                  <Link
+                    href={`/shop/${product.vendor.id}`}
+                    className="flex items-center gap-1 group w-fit"
+                  >
+                    <p className="text-lg font-medium text-primary group-hover:underline">
+                      {product.vendor.shop_name}
+                    </p>
                     {product.vendor.is_verified && (
                       <VerificationBadge
                         isVerified={product.vendor.is_verified}
@@ -173,7 +181,8 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
                         showProtection
                       />
                     )}
-                  </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors ml-0.5" />
+                  </Link>
 
                   {/* Buyer Protection Notice for Verified Vendors */}
                   {product.vendor.is_verified && (
@@ -195,8 +204,17 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
                       </span>
                     </div>
                   )}
-                  {/* Message Seller button — available to all buyers */}
-                  <div className="pt-3">
+
+                  {/* Follow shop */}
+                  <FollowShopButton
+                    vendorId={product.vendor.id}
+                    shopName={product.vendor.shop_name}
+                    size="sm"
+                    className="pt-1"
+                  />
+
+                  {/* Message Seller button */}
+                  <div className="pt-1">
                     <MessageSellerButton
                       productId={product.id}
                       vendorId={product.vendor.user_id}
@@ -216,7 +234,8 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
                       />
                     </div>
                   )}
-                  {/* Share shop link — visible to all buyers */}
+
+                  {/* Share shop link */}
                   <div className="pt-2">
                     <ShareButton
                       type="shop"
@@ -241,12 +260,19 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
           {/* Related Products Section */}
           {relatedProducts.length > 0 && (
             <div className="mt-12">
-              <h2 className="mb-6 text-2xl font-bold text-foreground">More from {product.vendor.shop_name}</h2>
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-foreground">More from {product.vendor.shop_name}</h2>
+                <Link
+                  href={`/shop/${product.vendor.id}`}
+                  className="flex items-center gap-1 text-sm text-primary hover:underline"
+                >
+                  View all <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
               <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
                 {relatedProducts.map((relatedProduct) => (
                   <Link key={relatedProduct.id} href={`/product/${relatedProduct.id}`}>
                     <Card className="overflow-hidden transition-shadow hover:shadow-md">
-                      {/* Product Image/Carousel */}
                       <ProductCarousel
                         images={
                           relatedProduct.image_urls && relatedProduct.image_urls.length > 0
@@ -258,8 +284,6 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
                         productName={relatedProduct.name}
                         autoSlide={false}
                       />
-
-                      {/* Product Details */}
                       <div className="p-3">
                         <h3 className="mb-1 line-clamp-2 text-sm font-semibold text-foreground">
                           {relatedProduct.name}
