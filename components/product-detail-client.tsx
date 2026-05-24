@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ArrowLeft, Store, MapPin, Shield, ChevronRight } from "lucide-react"
+import { toSlug } from "@/lib/slug"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AppFooter } from "@/components/app-footer"
@@ -169,7 +170,7 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
 
                   {/* Shop name — tappable link to shop profile */}
                   <Link
-                    href={`/shop/${product.vendor.id}`}
+                    href={`/shop/${toSlug(product.vendor.shop_name)}`}
                     className="flex items-center gap-1 group w-fit"
                   >
                     <p className="text-lg font-medium text-primary group-hover:underline">
@@ -264,7 +265,7 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
               <div className="mb-6 flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-foreground">You may also like</h2>
                 <Link
-                  href={`/shop/${product.vendor.id}`}
+                  href={`/shop/${toSlug(product.vendor.shop_name)}`}
                   className="flex items-center gap-1 text-sm text-primary hover:underline"
                 >
                   View shop <ChevronRight className="h-3.5 w-3.5" />

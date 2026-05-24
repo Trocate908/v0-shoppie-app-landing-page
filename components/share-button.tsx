@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog"
 import { Share2, Copy, Check } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { toSlug } from "@/lib/slug"
 
 // Platform SVG icons
 function WhatsAppIcon() {
@@ -84,7 +85,7 @@ export default function ShareButton({
   const shareUrl =
     type === "product"
       ? `${origin}/product/${productId}`
-      : `${origin}/browse?shop=${vendorId}`
+      : `${origin}/shop/${shopName ? toSlug(shopName) : vendorId}`
 
   const shareTitle =
     type === "product"

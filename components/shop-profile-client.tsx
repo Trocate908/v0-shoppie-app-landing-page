@@ -1,15 +1,17 @@
 "use client"
 
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowLeft, MapPin, Store, Package, Users } from "lucide-react"
+import { ArrowLeft, MapPin, Store, Package, Users, QrCode } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { VerificationBadge } from "@/components/verification-badge"
 import FollowShopButton from "@/components/follow-shop-button"
 import ProductCarousel from "@/components/product-carousel"
 import FavoriteButton from "@/components/favorite-button"
+import ShopQRModal from "@/components/shop-qr-modal"
 
 interface Location {
   id: string
@@ -48,6 +50,7 @@ interface ShopProfileClientProps {
   products: Product[]
   followerCount: number
   isFollowing: boolean
+  slug: string
 }
 
 export default function ShopProfileClient({
@@ -55,8 +58,16 @@ export default function ShopProfileClient({
   products,
   followerCount,
   isFollowing,
+  slug,
 }: ShopProfileClientProps) {
   const router = useRouter()
+  const [qrOpen, setQrOpen] = useState(false)
+
+  const shopUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/shop/${slug}`
+      : `https://shoppieapp.co.zw/shop/${slug}`
+
   const isActivelyVerified =
     !!vendor.is_verified &&
     (!vendor.verification_expires_at ||
@@ -76,6 +87,15 @@ export default function ShopProfileClient({
             <Store className="h-5 w-5 text-primary" />
             <span className="font-bold text-foreground">ShoppieApp</span>
           </Link>
+
+          <Button
+            onClick={() => setQrOpen(true)}
+            className="gap-2 rounded-full bg-gradient-to-r from-pink-500 to-violet-600 text-white hover:from-pink-600 hover:to-violet-700 shadow-md"
+            size="sm"
+          >
+            <QrCode className="h-4 w-4" />
+            Share Shop
+          </Button>
         </div>
       </header>
 
@@ -239,6 +259,12 @@ export default function ShopProfileClient({
           )}
         </div>
       </main>
+      <ShopQRModal
+        open={qrOpen}
+        onClose={() => setQrOpen(false)}
+        shopUrl={shopUrl}
+        shopName={vendor.shop_name}
+      />
     </div>
   )
 }
