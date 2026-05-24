@@ -23,7 +23,14 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react", "@/components/ui"],
     serverActions: {
-      allowedOrigins: ["*.vusercontent.net"],
+      allowedOrigins: [
+        "*.vusercontent.net",
+        "*.replit.dev",
+        "*.picard.replit.dev",
+        "*.riker.replit.dev",
+        "*.spock.replit.dev",
+        "*.repl.co",
+      ],
     },
   },
   allowedDevOrigins: [
@@ -31,6 +38,7 @@ const nextConfig = {
     "*.dev-vm.vusercontent.net",
     "*.spock.replit.dev",
     "*.replit.dev",
+    "*.picard.replit.dev",
     "*.riker.replit.dev",
     "*.repl.co",
   ],

@@ -101,6 +101,8 @@ export default function MessagesTab({
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
+  // Single presence subscription for the whole list — NOT inside each row
+  const { isOnline, getLastSeen } = usePresence(userId)
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -395,6 +397,8 @@ export default function MessagesTab({
                       key={convo.id}
                       conversation={convo}
                       currentUserId={userId ?? ""}
+                      isOnline={isOnline}
+                      getLastSeen={getLastSeen}
                       onClick={() => openConversation(convo)}
                       onDelete={() => setDeleteTarget(convo)}
                     />
@@ -436,11 +440,15 @@ export default function MessagesTab({
 function ConversationItem({
   conversation,
   currentUserId,
+  isOnline,
+  getLastSeen,
   onClick,
   onDelete,
 }: {
   conversation: Conversation
   currentUserId: string
+  isOnline: (id: string | null | undefined) => boolean
+  getLastSeen: (id: string | null | undefined) => number | null
   onClick: () => void
   onDelete: () => void
 }) {
@@ -457,7 +465,6 @@ function ConversationItem({
   const colour    = avatarColour(shopName)
 
   const otherUserId = conversation.buyer_id === currentUserId ? conversation.vendor_id : conversation.buyer_id
-  const { isOnline, getLastSeen } = usePresence(currentUserId)
   const online = isOnline(otherUserId)
   const lastSeenText = formatLastSeen(getLastSeen(otherUserId))
 

@@ -13,7 +13,9 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // Fetch conversations the user is a participant of
+  // Fetch conversations with their related data.
+  // Messages are ordered newest-first and capped at 200 per conversation
+  // so that unread counts are accurate without pulling unbounded history.
   const { data: conversations, error } = await supabase
     .from("conversations")
     .select(
@@ -29,13 +31,18 @@ export async function GET() {
         name,
         image_url,
         price
-      )
+      ),
+      messages(id, content, sender_id, delivered, read, created_at)
     `
     )
     .or(`buyer_id.eq.${user.id},vendor_id.eq.${user.id}`)
     .order("last_message_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false, foreignTable: "messages" })
+    .limit(100)
+    .limit(200, { foreignTable: "messages" })
 
   if (error) {
+    console.error("[messages/conversations] Query error:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
@@ -43,7 +50,7 @@ export async function GET() {
     return NextResponse.json({ conversations: [] })
   }
 
-  // Collect all unique vendor_ids (auth user ids) to look up vendor profiles
+  // Collect all unique vendor_ids to look up vendor profiles
   const vendorIds = [...new Set(conversations.map((c) => c.vendor_id))]
 
   const { data: vendorRows } = await supabase
@@ -51,7 +58,7 @@ export async function GET() {
     .select("user_id, id, shop_name, profile_picture_url, is_verified, verification_expires_at")
     .in("user_id", vendorIds)
 
-  // Build a lookup map keyed by vendor.user_id
+  // Build vendor lookup map
   const vendorMap: Record<
     string,
     {
@@ -72,59 +79,63 @@ export async function GET() {
     }
   }
 
-  // Attach unread counts
-  const conversationIds = conversations.map((c) => c.id)
-  let unreadCounts: Record<string, number> = {}
+  // Collect undelivered message IDs and compute stats from the already-fetched messages
+  const undeliveredIds: string[] = []
+  const enriched = conversations.map((c) => {
+    const messages = (c.messages ?? []) as Array<{
+      id: string
+      content: string | null
+      sender_id: string
+      delivered: boolean
+      read: boolean
+      created_at: string
+    }>
 
-  const { data: unreadData } = await supabase
-    .from("messages")
-    .select("conversation_id, id, delivered")
-    .in("conversation_id", conversationIds)
-    .eq("read", false)
-    .eq("deleted", false)
-    .neq("sender_id", user.id)
+    // Count unread messages from other users
+    const unreadCount = messages.filter(
+      (m) => !m.read && m.sender_id !== user.id
+    ).length
 
-  // Mark undelivered messages as delivered — receiver is online (fetching conversations)
-  const undeliveredIds = (unreadData ?? [])
-    .filter((m) => !m.delivered)
-    .map((m) => m.id)
+    // Collect undelivered messages to batch update
+    messages.forEach((m) => {
+      if (!m.delivered && m.sender_id !== user.id) {
+        undeliveredIds.push(m.id)
+      }
+    })
 
+    // Get last message (most recent)
+    const lastMsg = messages.length > 0 ? messages[0] : null
+
+    return {
+      id: c.id,
+      product_id: c.product_id,
+      buyer_id: c.buyer_id,
+      vendor_id: c.vendor_id,
+      last_message_at: c.last_message_at,
+      created_at: c.created_at,
+      products: c.products,
+      vendors: vendorMap[c.vendor_id] ?? null,
+      unread_count: unreadCount,
+      is_buyer: c.buyer_id === user.id,
+      last_message: lastMsg
+        ? {
+            content: lastMsg.content,
+            sender_id: lastMsg.sender_id,
+          }
+        : null,
+    }
+  })
+
+  // Batch update delivered status if needed (single query)
   if (undeliveredIds.length > 0) {
     await supabase
       .from("messages")
       .update({ delivered: true })
       .in("id", undeliveredIds)
+      .then(({ error }) => {
+        if (error) console.error("[messages/conversations] Delivered update error:", error)
+      })
   }
-
-  for (const msg of unreadData ?? []) {
-    unreadCounts[msg.conversation_id] = (unreadCounts[msg.conversation_id] ?? 0) + 1
-  }
-
-  // Fetch last message preview per conversation
-  const { data: lastMessages } = await supabase
-    .from("messages")
-    .select("conversation_id, content, sender_id, created_at")
-    .in("conversation_id", conversationIds)
-    .eq("deleted", false)
-    .order("created_at", { ascending: false })
-
-  const lastMessageMap: Record<string, { content: string | null; sender_id: string }> = {}
-  for (const msg of lastMessages ?? []) {
-    if (!lastMessageMap[msg.conversation_id]) {
-      lastMessageMap[msg.conversation_id] = {
-        content: msg.content,
-        sender_id: msg.sender_id,
-      }
-    }
-  }
-
-  const enriched = conversations.map((c) => ({
-    ...c,
-    vendors: vendorMap[c.vendor_id] ?? null,
-    unread_count: unreadCounts[c.id] ?? 0,
-    is_buyer: c.buyer_id === user.id,
-    last_message: lastMessageMap[c.id] ?? null,
-  }))
 
   return NextResponse.json({ conversations: enriched })
 }

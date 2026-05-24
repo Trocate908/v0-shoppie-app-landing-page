@@ -53,6 +53,13 @@ import { usePresence, formatLastSeen } from "@/hooks/use-presence"
 import { VerificationBadge } from "@/components/verification-badge"
 import { EmojiPicker } from "@/components/emoji-picker"
 
+// Module-level singleton — one Supabase client reused across all effects
+let _chatSupabase: ReturnType<typeof createBrowserClient> | null = null
+function getChatClient() {
+  if (!_chatSupabase) _chatSupabase = createBrowserClient()
+  return _chatSupabase
+}
+
 interface Message {
   id: string
   conversation_id: string
@@ -148,9 +155,24 @@ export default function ChatWindow({
     fetchMessages()
   }, [fetchMessages])
 
-  // Scroll to bottom when messages load or new ones arrive
+  // On initial load: jump instantly to bottom (no animation = no layout thrash)
   useEffect(() => {
     if (!loading) {
+      bottomRef.current?.scrollIntoView({ behavior: "instant" })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
+
+  // For new messages arriving after load: only smooth-scroll if near bottom
+  const prevMsgCountRef = useRef(0)
+  useEffect(() => {
+    const prevCount = prevMsgCountRef.current
+    prevMsgCountRef.current = messages.length
+    if (loading || messages.length <= prevCount) return
+    const el = scrollContainerRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (distanceFromBottom < 300) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }
   }, [messages, loading])
@@ -165,7 +187,7 @@ export default function ChatWindow({
   useEffect(() => {
     function handleVisibility() {
       if (typeof document === "undefined" || document.hidden) return
-      const supabase = createBrowserClient()
+      const supabase = getChatClient()
       supabase
         .from("messages")
         .update({ delivered: true, read: true })
@@ -193,7 +215,7 @@ export default function ChatWindow({
 
   // Realtime subscription — listen for changes in this conversation's messages
   useEffect(() => {
-    const supabase = createBrowserClient()
+    const supabase = getChatClient()
 
     const channel = supabase
       .channel(`chat:${conversation.id}`)
@@ -262,7 +284,7 @@ export default function ChatWindow({
 
   async function uploadImage(file: File): Promise<string | null> {
     try {
-      const supabase = createBrowserClient()
+      const supabase = getChatClient()
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg"
       const path = `${currentUserId}/${conversation.id}/${Date.now()}.${ext}`
       const { error } = await supabase.storage
