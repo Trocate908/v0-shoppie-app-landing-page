@@ -2,7 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { useTheme } from "@/components/theme-provider"
-import { Moon, Sun, LogOut, Info, FileText, Phone, MapPin, Heart, ChevronRight, Store, Plus, RefreshCw, Check, Trash2, Wrench, Bug } from "lucide-react"
+import {
+  Moon, Sun, LogOut, Info, FileText, Phone, MapPin, Heart,
+  ChevronRight, Store, Plus, RefreshCw, Check, Trash2, Wrench,
+  Bug, Palette, ShieldCheck, Bell, Package,
+} from "lucide-react"
 import { isDevModeEnabled, setDevModeEnabled, subscribeToDevMode } from "@/lib/dev-mode"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
@@ -11,8 +15,73 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
-import { cn } from "@/lib/utils"
 import { getSavedAccounts, removeAccount, setActiveAccountId, type SavedAccount } from "@/lib/account-switcher"
+
+// Row item used in grouped menu lists
+function MenuItem({
+  icon,
+  iconBg,
+  label,
+  sublabel,
+  href,
+  onClick,
+  right,
+  danger,
+}: {
+  icon: React.ReactNode
+  iconBg: string
+  label: string
+  sublabel?: string
+  href?: string
+  onClick?: () => void
+  right?: React.ReactNode
+  danger?: boolean
+}) {
+  const inner = (
+    <div
+      className={[
+        "flex w-full items-center gap-3 px-4 py-3.5 transition-colors",
+        danger ? "hover:bg-destructive/5" : "hover:bg-muted/50",
+        (href || onClick) ? "cursor-pointer" : "",
+      ].join(" ")}
+      onClick={onClick}
+    >
+      <span className={["flex h-8 w-8 shrink-0 items-center justify-center rounded-xl", iconBg].join(" ")}>
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={["text-sm font-medium", danger ? "text-destructive" : "text-foreground"].join(" ")}>
+          {label}
+        </p>
+        {sublabel && <p className="text-xs text-muted-foreground mt-0.5">{sublabel}</p>}
+      </div>
+      {right ?? (
+        href || onClick ? (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+        ) : null
+      )}
+    </div>
+  )
+
+  if (href) return <Link href={href} className="block">{inner}</Link>
+  return inner
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+      {children}
+    </p>
+  )
+}
+
+function MenuGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border bg-card divide-y divide-border shadow-sm">
+      {children}
+    </div>
+  )
+}
 
 export default function SettingsTab() {
   const { theme, setTheme } = useTheme()
@@ -51,9 +120,7 @@ export default function SettingsTab() {
           })
       }
     })
-    return () => {
-      unsubDev()
-    }
+    return () => { unsubDev() }
   }, [])
 
   const isDark = theme === "dark"
@@ -107,155 +174,165 @@ export default function SettingsTab() {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-4rem)] flex-col bg-background pb-20">
+    <div className="flex min-h-[calc(100dvh-4rem)] flex-col bg-background pb-24">
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
         <div className="flex items-center gap-3 px-4 py-4">
-          <Image src="/logo.png" alt="ShoppieApp" width={28} height={28} className="h-7 w-7" />
-          <h1 className="text-lg font-semibold text-foreground">Settings</h1>
+          <Image src="/logo.png" alt="ShoppieApp" width={28} height={28} className="h-7 w-7 rounded-lg" />
+          <h1 className="text-lg font-bold text-foreground">Settings</h1>
         </div>
       </header>
 
-      <div className="flex-1 space-y-1 px-4 py-4">
-        {/* Account Section */}
-        {isLoggedIn ? (
-          <section className="mb-2">
-            <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Accounts</p>
-            <div className="overflow-hidden rounded-xl border border-border bg-card divide-y divide-border">
-              {/* All saved accounts — shown even if only one */}
-              {savedAccounts.length > 0 ? (
-                savedAccounts.map((account) => {
-                  const isActive = account.userId === currentUserId
-                  const isSwitching = switchingTo === account.userId
-                  return (
-                    <button
-                      key={account.userId}
-                      onClick={() => handleSwitchAccount(account)}
-                      disabled={isSwitching || isActive}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-default"
-                    >
-                      <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full border border-border bg-muted">
-                        {account.profilePictureUrl ? (
-                          <Image src={account.profilePictureUrl} alt={account.shopName} fill className="object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center">
-                            <Store className="h-4 w-4 text-primary" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">{account.shopName}</p>
-                        <p className="truncate text-xs text-muted-foreground">{account.email}</p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {isActive && (
-                          <span className="flex items-center gap-1 text-xs font-semibold text-primary">
-                            <Check className="h-3.5 w-3.5" /> Active
-                          </span>
-                        )}
-                        {isSwitching && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
-                        {!isActive && !isSwitching && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                        {!isActive && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRemoveAccount(account.userId) }}
-                            className="rounded p-1 text-muted-foreground hover:text-destructive transition-colors"
-                            aria-label="Remove account"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </button>
-                  )
-                })
+      <div className="flex-1 space-y-5 px-4 py-5">
+
+        {/* ── Vendor profile card (logged in) ── */}
+        {isLoggedIn && (
+          <div
+            className="flex items-center gap-4 rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 px-4 py-4 cursor-pointer"
+            onClick={() => router.push("/vendor/dashboard")}
+          >
+            <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-2xl border-2 border-primary/20 bg-muted shadow-sm">
+              {profilePictureUrl ? (
+                <Image src={profilePictureUrl} alt={vendorName ?? "Shop"} fill className="object-cover" sizes="56px" />
               ) : (
-                /* Fallback: current session not yet saved — show a placeholder row */
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted">
-                    <Store className="h-4 w-4 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{vendorName ?? "Your account"}</p>
-                    <p className="truncate text-xs text-muted-foreground">Currently signed in</p>
-                  </div>
-                  <span className="flex items-center gap-1 text-xs font-semibold text-primary">
-                    <Check className="h-3.5 w-3.5" /> Active
-                  </span>
+                <div className="flex h-full w-full items-center justify-center bg-primary/10">
+                  <Store className="h-6 w-6 text-primary" />
                 </div>
               )}
-
-              {/* Add another account — always visible when logged in */}
-              <button
-                type="button"
-                onClick={() => {
-                  window.location.href = "/vendor/login?add_account=1"
-                }}
-                className="flex w-full items-center gap-3 px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-primary cursor-pointer"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border">
-                  <Plus className="h-4 w-4" />
-                </div>
-                <span className="font-medium">Add another account</span>
-              </button>
-
-              {/* Dashboard & Logout for current */}
-              <button
-                onClick={() => router.push("/vendor/dashboard")}
-                className="flex w-full items-center justify-between px-4 py-3 text-sm text-foreground hover:bg-muted/50 transition-colors"
-              >
-                <span>Go to Dashboard</span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </button>
-              <button
-                onClick={handleLogout}
-                disabled={isLoggingOut}
-                className="flex w-full items-center justify-between px-4 py-3 text-sm text-destructive hover:bg-destructive/5 transition-colors"
-              >
-                <span className="flex items-center gap-2">
-                  <LogOut className="h-4 w-4" />
-                  {isLoggingOut ? "Signing out..." : "Sign Out"}
-                </span>
-                <ChevronRight className="h-4 w-4 opacity-40" />
-              </button>
             </div>
-          </section>
-        ) : (
-          <section className="mb-2">
-            <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Account</p>
-            <div className="overflow-hidden rounded-xl border border-border bg-card">
-              <button
-                onClick={() => router.push("/vendor/login")}
-                className="flex w-full items-center justify-between px-4 py-3 text-sm text-foreground hover:bg-muted/50 transition-colors"
-              >
-                <span>Vendor Login</span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </button>
-              <div className="border-t border-border">
-                <button
-                  onClick={() => router.push("/vendor/signup")}
-                  className="flex w-full items-center justify-between px-4 py-3 text-sm text-foreground hover:bg-muted/50 transition-colors"
-                >
-                  <span>Register as Vendor</span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </button>
-              </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-foreground truncate">{vendorName ?? "Your Shop"}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Tap to open Dashboard</p>
             </div>
-          </section>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+              <ChevronRight className="h-4 w-4 text-primary" />
+            </div>
+          </div>
         )}
 
-        {/* Appearance */}
-        <section className="mb-2">
-          <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Appearance</p>
-          <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-3">
-                {mounted && isDark ? (
-                  <Moon className="h-4 w-4 text-muted-foreground" />
+        {/* ── Accounts section ── */}
+        <section>
+          <SectionLabel>Accounts</SectionLabel>
+          <MenuGroup>
+            {isLoggedIn ? (
+              <>
+                {savedAccounts.length > 0 ? (
+                  savedAccounts.map((account) => {
+                    const isActive = account.userId === currentUserId
+                    const isSwitching = switchingTo === account.userId
+                    return (
+                      <button
+                        key={account.userId}
+                        onClick={() => handleSwitchAccount(account)}
+                        disabled={isSwitching || isActive}
+                        className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/50 disabled:cursor-default"
+                      >
+                        <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-xl border border-border bg-muted">
+                          {account.profilePictureUrl ? (
+                            <Image src={account.profilePictureUrl} alt={account.shopName} fill className="object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center">
+                              <Store className="h-4 w-4 text-primary" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground">{account.shopName}</p>
+                          <p className="truncate text-xs text-muted-foreground">{account.email}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {isActive && (
+                            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                              <Check className="h-3 w-3" /> Active
+                            </span>
+                          )}
+                          {isSwitching && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
+                          {!isActive && !isSwitching && <ChevronRight className="h-4 w-4 text-muted-foreground/60" />}
+                          {!isActive && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRemoveAccount(account.userId) }}
+                              className="rounded-lg p-1 text-muted-foreground hover:text-destructive transition-colors"
+                              aria-label="Remove account"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })
                 ) : (
-                  <Sun className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex items-center gap-3 px-4 py-3.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
+                      <Store className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{vendorName ?? "Your account"}</p>
+                      <p className="truncate text-xs text-muted-foreground">Currently signed in</p>
+                    </div>
+                    <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                      <Check className="h-3 w-3" /> Active
+                    </span>
+                  </div>
                 )}
-                <span className="text-sm text-foreground">Dark Mode</span>
-              </div>
+
+                {/* Add account */}
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = "/vendor/login?add_account=1" }}
+                  className="flex w-full items-center gap-3 px-4 py-3.5 text-sm transition-colors hover:bg-muted/50 cursor-pointer"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-border text-muted-foreground">
+                    <Plus className="h-4 w-4" />
+                  </div>
+                  <span className="font-medium text-muted-foreground">Add another account</span>
+                </button>
+
+                {/* Sign out */}
+                <button
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  className="flex w-full items-center gap-3 px-4 py-3.5 text-sm transition-colors hover:bg-destructive/5 cursor-pointer"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/30">
+                    <LogOut className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  </span>
+                  <span className="font-medium text-destructive flex-1 text-left">
+                    {isLoggingOut ? "Signing out…" : "Sign Out"}
+                  </span>
+                </button>
+              </>
+            ) : (
+              <>
+                <MenuItem
+                  icon={<Store className="h-4 w-4 text-white" />}
+                  iconBg="bg-primary"
+                  label="Vendor Login"
+                  onClick={() => router.push("/vendor/login")}
+                />
+                <MenuItem
+                  icon={<Plus className="h-4 w-4 text-white" />}
+                  iconBg="bg-emerald-500"
+                  label="Register as Vendor"
+                  sublabel="Start selling on ShoppieApp"
+                  onClick={() => router.push("/vendor/signup")}
+                />
+              </>
+            )}
+          </MenuGroup>
+        </section>
+
+        {/* ── Appearance ── */}
+        <section>
+          <SectionLabel>Appearance</SectionLabel>
+          <MenuGroup>
+            <div className="flex items-center gap-3 px-4 py-3.5">
+              <span className={["flex h-8 w-8 shrink-0 items-center justify-center rounded-xl", isDark ? "bg-slate-700" : "bg-amber-100"].join(" ")}>
+                {mounted && isDark
+                  ? <Moon className="h-4 w-4 text-slate-200" />
+                  : <Sun className="h-4 w-4 text-amber-500" />}
+              </span>
+              <span className="flex-1 text-sm font-medium text-foreground">Dark Mode</span>
               {mounted && (
                 <Switch
                   checked={isDark}
@@ -264,74 +341,75 @@ export default function SettingsTab() {
                 />
               )}
             </div>
-
-          </div>
+          </MenuGroup>
         </section>
 
-        {/* Quick Links */}
-        <section className="mb-2">
-          <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Explore</p>
-          <div className="overflow-hidden rounded-xl border border-border bg-card divide-y divide-border">
-            <Link href="/wishlist" className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors">
-              <span className="flex items-center gap-3 text-sm text-foreground">
-                <Heart className="h-4 w-4 text-muted-foreground" />
-                Wishlist
-              </span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-            <Link href="/locations" className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors">
-              <span className="flex items-center gap-3 text-sm text-foreground">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                Browse by Location
-              </span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-          </div>
+        {/* ── Explore ── */}
+        <section>
+          <SectionLabel>Explore</SectionLabel>
+          <MenuGroup>
+            <MenuItem
+              icon={<Heart className="h-4 w-4 text-white" />}
+              iconBg="bg-rose-500"
+              label="Wishlist"
+              sublabel="Your saved products"
+              href="/wishlist"
+            />
+            <MenuItem
+              icon={<MapPin className="h-4 w-4 text-white" />}
+              iconBg="bg-sky-500"
+              label="Browse by Location"
+              sublabel="Find shops near you"
+              href="/locations"
+            />
+            <MenuItem
+              icon={<Package className="h-4 w-4 text-white" />}
+              iconBg="bg-violet-500"
+              label="All Products"
+              sublabel="Browse the marketplace"
+              href="/"
+            />
+          </MenuGroup>
         </section>
 
-        {/* Info Links */}
-        <section className="mb-2">
-          <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">About</p>
-          <div className="overflow-hidden rounded-xl border border-border bg-card divide-y divide-border">
-            <Link href="/about" className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors">
-              <span className="flex items-center gap-3 text-sm text-foreground">
-                <Info className="h-4 w-4 text-muted-foreground" />
-                About ShoppieApp
-              </span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-            <Link href="/contact" className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors">
-              <span className="flex items-center gap-3 text-sm text-foreground">
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                Contact Us
-              </span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-            <Link href="/terms" className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors">
-              <span className="flex items-center gap-3 text-sm text-foreground">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                Terms & Conditions
-              </span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-          </div>
+        {/* ── About ── */}
+        <section>
+          <SectionLabel>About</SectionLabel>
+          <MenuGroup>
+            <MenuItem
+              icon={<Info className="h-4 w-4 text-white" />}
+              iconBg="bg-blue-500"
+              label="About ShoppieApp"
+              sublabel="Learn more about us"
+              href="/about"
+            />
+            <MenuItem
+              icon={<Phone className="h-4 w-4 text-white" />}
+              iconBg="bg-green-500"
+              label="Contact Us"
+              sublabel="Get in touch"
+              href="/contact"
+            />
+            <MenuItem
+              icon={<FileText className="h-4 w-4 text-white" />}
+              iconBg="bg-orange-400"
+              label="Terms & Conditions"
+              href="/terms"
+            />
+          </MenuGroup>
         </section>
 
-        {/* Developer Options — sits below the About / Contact us section. */}
-        <section className="mb-2">
-          <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Developer Options
-          </p>
-          <div className="overflow-hidden rounded-xl border border-border bg-card divide-y divide-border">
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-3">
-                <Wrench className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="text-sm text-foreground">Enable Developer Options</p>
-                  <p className="text-xs text-muted-foreground">
-                    Unlocks diagnostics for advanced troubleshooting.
-                  </p>
-                </div>
+        {/* ── Developer Options ── */}
+        <section>
+          <SectionLabel>Developer</SectionLabel>
+          <MenuGroup>
+            <div className="flex items-center gap-3 px-4 py-3.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-500">
+                <Wrench className="h-4 w-4 text-white" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">Developer Options</p>
+                <p className="text-xs text-muted-foreground">Unlocks diagnostics</p>
               </div>
               {mounted && (
                 <Switch
@@ -344,26 +422,27 @@ export default function SettingsTab() {
                 />
               )}
             </div>
-
             {devMode && (
-              <Link
+              <MenuItem
+                icon={<Bug className="h-4 w-4 text-white" />}
+                iconBg="bg-red-500"
+                label="Notification Diagnostics"
                 href="/notifications/debug"
-                className="flex items-center justify-between px-4 py-3 text-sm text-foreground hover:bg-muted/50 transition-colors"
-              >
-                <span className="flex items-center gap-3">
-                  <Bug className="h-4 w-4 text-muted-foreground" />
-                  Notification Diagnostics
-                </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </Link>
+              />
             )}
-          </div>
+          </MenuGroup>
         </section>
 
-        {/* Footer note */}
-        <p className="px-1 pt-4 text-center text-xs text-muted-foreground">
-          ShoppieApp &copy; {new Date().getFullYear()} &mdash; Connecting local vendors
-        </p>
+        {/* Footer */}
+        <div className="flex flex-col items-center gap-1 pt-2 pb-4">
+          <div className="flex items-center gap-2">
+            <Image src="/logo.png" alt="ShoppieApp" width={20} height={20} className="h-5 w-5 opacity-60" />
+            <p className="text-xs text-muted-foreground font-medium">ShoppieApp</p>
+          </div>
+          <p className="text-[11px] text-muted-foreground/60">
+            &copy; {new Date().getFullYear()} · Connecting local vendors in Zimbabwe
+          </p>
+        </div>
       </div>
     </div>
   )
