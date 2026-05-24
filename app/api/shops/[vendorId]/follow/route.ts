@@ -1,5 +1,6 @@
 import { createServerClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { dispatchNotification } from "@/lib/notifications/dispatch"
 import { NextResponse } from "next/server"
 
 export const runtime = "nodejs"
@@ -59,6 +60,45 @@ export async function POST(_req: Request, { params }: Params) {
     .from("shop_follows")
     .select("id", { count: "exact", head: true })
     .eq("vendor_id", vendorId)
+
+  // Notify the shop owner in the background — don't block the response
+  Promise.all([
+    // Get the vendor's user_id and shop name
+    adminSupabase
+      .from("vendors")
+      .select("user_id, shop_name")
+      .eq("id", vendorId)
+      .single(),
+    // Get the follower's display name
+    adminSupabase
+      .from("profiles")
+      .select("full_name, username")
+      .eq("id", user.id)
+      .maybeSingle(),
+  ]).then(([{ data: vendor }, { data: profile }]) => {
+    if (!vendor?.user_id) return
+
+    const followerName =
+      profile?.full_name ??
+      profile?.username ??
+      user.email?.split("@")[0] ??
+      "Someone"
+
+    const newCount = count ?? 0
+    const followerLabel = newCount === 1 ? "1 follower" : `${newCount.toLocaleString()} followers`
+
+    return dispatchNotification(
+      { userId: vendor.user_id },
+      {
+        type: "custom",
+        refId: `shop-follow-${vendorId}-${user.id}`,
+        dedupeWindowHours: 0,
+        title: `${followerName} followed your shop!`,
+        body: `You now have ${followerLabel}. Keep posting great products!`,
+        link: `/?tab=settings`,
+      },
+    )
+  }).catch((err) => console.error("[shop-follow] vendor notify failed:", err))
 
   return NextResponse.json({ isFollowing: true, followerCount: count ?? 0 })
 }

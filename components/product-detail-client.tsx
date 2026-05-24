@@ -43,6 +43,7 @@ interface Product {
   name: string
   description: string | null
   price: number
+  category?: string | null
   image_url: string | null
   image_urls?: string[] | null
   in_stock: boolean
@@ -261,12 +262,12 @@ export default function ProductDetailClient({ product, relatedProducts }: Produc
           {relatedProducts.length > 0 && (
             <div className="mt-12">
               <div className="mb-6 flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-foreground">More from {product.vendor.shop_name}</h2>
+                <h2 className="text-2xl font-bold text-foreground">You may also like</h2>
                 <Link
                   href={`/shop/${product.vendor.id}`}
                   className="flex items-center gap-1 text-sm text-primary hover:underline"
                 >
-                  View all <ChevronRight className="h-3.5 w-3.5" />
+                  View shop <ChevronRight className="h-3.5 w-3.5" />
                 </Link>
               </div>
               <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
