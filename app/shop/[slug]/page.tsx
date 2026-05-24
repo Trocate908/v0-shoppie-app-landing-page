@@ -10,105 +10,191 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
-async function resolveVendorId(slug: string): Promise<{ id: string; redirectToSlug?: string } | null> {
+async function resolveVendor(param: string) {
   const admin = createAdminClient()
 
-  if (isUUID(slug)) {
+  // Legacy UUID URL
+  if (isUUID(param)) {
     const { data } = await admin
       .from("vendors")
-      .select("id, shop_name")
-      .eq("id", slug)
+      .select(`
+        id,
+        slug,
+        user_id,
+        shop_name,
+        shop_description,
+        profile_picture_url,
+        is_open,
+        is_verified,
+        verification_expires_at,
+        whatsapp_number,
+        location:locations(
+          id,
+          country,
+          city,
+          market_name
+        )
+      `)
+      .eq("id", param)
       .single()
-    if (!data) return null
-    return { id: data.id, redirectToSlug: toSlug(data.shop_name) }
+
+    return data ?? null
   }
 
-  const { data: vendors } = await admin.from("vendors").select("id, shop_name")
-  if (!vendors || vendors.length === 0) return null
-  const match = vendors.find((v) => toSlug(v.shop_name) === slug)
-  if (!match) return null
-  return { id: match.id }
+  // Preferred short slug URL
+  const { data } = await admin
+    .from("vendors")
+    .select(`
+      id,
+      slug,
+      user_id,
+      shop_name,
+      shop_description,
+      profile_picture_url,
+      is_open,
+      is_verified,
+      verification_expires_at,
+      whatsapp_number,
+      location:locations(
+        id,
+        country,
+        city,
+        market_name
+      )
+    `)
+    .eq("slug", param)
+    .single()
+
+  // Backwards compatibility for vendors whose slug has not yet
+  // been populated in the database.
+  if (!data) {
+    const { data: vendors } = await admin
+      .from("vendors")
+      .select(`
+        id,
+        slug,
+        user_id,
+        shop_name,
+        shop_description,
+        profile_picture_url,
+        is_open,
+        is_verified,
+        verification_expires_at,
+        whatsapp_number,
+        location:locations(
+          id,
+          country,
+          city,
+          market_name
+        )
+      `)
+
+    const match = vendors?.find(
+      (vendor) => toSlug(vendor.shop_name) === param
+    )
+
+    return match ?? null
+  }
+
+  return data
 }
 
 export async function generateMetadata({ params }: Props) {
   const { slug } = await params
-  const resolved = await resolveVendorId(slug)
-  if (!resolved) return { title: "Shop not found — ShoppieApp" }
+  const vendor = await resolveVendor(slug)
 
-  const admin = createAdminClient()
-  const { data } = await admin
-    .from("vendors")
-    .select("shop_name, shop_description, location:locations(city)")
-    .eq("id", resolved.id)
-    .single()
+  if (!vendor) {
+    return {
+      title: "Shop not found — ShoppieApp",
+    }
+  }
 
-  if (!data) return { title: "Shop — ShoppieApp" }
-  const city = (data.location as { city: string } | null)?.city
+  const city = (
+    vendor.location as { city: string } | null
+  )?.city
+
   return {
-    title: `${data.shop_name}${city ? ` · ${city}` : ""} — ShoppieApp`,
-    description: data.shop_description ?? `Browse all products from ${data.shop_name} on ShoppieApp`,
+    title: `${vendor.shop_name}${city ? ` · ${city}` : ""} — ShoppieApp`,
+    description:
+      vendor.shop_description ??
+      `Browse all products from ${vendor.shop_name} on ShoppieApp`,
+    alternates: {
+      canonical: `https://shoppieapp.co.zw/shop/${vendor.slug ?? toSlug(vendor.shop_name)}`,
+    },
   }
 }
 
 export default async function ShopPage({ params }: Props) {
   const { slug } = await params
-  const resolved = await resolveVendorId(slug)
+  const vendor = await resolveVendor(slug)
 
-  if (!resolved) notFound()
-  if (resolved.redirectToSlug) redirect(`/shop/${resolved.redirectToSlug}`)
+  if (!vendor) {
+    notFound()
+  }
 
-  const vendorId = resolved.id
+  // If someone uses an old UUID URL, redirect to the clean slug URL.
+  if (isUUID(slug)) {
+    const cleanSlug = vendor.slug ?? toSlug(vendor.shop_name)
+
+    if (cleanSlug && cleanSlug !== slug) {
+      redirect(`/shop/${cleanSlug}`)
+    }
+  }
+
   const admin = createAdminClient()
   const supabase = await createServerClient()
 
   const [
-    { data: vendor, error: vendorErr },
     { data: products },
     { count: followerCount },
   ] = await Promise.all([
     admin
-      .from("vendors")
-      .select(`
-        id, user_id, shop_name, shop_description, profile_picture_url,
-        is_open, is_verified, verification_expires_at, whatsapp_number,
-        location:locations(id, country, city, market_name)
-      `)
-      .eq("id", vendorId)
-      .single(),
-
-    admin
       .from("products")
-      .select("id, name, description, price, category, image_url, image_urls, in_stock, created_at")
-      .eq("vendor_id", vendorId)
+      .select(
+        "id, name, description, price, category, image_url, image_urls, in_stock, created_at"
+      )
+      .eq("vendor_id", vendor.id)
       .order("created_at", { ascending: false }),
 
     admin
       .from("shop_follows")
       .select("id", { count: "exact", head: true })
-      .eq("vendor_id", vendorId),
+      .eq("vendor_id", vendor.id),
   ])
 
-  if (vendorErr || !vendor) notFound()
-
+  // Check whether the current user follows this shop.
   let isFollowing = false
-  const { data: { user } } = await supabase.auth.getUser()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
   if (user) {
     const { data: follow } = await admin
       .from("shop_follows")
       .select("id")
-      .eq("vendor_id", vendorId)
+      .eq("vendor_id", vendor.id)
       .eq("user_id", user.id)
       .maybeSingle()
+
     isFollowing = !!follow
   }
 
+  const cleanSlug = vendor.slug ?? toSlug(vendor.shop_name)
+
   return (
     <ShopProfileClient
-      vendor={vendor as Parameters<typeof ShopProfileClient>[0]["vendor"]}
-      products={(products ?? []) as Parameters<typeof ShopProfileClient>[0]["products"]}
+      vendor={
+        vendor as Parameters<typeof ShopProfileClient>[0]["vendor"]
+      }
+      products={
+        (products ?? []) as Parameters<
+          typeof ShopProfileClient
+        >[0]["products"]
+      }
       followerCount={followerCount ?? 0}
       isFollowing={isFollowing}
-      slug={slug}
+      slug={cleanSlug}
     />
   )
 }
