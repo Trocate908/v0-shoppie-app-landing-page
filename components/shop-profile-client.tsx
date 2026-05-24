@@ -4,13 +4,14 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowLeft, MapPin, Store, Package, Users, QrCode } from "lucide-react"
+import { ArrowLeft, MapPin, Store, Package, Users, QrCode, ShoppingBag } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { VerificationBadge } from "@/components/verification-badge"
 import FollowShopButton from "@/components/follow-shop-button"
 import ProductCarousel from "@/components/product-carousel"
 import FavoriteButton from "@/components/favorite-button"
+import MessageSellerButton from "@/components/message-seller-button"
 import ShopQRModal from "@/components/shop-qr-modal"
 
 interface Location {
@@ -74,6 +75,8 @@ export default function ShopProfileClient({
       new Date(vendor.verification_expires_at).getTime() >= Date.now())
 
   const location = vendor.location
+  // First product used to seed a conversation (conversations require a product_id)
+  const firstProductId = products[0]?.id
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -170,8 +173,8 @@ export default function ShopProfileClient({
             </p>
           )}
 
-          {/* Follow button */}
-          <div className="mt-4">
+          {/* Action buttons */}
+          <div className="mt-4 flex flex-wrap gap-2">
             <FollowShopButton
               vendorId={vendor.id}
               shopName={vendor.shop_name}
@@ -179,6 +182,15 @@ export default function ShopProfileClient({
               initialFollowerCount={followerCount}
               showCount={false}
             />
+            {firstProductId && (
+              <MessageSellerButton
+                productId={firstProductId}
+                vendorId={vendor.user_id}
+                variant="outline"
+                size="sm"
+                showLabel
+              />
+            )}
           </div>
         </div>
       </div>
@@ -225,7 +237,7 @@ export default function ShopProfileClient({
                         />
                       </div>
 
-                      {/* Badges */}
+                      {/* Out of stock badge */}
                       <div className="absolute left-1.5 top-1.5 flex flex-col items-start gap-1">
                         {!product.in_stock && (
                           <span className="rounded-sm bg-black/75 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
@@ -257,8 +269,33 @@ export default function ShopProfileClient({
               ))}
             </div>
           )}
+
+          {/* End-of-list banner */}
+          {products.length > 0 && (
+            <div className="mt-10 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border bg-muted/40 px-6 py-7 text-center">
+              <ShoppingBag className="h-8 w-8 text-muted-foreground/40" />
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  No more products in this shop
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground/70">
+                  Want to discover more? Browse all products on ShoppieApp.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 rounded-full border-primary/40 text-primary hover:bg-primary/5"
+                onClick={() => router.push("/")}
+              >
+                <ShoppingBag className="h-3.5 w-3.5" />
+                View Other Products
+              </Button>
+            </div>
+          )}
         </div>
       </main>
+
       <ShopQRModal
         open={qrOpen}
         onClose={() => setQrOpen(false)}

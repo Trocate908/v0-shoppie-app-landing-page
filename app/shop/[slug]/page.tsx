@@ -24,7 +24,7 @@ async function resolveVendorId(slug: string): Promise<{ id: string; redirectToSl
   }
 
   const { data: vendors } = await admin.from("vendors").select("id, shop_name")
-  if (!vendors) return null
+  if (!vendors || vendors.length === 0) return null
   const match = vendors.find((v) => toSlug(v.shop_name) === slug)
   if (!match) return null
   return { id: match.id }
