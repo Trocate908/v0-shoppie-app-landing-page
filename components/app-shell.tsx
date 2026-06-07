@@ -2,14 +2,16 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+import dynamic from "next/dynamic"
 import BottomNav, { type NavTab } from "@/components/bottom-nav"
 import BrowseProductsClient from "@/components/browse-products-client"
-import SettingsTab from "@/components/settings-tab"
-import HomeTab from "@/components/home-tab"
-import MessagesTab from "@/components/messages-tab"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { useNotifications } from "@/hooks/use-notifications"
 import { useToast } from "@/hooks/use-toast"
+
+const HomeTab = dynamic(() => import("@/components/home-tab"), { ssr: false })
+const MessagesTab = dynamic(() => import("@/components/messages-tab"), { ssr: false })
+const SettingsTab = dynamic(() => import("@/components/settings-tab"), { ssr: false })
 
 interface Location {
   id: string
@@ -45,7 +47,6 @@ interface AppShellProps {
 
 const VALID_TABS: NavTab[] = ["store", "home", "messages", "settings"]
 
-// Single shared Supabase client — prevents multiple GoTrueClient instances
 let sharedSupabaseClient: ReturnType<typeof createBrowserClient> | null = null
 function getSupabaseClient() {
   if (!sharedSupabaseClient) {
@@ -66,23 +67,21 @@ export default function AppShell({ products, locations }: AppShellProps) {
 
   const [activeTab, setActiveTab] = useState<NavTab>(resolvedTab)
   const [openConversationId, setOpenConversationId] = useState<string | null>(cidParam)
-  // Start at 0 (not null) so the badge is stable from the very first render.
-  // The realtime subscription will update it once the fetch completes.
   const [unreadCount, setUnreadCount] = useState<number>(0)
   const [unreadReady, setUnreadReady] = useState(false)
-  // Tracks which conversation is currently open so we never double-count it
+  // Track which tabs have been visited so we keep them mounted after first load
+  const [mountedTabs, setMountedTabs] = useState<Set<NavTab>>(new Set([resolvedTab]))
+
   const openConversationIdRef = useRef<string | null>(null)
   const activeTabRef = useRef<NavTab>(resolvedTab)
   const currentUserIdRef = useRef<string | null>(null)
   const { notify } = useNotifications()
   const { toast } = useToast()
 
-  // Keep refs in sync
   useEffect(() => {
     activeTabRef.current = activeTab
   }, [activeTab])
 
-  // Fetch current user id once — initialise immediately, don't wait for UI
   useEffect(() => {
     const supabase = getSupabaseClient()
     supabase.auth.getUser().then(({ data }) => {
@@ -90,7 +89,13 @@ export default function AppShell({ products, locations }: AppShellProps) {
     })
   }, [])
 
-  // Fetch unread count from the conversations API
+  type CachedConv = {
+    id: string
+    is_buyer: boolean
+    vendors: { shop_name: string } | null
+  }
+  const conversationsCacheRef = useRef<Map<string, CachedConv>>(new Map())
+
   const fetchUnreadCount = useCallback(async () => {
     try {
       const res = await fetch("/api/messages/conversations")
@@ -99,35 +104,37 @@ export default function AppShell({ products, locations }: AppShellProps) {
         return
       }
       const data = await res.json()
-      const conversations: { id: string; unread_count: number }[] = data.conversations ?? []
-      // Conversations that are currently open should not count toward the badge
+      const conversations: (CachedConv & { unread_count: number })[] =
+        data.conversations ?? []
+      conversationsCacheRef.current = new Map(
+        conversations.map((c) => [c.id, { id: c.id, is_buyer: c.is_buyer, vendors: c.vendors }])
+      )
       const total = conversations.reduce((sum, c) => {
         if (c.id === openConversationIdRef.current) return sum
         return sum + (c.unread_count ?? 0)
       }, 0)
       setUnreadCount(total)
     } catch {
-      // Not logged in or network error — show 0, no badge
     } finally {
       setUnreadReady(true)
     }
   }, [])
 
-  // Keep activeTab in sync when URL search params change (e.g. after message-seller redirect)
   useEffect(() => {
     const tab = searchParams.get("tab") as NavTab | null
     const cid = searchParams.get("cid")
     if (tab && VALID_TABS.includes(tab)) {
       setActiveTab(tab)
+      setMountedTabs((prev) => new Set([...prev, tab]))
     }
     if (cid) {
       setOpenConversationId(cid)
     }
   }, [searchParams])
 
-  // When the user manually switches tabs
   function handleTabChange(tab: NavTab) {
     setActiveTab(tab)
+    setMountedTabs((prev) => new Set([...prev, tab]))
     if (tab !== "messages") {
       setOpenConversationId(null)
     }
@@ -139,14 +146,11 @@ export default function AppShell({ products, locations }: AppShellProps) {
     router.replace(url.pathname + url.search, { scroll: false })
   }
 
-  // Called by MessagesTab when a conversation is opened or closed
   function handleConversationChange(conversationId: string | null) {
     openConversationIdRef.current = conversationId
-    // Re-compute unread without the now-open conversation
     fetchUnreadCount()
   }
 
-  // Single realtime subscription for the whole app — no duplicate clients
   useEffect(() => {
     fetchUnreadCount()
 
@@ -161,13 +165,10 @@ export default function AppShell({ products, locations }: AppShellProps) {
           const isOwnMessage = msg.sender_id === currentUserIdRef.current
           const isOpenConversation = msg.conversation_id === openConversationIdRef.current
 
-          // Only bump the unread count for messages from others in conversations not currently open
           if (!isOwnMessage && !isOpenConversation) {
             fetchUnreadCount()
           }
 
-          // Notify when message is from someone else AND the user isn't
-          // already viewing this exact conversation
           const shouldNotify =
             !isOwnMessage &&
             (activeTabRef.current !== "messages" || !isOpenConversation)
@@ -175,24 +176,34 @@ export default function AppShell({ products, locations }: AppShellProps) {
           if (shouldNotify) {
             const openInApp = () => {
               setActiveTab("messages")
+              setMountedTabs((prev) => new Set([...prev, "messages"]))
               if (msg.conversation_id) {
                 setOpenConversationId(msg.conversation_id)
               }
             }
 
-            // Browser notification (shown when tab is hidden)
+            const convo = msg.conversation_id
+              ? conversationsCacheRef.current.get(msg.conversation_id)
+              : undefined
+            const senderLabel = convo
+              ? convo.is_buyer
+                ? convo.vendors?.shop_name ?? "Vendor"
+                : "Customer"
+              : "Someone"
+            const notifTitle = `New message from ${senderLabel}`
+            const notifBody = msg.content?.trim() || "Sent an image"
+
             notify({
-              title: "New message",
-              body: msg.content ?? "You have a new message",
+              title: notifTitle,
+              body: notifBody,
               tag: `msg-${msg.conversation_id}`,
               onClick: openInApp,
             })
 
-            // In-app toast (shown while app is visible)
             if (typeof document !== "undefined" && !document.hidden) {
               toast({
-                title: "New message",
-                description: msg.content ?? "You have a new message",
+                title: notifTitle,
+                description: notifBody,
               })
             }
           }
@@ -203,7 +214,6 @@ export default function AppShell({ products, locations }: AppShellProps) {
         { event: "UPDATE", schema: "public", table: "messages" },
         (payload) => {
           const msg = payload.new as { read?: boolean }
-          // When a message is marked read, recompute the badge
           if (msg.read === true) {
             fetchUnreadCount()
           }
@@ -218,26 +228,37 @@ export default function AppShell({ products, locations }: AppShellProps) {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
-      {/* Tab Content */}
       <div className="flex-1 pb-20">
-        {activeTab === "store" && (
+        {/* Store tab — always mounted, hidden when inactive */}
+        <div className={activeTab === "store" ? "" : "hidden"}>
           <BrowseProductsClient
             products={products}
             locations={locations}
             visitorCountry={null}
           />
+        </div>
+
+        {/* Other tabs — lazy-loaded on first visit, then kept mounted */}
+        {mountedTabs.has("home") && (
+          <div className={activeTab === "home" ? "" : "hidden"}>
+            <HomeTab onNavigate={setActiveTab} />
+          </div>
         )}
-        {activeTab === "home" && <HomeTab onNavigate={setActiveTab} />}
-        {activeTab === "messages" && (
-          <MessagesTab
-            initialConversationId={openConversationId}
-            onConversationChange={handleConversationChange}
-          />
+        {mountedTabs.has("messages") && (
+          <div className={activeTab === "messages" ? "" : "hidden"}>
+            <MessagesTab
+              initialConversationId={openConversationId}
+              onConversationChange={handleConversationChange}
+            />
+          </div>
         )}
-        {activeTab === "settings" && <SettingsTab />}
+        {mountedTabs.has("settings") && (
+          <div className={activeTab === "settings" ? "" : "hidden"}>
+            <SettingsTab />
+          </div>
+        )}
       </div>
 
-      {/* Bottom Navigation */}
       <BottomNav
         activeTab={activeTab}
         onTabChange={handleTabChange}

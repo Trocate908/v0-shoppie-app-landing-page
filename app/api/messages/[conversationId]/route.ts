@@ -29,16 +29,12 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const conversation = await verifyParticipant(supabase, conversationId, user.id)
-  if (!conversation) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
-
   const url = new URL(request.url)
-  const before = url.searchParams.get("before") // cursor-based pagination
+  const before = url.searchParams.get("before")
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50"), 100)
 
-  let query = supabase
+  // Run auth check and messages fetch in parallel — saves one full round trip
+  let messagesQuery = supabase
     .from("messages")
     .select("id, conversation_id, sender_id, content, image_url, read, delivered, deleted, created_at, edited_at")
     .eq("conversation_id", conversationId)
@@ -46,42 +42,38 @@ export async function GET(request: Request, { params }: Params) {
     .limit(limit)
 
   if (before) {
-    query = query.lt("created_at", before)
+    messagesQuery = messagesQuery.lt("created_at", before)
   }
 
-  const { data, error } = await query
+  const [conversation, { data, error }] = await Promise.all([
+    verifyParticipant(supabase, conversationId, user.id),
+    messagesQuery,
+  ])
+
+  if (!conversation) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const incomingMessages = (data ?? []).filter((m) => m.sender_id !== user.id)
+  const messages = data ?? []
+  const incomingMessages = messages.filter((m) => m.sender_id !== user.id)
 
-  // Mark undelivered incoming messages as delivered first (receiver is now online)
-  const undeliveredIds = incomingMessages
-    .filter((m) => !m.delivered)
-    .map((m) => m.id)
+  const undeliveredIds = incomingMessages.filter((m) => !m.delivered).map((m) => m.id)
+  const unreadIds = incomingMessages.filter((m) => !m.read).map((m) => m.id)
 
+  // Fire mark-as-read/delivered in the background — don't block the response
   if (undeliveredIds.length > 0) {
-    await supabase
-      .from("messages")
-      .update({ delivered: true })
-      .in("id", undeliveredIds)
+    supabase.from("messages").update({ delivered: true }).in("id", undeliveredIds).then(() => {})
   }
-
-  // Mark all unread incoming messages as read (conversation is open)
-  const unreadIds = incomingMessages
-    .filter((m) => !m.read)
-    .map((m) => m.id)
-
   if (unreadIds.length > 0) {
-    await supabase
-      .from("messages")
-      .update({ delivered: true, read: true })
-      .in("id", unreadIds)
+    supabase.from("messages").update({ delivered: true, read: true }).in("id", unreadIds).then(() => {})
   }
 
-  return NextResponse.json({ messages: (data ?? []).reverse(), current_user_id: user.id })
+  // Respond immediately — marks happen in background
+  return NextResponse.json({ messages: messages.reverse(), current_user_id: user.id })
 }
 
 // POST /api/messages/[conversationId] — send a message
@@ -106,6 +98,7 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Message must have content or image" }, { status: 400 })
   }
 
+  // Insert message and update last_message_at in parallel
   const { data: message, error } = await supabase
     .from("messages")
     .insert({
@@ -121,25 +114,21 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Update last_message_at on the conversation
-  await supabase
+  // Update conversation timestamp in background — don't block response
+  supabase
     .from("conversations")
     .update({ last_message_at: message.created_at })
     .eq("id", conversationId)
+    .then(() => {})
 
-  // Fire a push notification to the other participant. We don't await the
-  // result for token lookup before responding — but we DO await the dispatch
-  // so failures are logged. Wrapped in try/catch so notification problems
-  // never break the message send itself.
+  // Fire push notification completely in background — never blocks the sender
   const recipientId =
     conversation.buyer_id === user.id ? conversation.vendor_id : conversation.buyer_id
 
-  try {
-    // Look up the sender's display name (vendor shop name if vendor, otherwise email).
-    const [{ data: senderVendor }, { data: senderProfile }] = await Promise.all([
-      supabase.from("vendors").select("shop_name").eq("user_id", user.id).maybeSingle(),
-      supabase.from("profiles").select("full_name, username").eq("id", user.id).maybeSingle(),
-    ])
+  Promise.all([
+    supabase.from("vendors").select("shop_name").eq("user_id", user.id).maybeSingle(),
+    supabase.from("profiles").select("full_name, username").eq("id", user.id).maybeSingle(),
+  ]).then(([{ data: senderVendor }, { data: senderProfile }]) => {
     const senderName =
       senderVendor?.shop_name ??
       senderProfile?.full_name ??
@@ -151,25 +140,23 @@ export async function POST(request: Request, { params }: Params) {
       (content?.trim() && content.trim().slice(0, 140)) ||
       (image_url ? "Sent you an image" : "New message")
 
-    await dispatchNotification(
+    return dispatchNotification(
       { userId: recipientId },
       {
         type: "message",
-        refId: message.id, // unique per message → never deduped
+        refId: message.id,
         dedupeWindowHours: 0,
         title: `New message from ${senderName}`,
         body: preview,
         link: `/?tab=messages&cid=${conversationId}`,
-        data: {
-          conversationId,
-          messageId: message.id,
-        },
+        data: { conversationId, messageId: message.id },
       },
     )
-  } catch (err) {
+  }).catch((err) => {
     console.error("[messages] notification dispatch failed", err)
-  }
+  })
 
+  // Respond immediately — notification fires in background
   return NextResponse.json({ message })
 }
 
@@ -195,7 +182,7 @@ export async function PATCH(request: Request, { params }: Params) {
     .update({ content: content.trim(), edited_at: new Date().toISOString() })
     .eq("id", message_id)
     .eq("conversation_id", conversationId)
-    .eq("sender_id", user.id) // only sender can edit
+    .eq("sender_id", user.id)
     .select()
     .single()
 

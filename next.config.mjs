@@ -5,9 +5,9 @@ const nextConfig = {
   },
   images: {
     formats: ["image/avif", "image/webp"],
-    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    minimumCacheTTL: 60,
+    deviceSizes: [640, 828, 1080, 1200],
+    imageSizes: [64, 128, 256],
+    minimumCacheTTL: 86400,
     dangerouslyAllowSVG: true,
     contentDispositionType: "attachment",
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
@@ -23,7 +23,14 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react", "@/components/ui"],
     serverActions: {
-      allowedOrigins: ["*.vusercontent.net"],
+      allowedOrigins: [
+        "*.vusercontent.net",
+        "*.replit.dev",
+        "*.picard.replit.dev",
+        "*.riker.replit.dev",
+        "*.spock.replit.dev",
+        "*.repl.co",
+      ],
     },
   },
   allowedDevOrigins: [
@@ -31,6 +38,8 @@ const nextConfig = {
     "*.dev-vm.vusercontent.net",
     "*.spock.replit.dev",
     "*.replit.dev",
+    "*.picard.replit.dev",
+    "*.riker.replit.dev",
     "*.repl.co",
   ],
   compress: true,
@@ -39,10 +48,18 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // Service Worker must be served with no-cache so browsers always
-        // fetch the latest version, and Service-Worker-Allowed: / so it
-        // can claim the full origin (required by some browsers).
-        source: "/sw.js",
+        // OneSignal service workers (now the sole SWs at scope "/") must be
+        // served with no-cache so browsers always fetch the latest version
+        // and Service-Worker-Allowed: / so they can claim the full origin.
+        source: "/OneSignalSDKWorker.js",
+        headers: [
+          { key: "Service-Worker-Allowed", value: "/" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
+      {
+        source: "/OneSignalSDKUpdaterWorker.js",
         headers: [
           { key: "Service-Worker-Allowed", value: "/" },
           { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },

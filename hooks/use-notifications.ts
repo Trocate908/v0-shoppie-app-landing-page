@@ -30,7 +30,32 @@ export function useNotifications() {
   }, [])
 
   const notify = useCallback(({ title, body, icon, tag, onClick }: NotificationPayload) => {
-    if (typeof window === "undefined" || !("Notification" in window)) return
+    if (typeof window === "undefined") return
+
+    // ── AppInventor / Kodular WebView bridge ────────────────────────────────
+    // When the app is running inside a native WebView wrapper (Kodular, MIT
+    // AppInventor, etc.) we forward the notification to the host via
+    // `setWebViewString`. The native side listens for changes on this string
+    // and uses it to build a proper OS-level push notification.
+    //
+    // Format: "title|body" so the Android side can split on "|" and render:
+    //   - Title line:  "New message from John"
+    //   - Body line:   "Hello there!"
+    try {
+      const bridge = (
+        window as unknown as {
+          AppInventor?: { setWebViewString?: (value: string) => void }
+        }
+      ).AppInventor
+      if (bridge?.setWebViewString) {
+        bridge.setWebViewString(`${title}|${body}`)
+      }
+    } catch {
+      // Ignore — WebView bridge is optional.
+    }
+
+    // Browser Notification API (desktop / mobile PWA)
+    if (!("Notification" in window)) return
     if (permissionRef.current !== "granted") return
     // Only show when tab is hidden
     if (!document.hidden) return

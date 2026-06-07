@@ -1,6 +1,8 @@
-modules = ["nodejs-20", "web", "python-3.12"]
+modules = ["nodejs-20", "web", "python-3.12", "postgresql-16"]
 [agent]
 expertMode = true
+stack = "BEST_EFFORT_FALLBACK"
+integrations = ["javascript_database:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
@@ -26,7 +28,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "./node_modules/.bin/next dev --port 5000"
+args = "node server.js"
 waitForPort = 5000
 
 [[ports]]
@@ -40,3 +42,8 @@ VAPID_PUBLIC_KEY = "BFpRYWfwDxJqf9O3oqg-cDp9wWBoREYpP1EcE-pfpzsCDONqt3j8qS3cJkEo
 NEXT_PUBLIC_VAPID_PUBLIC_KEY = "BFpRYWfwDxJqf9O3oqg-cDp9wWBoREYpP1EcE-pfpzsCDONqt3j8qS3cJkEoDI39yLMpuyUQ7ITs1K--5-vhsk8"
 VAPID_PRIVATE_KEY = "0p9DYEqUd7knqk2KaZ0rYfDLdyhmhLREcOkIrGVsyQQ"
 VAPID_SUBJECT = "mailto:contact@shoppieapp.co.zw"
+
+[deployment]
+deploymentTarget = "vm"
+run = ["node", "server.js"]
+build = ["npm", "run", "build"]
