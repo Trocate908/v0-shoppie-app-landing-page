@@ -1,151 +1,126 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Search, CheckCircle, XCircle, Pause, Trash2, MoreVertical } from "lucide-react"
+import { Search, ShieldCheck, ShieldOff, Pause, Play, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import Image from "next/image"
 
 interface Vendor {
   id: string
   shop_name: string
-  is_verified: boolean
+  shop_description: string | null
   is_open: boolean
-  verification_status: string
-  profile_picture_url: string | null
-  product_count: number
+  is_suspended: boolean | null
+  verification_status: string | null
   created_at: string
-  locations: { city: string; country: string; market_name: string } | null
+  locations: { city: string; country: string } | null
 }
 
 export default function AdminVendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([])
-  const [filtered, setFiltered] = useState<Vendor[]>([])
+  const [search, setSearch] = useState("")
   const [loading, setLoading] = useState(true)
-  const [query, setQuery] = useState("")
-  const [confirm, setConfirm] = useState<{ action: string; vendorId: string; label: string } | null>(null)
   const { toast } = useToast()
 
-  async function load() {
-    setLoading(true)
-    const r = await fetch("/api/admin/vendors")
-    const d = await r.json()
-    setVendors(d.vendors ?? [])
-    setFiltered(d.vendors ?? [])
-    setLoading(false)
+  function load() {
+    fetch("/api/admin/vendors").then(r => r.json()).then(d => {
+      setVendors(d.vendors ?? [])
+      setLoading(false)
+    })
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(load, [])
 
-  useEffect(() => {
-    const q = query.toLowerCase()
-    setFiltered(q ? vendors.filter(v => v.shop_name?.toLowerCase().includes(q)) : vendors)
-  }, [query, vendors])
-
-  async function doAction(action: string, vendorId: string) {
+  async function action(vendorId: string, act: string) {
     const r = await fetch("/api/admin/vendors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, vendorId }),
+      body: JSON.stringify({ action: act, vendorId }),
     })
     const d = await r.json()
-    if (!r.ok) toast({ title: "Error", description: d.error, variant: "destructive" })
-    else { toast({ title: "Done", description: `Vendor ${action}d successfully` }); load() }
-    setConfirm(null)
+    if (!r.ok) { toast({ variant: "destructive", title: "Error", description: d.error }); return }
+    toast({ title: "Done" })
+    load()
   }
 
+  const filtered = vendors.filter(v =>
+    v.shop_name.toLowerCase().includes(search.toLowerCase())
+  )
+
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">Vendor Management</h1>
-          <p className="text-muted-foreground text-sm">{vendors.length} total vendors</p>
-        </div>
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search vendors…" className="pl-9" value={query} onChange={e => setQuery(e.target.value)} />
-        </div>
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold">Vendors</h1>
+        <p className="text-sm text-muted-foreground">{vendors.length} registered vendors — all have instant access, no approval required</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {loading ? (
-          Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="bg-card border border-border rounded-xl p-4 h-40 animate-pulse" />
-          ))
-        ) : filtered.length === 0 ? (
-          <div className="col-span-3 text-center py-12 text-muted-foreground">No vendors found</div>
-        ) : filtered.map(v => (
-          <div key={v.id} className="bg-card border border-border rounded-xl p-4 flex flex-col gap-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-3 min-w-0">
-                {v.profile_picture_url ? (
-                  <Image src={v.profile_picture_url} alt={v.shop_name} width={40} height={40} className="rounded-full object-cover shrink-0" />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0 text-lg">🏪</div>
-                )}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search shops…"
+          className="w-full pl-10 pr-4 py-2.5 border border-border rounded-lg bg-card text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+        />
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-28 bg-muted rounded-xl animate-pulse" />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {filtered.map(v => (
+            <div key={v.id} className="bg-card border border-border rounded-xl p-4">
+              <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="min-w-0">
-                  <p className="font-semibold truncate">{v.shop_name}</p>
-                  <p className="text-xs text-muted-foreground">{v.locations?.city ?? "—"}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-semibold truncate">{v.shop_name}</p>
+                    {v.verification_status === "verified" && (
+                      <ShieldCheck className="h-4 w-4 text-blue-500 shrink-0" />
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {v.locations?.city}, {v.locations?.country} · {new Date(v.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  {v.is_suspended ? (
+                    <span className="text-xs bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400 px-2 py-0.5 rounded-full">Suspended</span>
+                  ) : (
+                    <span className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 px-2 py-0.5 rounded-full">Active</span>
+                  )}
                 </div>
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger className="p-1.5 rounded hover:bg-accent shrink-0">
-                  <MoreVertical className="h-4 w-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {v.is_verified ? (
-                    <DropdownMenuItem onClick={() => setConfirm({ action: "unverify", vendorId: v.id, label: "Remove verified badge from this vendor?" })}>
-                      <XCircle className="h-4 w-4 mr-2 text-orange-500" />Remove Verification
-                    </DropdownMenuItem>
-                  ) : (
-                    <DropdownMenuItem onClick={() => setConfirm({ action: "verify", vendorId: v.id, label: "Grant verified badge to this vendor?" })}>
-                      <CheckCircle className="h-4 w-4 mr-2 text-green-500" />Verify Vendor
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem onClick={() => setConfirm({ action: "suspend", vendorId: v.id, label: "Suspend this vendor's shop?" })}>
-                    <Pause className="h-4 w-4 mr-2 text-amber-500" />Suspend Shop
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="text-destructive" onClick={() => setConfirm({ action: "delete", vendorId: v.id, label: "Delete this vendor permanently?" })}>
-                    <Trash2 className="h-4 w-4 mr-2" />Delete Vendor
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              {v.is_verified && (
-                <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">
-                  <CheckCircle className="h-3 w-3 mr-1" />Verified
-                </Badge>
+              {v.shop_description && (
+                <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{v.shop_description}</p>
               )}
-              <Badge variant={v.is_open ? "outline" : "secondary"} className="text-xs">
-                {v.is_open ? "Open" : "Closed"}
-              </Badge>
+              <div className="flex gap-1.5 flex-wrap">
+                <button
+                  onClick={() => action(v.id, v.verification_status === "verified" ? "unverify" : "verify")}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-border hover:bg-accent transition-colors"
+                >
+                  {v.verification_status === "verified" ? <><ShieldOff className="h-3.5 w-3.5" />Unverify</> : <><ShieldCheck className="h-3.5 w-3.5" />Verify</>}
+                </button>
+                <button
+                  onClick={() => action(v.id, v.is_suspended ? "unsuspend" : "suspend")}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-border hover:bg-accent transition-colors"
+                >
+                  {v.is_suspended ? <><Play className="h-3.5 w-3.5" />Restore</> : <><Pause className="h-3.5 w-3.5" />Suspend</>}
+                </button>
+                <button
+                  onClick={() => action(v.id, "delete")}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />Delete
+                </button>
+              </div>
             </div>
-
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{v.product_count} products</span>
-              <span>Since {new Date(v.created_at).toLocaleDateString()}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <AlertDialog open={!!confirm} onOpenChange={() => setConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Action</AlertDialogTitle>
-            <AlertDialogDescription>{confirm?.label}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => confirm && doAction(confirm.action, confirm.vendorId)}>Confirm</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          ))}
+          {filtered.length === 0 && (
+            <p className="text-sm text-muted-foreground col-span-2 text-center py-10">No vendors found</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
