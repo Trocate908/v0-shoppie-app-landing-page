@@ -1,193 +1,136 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Settings, Save, AlertTriangle } from "lucide-react"
+import { Save, Database } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import Link from "next/link"
 
-interface Setting { key: string; value: string; description: string }
+interface Setting { key: string; value: string; description: string | null }
 
-const SETTING_LABELS: Record<string, string> = {
-  site_name: "Site Name",
-  maintenance_mode: "Maintenance Mode",
-  registration_enabled: "Allow New Registrations",
-  homepage_banner: "Homepage Banner Message",
-  vendor_approval_required: "Require Vendor Approval",
+const SETTING_LABELS: Record<string, { label: string; type: "text" | "toggle"; description: string }> = {
+  site_name: { label: "Site Name", type: "text", description: "Platform display name shown across the app" },
+  maintenance_mode: { label: "Maintenance Mode", type: "toggle", description: "Take the site offline for all users" },
+  registration_enabled: { label: "New Registrations", type: "toggle", description: "Allow new vendor sign-ups" },
+  homepage_banner: { label: "Homepage Banner", type: "text", description: "Announcement bar shown at the top of the store (leave empty to hide)" },
 }
 
-const BOOLEAN_SETTINGS = new Set(["maintenance_mode", "registration_enabled", "vendor_approval_required"])
-
 export default function AdminSettingsPage() {
-  const [settings, setSettings] = useState<Record<string, string>>({})
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [confirm, setConfirm] = useState<string | null>(null)
+  const [settings, setSettings] = useState<Setting[]>([])
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState<string | null>(null)
+  const [missing, setMissing] = useState(false)
   const { toast } = useToast()
 
-  async function load() {
-    setLoading(true)
-    const r = await fetch("/api/admin/settings")
-    const d = await r.json()
-    if (d.settings) {
-      const map: Record<string, string> = {}
-      d.settings.forEach((s: Setting) => { map[s.key] = s.value })
-      setSettings(map)
-    }
-    setLoading(false)
-  }
+  useEffect(() => {
+    fetch("/api/admin/settings").then(r => r.json()).then(d => {
+      if (d.settings?.length === 0 && !d.error) setMissing(true)
+      const s: Setting[] = d.settings ?? []
+      setSettings(s)
+      const v: Record<string, string> = {}
+      for (const item of s) v[item.key] = item.value
+      setValues(v)
+    })
+  }, [])
 
-  useEffect(() => { load() }, [])
-
-  async function save(key: string, value: string, needsConfirm?: boolean) {
-    if (needsConfirm) { setConfirm(key); return }
-    setSaving(true)
+  async function save(key: string) {
+    setSaving(key)
     const r = await fetch("/api/admin/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, value }),
+      body: JSON.stringify({ key, value: values[key] ?? "" }),
     })
     const d = await r.json()
-    setSaving(false)
-    if (!r.ok) toast({ title: "Error", description: d.error, variant: "destructive" })
-    else {
-      toast({ title: "Saved", description: `${SETTING_LABELS[key] ?? key} updated` })
-      setSettings(prev => ({ ...prev, [key]: value }))
-    }
+    setSaving(null)
+    if (!r.ok) { toast({ variant: "destructive", title: "Error", description: d.error }); return }
+    toast({ title: "Saved" })
   }
 
-  async function confirmSave() {
-    if (!confirm) return
-    const key = confirm
-    setConfirm(null)
-    await save(key, settings[key], false)
-  }
-
-  if (loading) {
-    return (
-      <div className="p-6 max-w-2xl mx-auto space-y-4">
-        <div className="h-8 bg-muted rounded animate-pulse w-48" />
-        {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-16 bg-muted rounded-xl animate-pulse" />)}
-      </div>
-    )
-  }
-
-  const dangerActions = [
-    { label: "Force Logout All Users", description: "Invalidate all active sessions platform-wide", key: "force_logout" },
-    { label: "Clear Platform Cache", description: "Purge all cached data (may cause temporary slowness)", key: "clear_cache" },
-  ]
+  const knownKeys = Object.keys(SETTING_LABELS)
+  const unknownSettings = settings.filter(s => !knownKeys.includes(s.key))
 
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-8">
+    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Settings className="h-6 w-6 text-violet-600" />
-          Platform Settings
-        </h1>
-        <p className="text-muted-foreground text-sm mt-1">Configure platform-wide settings</p>
+        <h1 className="text-2xl font-bold">Platform Settings</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Control core platform behaviour</p>
       </div>
 
-      <div className="bg-card border border-border rounded-xl divide-y divide-border">
-        {Object.entries(SETTING_LABELS).map(([key, label]) => {
-          const value = settings[key] ?? ""
-          const isBool = BOOLEAN_SETTINGS.has(key)
-          const boolValue = value === "true"
-          const isDangerous = key === "maintenance_mode"
+      {missing && (
+        <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+          <Database className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+          <p className="text-sm text-amber-800 dark:text-amber-300">
+            The <code>platform_settings</code> table doesn't exist yet.{" "}
+            <Link href="/admin/setup" className="underline font-medium">Run the migration →</Link>
+          </p>
+        </div>
+      )}
 
+      <div className="space-y-4">
+        {knownKeys.map(key => {
+          const meta = SETTING_LABELS[key]
+          const val = values[key] ?? ""
           return (
-            <div key={key} className="px-5 py-4 flex items-center justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor={key} className="font-medium">{label}</Label>
-                  {isDangerous && <span className="text-xs text-red-500 font-medium">⚠ Caution</span>}
+            <div key={key} className="bg-card border border-border rounded-xl p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{meta.label}</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">{meta.description}</p>
+                  {meta.type === "text" && (
+                    <input
+                      value={val}
+                      onChange={e => setValues(v => ({ ...v, [key]: e.target.value }))}
+                      className="mt-3 w-full px-3 py-2 border border-border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                  )}
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {key === "site_name" && "The name shown across the platform"}
-                  {key === "maintenance_mode" && "Disables the site for all non-admin users"}
-                  {key === "registration_enabled" && "Allow new vendors and users to sign up"}
-                  {key === "homepage_banner" && "Optional banner shown to all visitors"}
-                  {key === "vendor_approval_required" && "New vendors must be approved by an admin"}
-                </p>
-              </div>
-              {isBool ? (
-                <Switch
-                  id={key}
-                  checked={boolValue}
-                  onCheckedChange={v => {
-                    setSettings(prev => ({ ...prev, [key]: v ? "true" : "false" }))
-                    save(key, v ? "true" : "false", isDangerous && v)
-                  }}
-                />
-              ) : (
-                <div className="flex items-center gap-2 w-56 shrink-0">
-                  <Input
-                    id={key}
-                    value={value}
-                    onChange={e => setSettings(prev => ({ ...prev, [key]: e.target.value }))}
-                    className="text-sm h-8"
-                  />
+                {meta.type === "toggle" ? (
                   <button
-                    onClick={() => save(key, value)}
-                    disabled={saving}
-                    className="p-1.5 rounded hover:bg-accent transition-colors shrink-0"
+                    onClick={() => {
+                      const next = val === "true" ? "false" : "true"
+                      setValues(v => ({ ...v, [key]: next }))
+                      setTimeout(() => save(key), 50)
+                    }}
+                    className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${val === "true" ? "bg-violet-600" : "bg-muted"}`}
                   >
-                    <Save className="h-4 w-4" />
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${val === "true" ? "translate-x-5" : ""}`} />
                   </button>
-                </div>
-              )}
+                ) : (
+                  <button
+                    onClick={() => save(key)}
+                    disabled={saving === key}
+                    className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors shrink-0"
+                  >
+                    <Save className="h-4 w-4" />{saving === key ? "Saving…" : "Save"}
+                  </button>
+                )}
+              </div>
             </div>
           )
         })}
-      </div>
 
-      <div className="bg-card border border-red-200 dark:border-red-900 rounded-xl overflow-hidden">
-        <div className="px-5 py-3 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-900">
-          <h2 className="font-semibold text-red-700 dark:text-red-400 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />Danger Zone
-          </h2>
-        </div>
-        <div className="divide-y divide-border">
-          {dangerActions.map(({ label, description, key }) => (
-            <div key={key} className="px-5 py-4 flex items-center justify-between gap-4">
-              <div>
-                <p className="font-medium text-sm">{label}</p>
-                <p className="text-xs text-muted-foreground">{description}</p>
+        {unknownSettings.map(s => (
+          <div key={s.key} className="bg-card border border-border rounded-xl p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium font-mono text-sm">{s.key}</p>
+                {s.description && <p className="text-sm text-muted-foreground mt-0.5">{s.description}</p>}
+                <input
+                  value={values[s.key] ?? ""}
+                  onChange={e => setValues(v => ({ ...v, [s.key]: e.target.value }))}
+                  className="mt-3 w-full px-3 py-2 border border-border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                />
               </div>
               <button
-                onClick={() => setConfirm(key)}
-                className="text-xs px-3 py-1.5 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors shrink-0"
+                onClick={() => save(s.key)}
+                disabled={saving === s.key}
+                className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors shrink-0"
               >
-                Execute
+                <Save className="h-4 w-4" />{saving === s.key ? "Saving…" : "Save"}
               </button>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
-
-      <AlertDialog open={!!confirm} onOpenChange={() => setConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Action</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirm === "maintenance_mode"
-                ? "Enabling maintenance mode will block all non-admin users from accessing the platform. Are you sure?"
-                : confirm === "force_logout"
-                ? "This will sign out all active users immediately. They'll need to log in again."
-                : confirm === "clear_cache"
-                ? "This will purge all cached data. The platform may be slower temporarily."
-                : "Are you sure you want to proceed?"}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={confirmSave}>
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

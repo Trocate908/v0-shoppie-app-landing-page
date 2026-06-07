@@ -1,183 +1,106 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Search, Shield, Ban, Trash2, RefreshCw, CheckCircle, MoreVertical } from "lucide-react"
+import { Search, Ban, CheckCircle, Trash2, ShieldCheck } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
 
 interface User {
   id: string
   email: string
+  full_name: string | null
+  avatar_url: string | null
+  is_banned: boolean | null
   created_at: string
-  last_sign_in_at: string | null
-  email_confirmed_at: string | null
-  banned_until: string | null
-  is_admin: boolean
-  vendor: { shop_name: string; is_verified: boolean } | null
+  phone: string | null
 }
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([])
-  const [filtered, setFiltered] = useState<User[]>([])
+  const [search, setSearch] = useState("")
   const [loading, setLoading] = useState(true)
-  const [query, setQuery] = useState("")
-  const [confirm, setConfirm] = useState<{ action: string; userId: string; label: string } | null>(null)
   const { toast } = useToast()
 
-  async function load() {
-    setLoading(true)
-    const r = await fetch("/api/admin/users")
-    const d = await r.json()
-    setUsers(d.users ?? [])
-    setFiltered(d.users ?? [])
-    setLoading(false)
+  function load() {
+    fetch("/api/admin/users").then(r => r.json()).then(d => {
+      setUsers(d.users ?? [])
+      setLoading(false)
+    })
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(load, [])
 
-  useEffect(() => {
-    const q = query.toLowerCase()
-    setFiltered(q ? users.filter(u => u.email?.toLowerCase().includes(q) || u.vendor?.shop_name?.toLowerCase().includes(q)) : users)
-  }, [query, users])
-
-  async function doAction(action: string, userId: string) {
+  async function action(userId: string, act: string) {
     const r = await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, userId }),
+      body: JSON.stringify({ action: act, userId }),
     })
     const d = await r.json()
-    if (!r.ok) {
-      toast({ title: "Error", description: d.error, variant: "destructive" })
-    } else {
-      toast({ title: "Done", description: `Action "${action}" completed` })
-      load()
-    }
-    setConfirm(null)
+    if (!r.ok) { toast({ variant: "destructive", title: "Error", description: d.error }); return }
+    toast({ title: "Done", description: `User ${act}ned successfully` })
+    load()
   }
 
-  const isBanned = (u: User) => u.banned_until && new Date(u.banned_until) > new Date()
+  const filtered = users.filter(u =>
+    (u.email ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (u.full_name ?? "").toLowerCase().includes(search.toLowerCase())
+  )
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">User Management</h1>
-          <p className="text-muted-foreground text-sm">{users.length} total users</p>
-        </div>
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by email or shop…" className="pl-9" value={query} onChange={e => setQuery(e.target.value)} />
-        </div>
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold">Users</h1>
+        <p className="text-sm text-muted-foreground">{users.length} total users</p>
       </div>
 
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-muted/40">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium">Email</th>
-                <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Shop</th>
-                <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Joined</th>
-                <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Last Login</th>
-                <th className="text-left px-4 py-3 font-medium">Status</th>
-                <th className="text-right px-4 py-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={i}><td colSpan={6} className="px-4 py-3"><div className="h-4 bg-muted rounded animate-pulse" /></td></tr>
-                ))
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-12 text-muted-foreground">No users found</td></tr>
-              ) : filtered.map(u => (
-                <tr key={u.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="font-medium truncate max-w-[200px]">{u.email}</div>
-                    {u.is_admin && <Badge variant="secondary" className="text-xs mt-0.5">Admin</Badge>}
-                  </td>
-                  <td className="px-4 py-3 hidden sm:table-cell text-muted-foreground">
-                    {u.vendor ? (
-                      <span className="flex items-center gap-1">
-                        {u.vendor.shop_name}
-                        {u.vendor.is_verified && <CheckCircle className="h-3 w-3 text-green-500" />}
-                      </span>
-                    ) : "—"}
-                  </td>
-                  <td className="px-4 py-3 hidden md:table-cell text-muted-foreground">
-                    {new Date(u.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground">
-                    {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : "Never"}
-                  </td>
-                  <td className="px-4 py-3">
-                    {isBanned(u) ? (
-                      <Badge variant="destructive">Banned</Badge>
-                    ) : u.email_confirmed_at ? (
-                      <Badge variant="outline" className="text-green-600 border-green-200">Active</Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-amber-600 border-amber-200">Unverified</Badge>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {!u.is_admin && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger className="p-1.5 rounded hover:bg-accent">
-                          <MoreVertical className="h-4 w-4" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {!u.email_confirmed_at && (
-                            <DropdownMenuItem onClick={() => setConfirm({ action: "verify_email", userId: u.id, label: "Verify email for this user?" })}>
-                              <CheckCircle className="h-4 w-4 mr-2 text-green-500" />Verify Email
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem onClick={() => setConfirm({ action: "reset_password", userId: u.id, label: "Send password reset email?" })}>
-                            <RefreshCw className="h-4 w-4 mr-2 text-blue-500" />Reset Password
-                          </DropdownMenuItem>
-                          {isBanned(u) ? (
-                            <DropdownMenuItem onClick={() => setConfirm({ action: "unban", userId: u.id, label: "Unban this user?" })}>
-                              <Shield className="h-4 w-4 mr-2 text-green-500" />Unban
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem onClick={() => setConfirm({ action: "ban", userId: u.id, label: "Ban this user? They won't be able to log in." })}>
-                              <Ban className="h-4 w-4 mr-2 text-orange-500" />Ban User
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem className="text-destructive" onClick={() => setConfirm({ action: "delete", userId: u.id, label: "Permanently delete this account? This cannot be undone." })}>
-                            <Trash2 className="h-4 w-4 mr-2" />Delete Account
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name or email…"
+          className="w-full pl-10 pr-4 py-2.5 border border-border rounded-lg bg-card text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+        />
       </div>
 
-      <AlertDialog open={!!confirm} onOpenChange={() => setConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Action</AlertDialogTitle>
-            <AlertDialogDescription>{confirm?.label}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => confirm && doAction(confirm.action, confirm.userId)}>
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {loading ? (
+        <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-muted rounded-xl animate-pulse" />)}</div>
+      ) : (
+        <div className="bg-card border border-border rounded-xl divide-y divide-border overflow-hidden">
+          {filtered.map(u => (
+            <div key={u.id} className="flex items-center justify-between px-4 py-3 gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{u.full_name || u.email}</p>
+                <p className="text-xs text-muted-foreground truncate">{u.email} · {new Date(u.created_at).toLocaleDateString()}</p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {u.is_banned ? (
+                  <span className="text-xs bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400 px-2 py-0.5 rounded-full">Banned</span>
+                ) : (
+                  <span className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 px-2 py-0.5 rounded-full">Active</span>
+                )}
+                <button
+                  onClick={() => action(u.id, u.is_banned ? "unban" : "ban")}
+                  title={u.is_banned ? "Unban" : "Ban"}
+                  className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground"
+                >
+                  {u.is_banned ? <CheckCircle className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                </button>
+                <button
+                  onClick={() => action(u.id, "delete")}
+                  title="Delete"
+                  className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-10">No users found</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
