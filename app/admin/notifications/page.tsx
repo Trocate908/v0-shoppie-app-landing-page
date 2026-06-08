@@ -3,104 +3,131 @@
 import { useState } from "react"
 import { Bell, Send } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 
 export default function AdminNotificationsPage() {
   const [title, setTitle] = useState("")
   const [message, setMessage] = useState("")
-  const [audience, setAudience] = useState("all")
-  const [imageUrl, setImageUrl] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ recipients: number } | null>(null)
+  const [target, setTarget] = useState("all")
+  const [type, setType] = useState("platform_update")
+  const [sending, setSending] = useState(false)
+  const [history, setHistory] = useState<{ title: string; target: string; type: string; sentAt: string }[]>([])
   const { toast } = useToast()
 
-  async function send(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    setResult(null)
+  async function handleSend() {
+    if (!title.trim() || !message.trim()) {
+      toast({ title: "Missing fields", description: "Title and message are required", variant: "destructive" })
+      return
+    }
+    setSending(true)
     const r = await fetch("/api/admin/notifications", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, message, audience, imageUrl: imageUrl || undefined }),
+      body: JSON.stringify({ title, message, target, type }),
     })
     const d = await r.json()
-    setLoading(false)
-    if (!r.ok) { toast({ variant: "destructive", title: "Failed", description: d.error }); return }
-    setResult(d)
-    toast({ title: "Notification sent!", description: `Delivered to ${d.recipients} device(s)` })
-    setTitle(""); setMessage(""); setImageUrl("")
+    setSending(false)
+    if (!r.ok) {
+      toast({ title: "Error", description: d.error ?? "Failed to send", variant: "destructive" })
+    } else {
+      toast({ title: "Notification sent!", description: `Delivered to: ${target}` })
+      setHistory(prev => [{ title, target, type, sentAt: new Date().toLocaleString() }, ...prev])
+      setTitle("")
+      setMessage("")
+    }
+  }
+
+  const TYPE_LABELS: Record<string, string> = {
+    platform_update: "Platform Update",
+    promotion: "Promotion",
+    security_alert: "Security Alert",
+    recommendation: "Product Recommendation",
+  }
+
+  const TARGET_LABELS: Record<string, string> = {
+    all: "All Users",
+    vendors: "Vendors Only",
+    buyers: "Buyers Only",
+    verified: "Verified Vendors",
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-6">
+    <div className="p-6 max-w-3xl mx-auto space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Push Notifications</h1>
-        <p className="text-sm text-muted-foreground">Send a push notification via OneSignal</p>
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <Bell className="h-6 w-6 text-violet-600" />
+          Push Notification Center
+        </h1>
+        <p className="text-muted-foreground text-sm mt-1">Send push notifications to platform users</p>
       </div>
 
-      <form onSubmit={send} className="bg-card border border-border rounded-xl p-5 space-y-4">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Audience</label>
-          <select
-            value={audience}
-            onChange={e => setAudience(e.target.value)}
-            className="w-full px-3 py-2.5 border border-border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-          >
-            <option value="all">All users</option>
-            <option value="vendors">Vendors only</option>
-            <option value="buyers">Buyers only</option>
-            <option value="verified">Verified vendors</option>
-          </select>
+      <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+        <h2 className="font-semibold">Compose Notification</h2>
+
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Notification Type</Label>
+            <Select value={type} onValueChange={setType}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(TYPE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Target Audience</Label>
+            <Select value={target} onValueChange={setTarget}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(TARGET_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium">Title</label>
-          <input
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            required
-            placeholder="Notification title"
-            className="w-full px-3 py-2.5 border border-border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-          />
+          <Label>Title</Label>
+          <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Notification title…" maxLength={80} />
+          <p className="text-xs text-muted-foreground text-right">{title.length}/80</p>
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium">Message</label>
-          <textarea
-            value={message}
-            onChange={e => setMessage(e.target.value)}
-            required
-            rows={4}
-            placeholder="Write your message…"
-            className="w-full px-3 py-2.5 border border-border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Image URL <span className="text-muted-foreground font-normal">(optional)</span></label>
-          <input
-            value={imageUrl}
-            onChange={e => setImageUrl(e.target.value)}
-            placeholder="https://…"
-            type="url"
-            className="w-full px-3 py-2.5 border border-border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-          />
+          <Label>Message</Label>
+          <Textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Notification body…" rows={4} maxLength={300} />
+          <p className="text-xs text-muted-foreground text-right">{message.length}/300</p>
         </div>
 
         <button
-          type="submit"
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-violet-600 text-white font-medium hover:bg-violet-700 disabled:opacity-50 transition-colors"
+          onClick={handleSend}
+          disabled={sending || !title.trim() || !message.trim()}
+          className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
         >
-          {loading ? "Sending…" : <><Send className="h-4 w-4" />Send Notification</>}
+          <Send className="h-4 w-4" />
+          {sending ? "Sending…" : "Send Notification"}
         </button>
-      </form>
+      </div>
 
-      {result && (
-        <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
-          <Bell className="h-5 w-5 text-emerald-600 shrink-0" />
-          <p className="text-sm text-emerald-800 dark:text-emerald-300">
-            Sent successfully to <strong>{result.recipients}</strong> device(s)
-          </p>
+      {history.length > 0 && (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="px-5 py-3 border-b border-border font-semibold text-sm">Sent This Session</div>
+          <div className="divide-y divide-border">
+            {history.map((h, i) => (
+              <div key={i} className="px-5 py-3 flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-medium text-sm">{h.title}</p>
+                  <p className="text-xs text-muted-foreground">{h.sentAt}</p>
+                </div>
+                <div className="flex gap-2 flex-wrap justify-end">
+                  <Badge variant="outline" className="text-xs">{TYPE_LABELS[h.type]}</Badge>
+                  <Badge variant="secondary" className="text-xs">{TARGET_LABELS[h.target]}</Badge>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

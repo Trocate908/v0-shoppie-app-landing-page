@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 
 const ADMIN_EMAILS = [
-  "miltonmukundwa6@gmail.com",
+  "miltonmukundwa@gmail.com",
   ...(process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(",").map((e) => e.trim()) : []),
 ]
 
