@@ -1,140 +1,117 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Users, Store, Package, Flag, TrendingUp, ClipboardList, Database } from "lucide-react"
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
-import Link from "next/link"
+import { Users, Store, Package, Flag, Activity, TrendingUp, ShieldCheck, Clock } from "lucide-react"
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 
 interface Stats {
   totalUsers: number
-  totalVendors: number
-  totalProducts: number
+  vendorCount: number
+  productCount: number
   pendingReports: number
-  auditLogs: number
-  newUsersThisWeek: number
-  userGrowth: { created_at: string }[]
+  activeToday: number
+  usersToday: number
+  productsToday: number
+  userGrowth: { date: string; users: number }[]
+}
+
+function StatCard({ icon: Icon, label, value, sub, color }: {
+  icon: typeof Users; label: string; value: number | string; sub?: string; color: string
+}) {
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 flex items-start gap-4">
+      <div className={`p-2.5 rounded-lg ${color}`}>
+        <Icon className="h-5 w-5 text-white" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-2xl font-bold tabular-nums">{value}</p>
+        <p className="text-sm text-muted-foreground">{label}</p>
+        {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  )
 }
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
-  const [dbStatus, setDbStatus] = useState<{ table: string; exists: boolean }[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/admin/stats").then(r => r.json()),
-      fetch("/api/admin/setup").then(r => r.json()),
-    ]).then(([s, setup]) => {
-      setStats(s)
-      setDbStatus(setup.status ?? [])
+    fetch("/api/admin/stats").then(r => r.json()).then(d => {
+      setStats(d)
       setLoading(false)
-    })
+    }).catch(() => setLoading(false))
   }, [])
 
-  const missingTables = dbStatus.filter(t => !t.exists)
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <ShieldCheck className="h-6 w-6 text-violet-600" />
+          Admin Dashboard
+        </h1>
+        <p className="text-muted-foreground text-sm mt-1">Platform overview and key metrics</p>
+      </div>
 
-  const chartData = (() => {
-    if (!stats?.userGrowth?.length) return []
-    const counts: Record<string, number> = {}
-    for (const u of stats.userGrowth) {
-      const day = u.created_at.slice(0, 10)
-      counts[day] = (counts[day] ?? 0) + 1
-    }
-    return Object.entries(counts).map(([date, users]) => ({ date: date.slice(5), users }))
-  })()
-
-  const cards = [
-    { label: "Total Users", value: stats?.totalUsers, icon: Users, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30" },
-    { label: "Total Vendors", value: stats?.totalVendors, icon: Store, color: "text-violet-600", bg: "bg-violet-50 dark:bg-violet-950/30" },
-    { label: "Total Products", value: stats?.totalProducts, icon: Package, color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30" },
-    { label: "Pending Reports", value: stats?.pendingReports, icon: Flag, color: "text-red-600", bg: "bg-red-50 dark:bg-red-950/30" },
-    { label: "New Users (7d)", value: stats?.newUsersThisWeek, icon: TrendingUp, color: "text-amber-600", bg: "bg-amber-50 dark:bg-amber-950/30" },
-    { label: "Audit Events", value: stats?.auditLogs, icon: ClipboardList, color: "text-slate-600", bg: "bg-slate-50 dark:bg-slate-950/30" },
-  ]
-
-  if (loading) {
-    return (
-      <div className="p-6">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-28 rounded-xl bg-muted animate-pulse" />
+      {loading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="bg-card border border-border rounded-xl p-5 h-24 animate-pulse" />
           ))}
         </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Platform overview</p>
-      </div>
-
-      {missingTables.length > 0 && (
-        <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
-          <Database className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Database setup required</p>
-            <p className="text-sm text-amber-700 dark:text-amber-400 mt-0.5">
-              Missing tables: {missingTables.map(t => t.table).join(", ")}.{" "}
-              <Link href="/admin/setup" className="underline font-medium">Run the migration →</Link>
-            </p>
-          </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon={Users} label="Total Users" value={stats?.totalUsers ?? 0} color="bg-blue-500" />
+          <StatCard icon={Store} label="Total Vendors" value={stats?.vendorCount ?? 0} color="bg-green-500" />
+          <StatCard icon={Package} label="Total Products" value={stats?.productCount ?? 0} color="bg-orange-500" />
+          <StatCard icon={Flag} label="Pending Reports" value={stats?.pendingReports ?? 0} color="bg-red-500" />
+          <StatCard icon={Activity} label="Active Today" value={stats?.activeToday ?? 0} sub="Users logged in today" color="bg-violet-500" />
+          <StatCard icon={TrendingUp} label="New Users Today" value={stats?.usersToday ?? 0} color="bg-indigo-500" />
+          <StatCard icon={Package} label="Products Today" value={stats?.productsToday ?? 0} sub="Listed today" color="bg-amber-500" />
+          <StatCard icon={Clock} label="Platform Status" value="Live" sub="All systems operational" color="bg-emerald-500" />
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {cards.map(({ label, value, icon: Icon, color, bg }) => (
-          <div key={label} className="bg-card border border-border rounded-xl p-5">
-            <div className={`inline-flex p-2 rounded-lg ${bg} mb-3`}>
-              <Icon className={`h-5 w-5 ${color}`} />
-            </div>
-            <p className="text-2xl font-bold">{value?.toLocaleString() ?? "—"}</p>
-            <p className="text-sm text-muted-foreground mt-0.5">{label}</p>
-          </div>
-        ))}
-      </div>
-
-      {chartData.length > 0 && (
-        <div className="bg-card border border-border rounded-xl p-5">
-          <h2 className="font-semibold mb-4">New Users — Last 7 Days</h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartData}>
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h2 className="font-semibold mb-4">User Signups — Last 7 Days</h2>
+        {stats?.userGrowth && stats.userGrowth.length > 0 ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={stats.userGrowth}>
               <defs>
-                <linearGradient id="usersGrad" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.3} />
                   <stop offset="95%" stopColor="#7c3aed" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+              <XAxis dataKey="date" tick={{ fontSize: 12 }} className="text-muted-foreground" />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
               <Tooltip />
-              <Area type="monotone" dataKey="users" stroke="#7c3aed" fill="url(#usersGrad)" strokeWidth={2} />
+              <Area type="monotone" dataKey="users" stroke="#7c3aed" fill="url(#colorUsers)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
-        </div>
-      )}
+        ) : (
+          <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">
+            {loading ? "Loading chart…" : "No signup data available"}
+          </div>
+        )}
+      </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { href: "/admin/users", label: "Manage Users" },
-          { href: "/admin/vendors", label: "Manage Vendors" },
-          { href: "/admin/products", label: "Moderate Products" },
-          { href: "/admin/reports", label: "View Reports" },
-          { href: "/admin/notifications", label: "Send Notification" },
-          { href: "/admin/announcements", label: "Announcements" },
-          { href: "/admin/analytics", label: "Analytics" },
-          { href: "/admin/settings", label: "Settings" },
-        ].map(({ href, label }) => (
-          <Link
-            key={href}
-            href={href}
-            className="bg-card border border-border rounded-xl px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-center"
-          >
-            {label}
-          </Link>
-        ))}
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h2 className="font-semibold mb-3">Quick Actions</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { href: "/admin/users", label: "Manage Users", icon: "👥" },
+            { href: "/admin/vendors", label: "Manage Vendors", icon: "🏪" },
+            { href: "/admin/reports", label: "View Reports", icon: "🚨" },
+            { href: "/admin/audit-logs", label: "Audit Logs", icon: "📋" },
+          ].map(({ href, label, icon }) => (
+            <a key={href} href={href} className="flex flex-col items-center gap-2 p-4 rounded-lg border border-border hover:bg-accent transition-colors text-center">
+              <span className="text-2xl">{icon}</span>
+              <span className="text-sm font-medium">{label}</span>
+            </a>
+          ))}
+        </div>
       </div>
     </div>
   )

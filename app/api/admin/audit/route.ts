@@ -8,16 +8,17 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user || !isAdminEmail(user.email)) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
-  const limit = parseInt(new URL(req.url).searchParams.get("limit") ?? "100")
   const db = createAdminClient()
-
-  const { data, error } = await db
+  const { data: logs, error } = await db
     .from("audit_logs")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(limit)
+    .limit(200)
 
-  if (error?.code === "42P01") return NextResponse.json({ logs: [] })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ logs: data ?? [] })
+  if (error) {
+    if (error.code === "42P01") return NextResponse.json({ logs: [] })
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ logs: logs ?? [] })
 }
