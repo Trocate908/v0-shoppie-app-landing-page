@@ -16,11 +16,7 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Product counts per vendor
-  const { data: counts } = await db
-    .from("products")
-    .select("vendor_id")
-
+  const { data: counts } = await db.from("products").select("vendor_id")
   const productCounts = new Map<string, number>()
   counts?.forEach(p => {
     productCounts.set(p.vendor_id, (productCounts.get(p.vendor_id) ?? 0) + 1)
@@ -50,6 +46,9 @@ export async function POST(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   } else if (action === "suspend") {
     const { error } = await db.from("vendors").update({ is_open: false }).eq("id", vendorId)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  } else if (action === "reopen") {
+    const { error } = await db.from("vendors").update({ is_open: true }).eq("id", vendorId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   } else if (action === "delete") {
     const { error } = await db.from("vendors").delete().eq("id", vendorId)

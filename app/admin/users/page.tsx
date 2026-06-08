@@ -1,15 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Search, Shield, Ban, Trash2, RefreshCw, CheckCircle, MoreVertical } from "lucide-react"
+import { Search, Shield, Ban, Trash2, RefreshCw, CheckCircle, MoreVertical, Download } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface User {
   id: string
@@ -27,6 +28,8 @@ export default function AdminUsersPage() {
   const [filtered, setFiltered] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
+  const [roleFilter, setRoleFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("all")
   const [confirm, setConfirm] = useState<{ action: string; userId: string; label: string } | null>(null)
   const { toast } = useToast()
 
@@ -42,9 +45,21 @@ export default function AdminUsersPage() {
   useEffect(() => { load() }, [])
 
   useEffect(() => {
-    const q = query.toLowerCase()
-    setFiltered(q ? users.filter(u => u.email?.toLowerCase().includes(q) || u.vendor?.shop_name?.toLowerCase().includes(q)) : users)
-  }, [query, users])
+    let result = users
+    if (query) {
+      const q = query.toLowerCase()
+      result = result.filter(u =>
+        u.email?.toLowerCase().includes(q) || u.vendor?.shop_name?.toLowerCase().includes(q)
+      )
+    }
+    if (roleFilter === "vendors") result = result.filter(u => u.vendor)
+    if (roleFilter === "admins") result = result.filter(u => u.is_admin)
+    if (roleFilter === "regular") result = result.filter(u => !u.vendor && !u.is_admin)
+    if (statusFilter === "banned") result = result.filter(u => isBanned(u))
+    if (statusFilter === "unverified") result = result.filter(u => !u.email_confirmed_at)
+    if (statusFilter === "active") result = result.filter(u => !isBanned(u) && !!u.email_confirmed_at)
+    setFiltered(result)
+  }, [query, roleFilter, statusFilter, users])
 
   async function doAction(action: string, userId: string) {
     const r = await fetch("/api/admin/users", {
@@ -62,20 +77,84 @@ export default function AdminUsersPage() {
     setConfirm(null)
   }
 
+  function exportCsv() {
+    const rows = [
+      ["Email", "Joined", "Last Login", "Status", "Shop", "Admin"],
+      ...filtered.map(u => [
+        u.email,
+        new Date(u.created_at).toLocaleDateString(),
+        u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : "Never",
+        isBanned(u) ? "Banned" : u.email_confirmed_at ? "Active" : "Unverified",
+        u.vendor?.shop_name ?? "",
+        u.is_admin ? "Yes" : "No",
+      ]),
+    ]
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n")
+    const blob = new Blob([csv], { type: "text/csv" })
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(blob)
+    a.download = `users-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+  }
+
   const isBanned = (u: User) => u.banned_until && new Date(u.banned_until) > new Date()
+
+  const statsBar = [
+    { label: "Total", value: users.length, color: "text-blue-600" },
+    { label: "Vendors", value: users.filter(u => u.vendor).length, color: "text-green-600" },
+    { label: "Banned", value: users.filter(u => isBanned(u)).length, color: "text-red-600" },
+    { label: "Unverified", value: users.filter(u => !u.email_confirmed_at).length, color: "text-amber-600" },
+  ]
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold">User Management</h1>
-          <p className="text-muted-foreground text-sm">{users.length} total users</p>
+          <div className="flex gap-4 mt-1">
+            {statsBar.map(s => (
+              <span key={s.label} className="text-xs text-muted-foreground">
+                {s.label}: <span className={`font-semibold ${s.color}`}>{s.value}</span>
+              </span>
+            ))}
+          </div>
         </div>
-        <div className="relative w-full sm:w-72">
+        <div className="flex gap-2">
+          <button onClick={exportCsv} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-border hover:bg-accent transition-colors">
+            <Download className="h-4 w-4" />Export CSV
+          </button>
+          <button onClick={load} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-border hover:bg-accent transition-colors">
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search by email or shop…" className="pl-9" value={query} onChange={e => setQuery(e.target.value)} />
         </div>
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger className="w-36"><SelectValue placeholder="Role" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Roles</SelectItem>
+            <SelectItem value="vendors">Vendors</SelectItem>
+            <SelectItem value="admins">Admins</SelectItem>
+            <SelectItem value="regular">Regular Users</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="unverified">Unverified</SelectItem>
+            <SelectItem value="banned">Banned</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
+
+      <p className="text-sm text-muted-foreground">{filtered.length} user{filtered.length !== 1 ? "s" : ""} shown</p>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -101,7 +180,9 @@ export default function AdminUsersPage() {
                 <tr key={u.id} className="hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3">
                     <div className="font-medium truncate max-w-[200px]">{u.email}</div>
-                    {u.is_admin && <Badge variant="secondary" className="text-xs mt-0.5">Admin</Badge>}
+                    <div className="flex gap-1 mt-0.5">
+                      {u.is_admin && <Badge variant="secondary" className="text-xs">Admin</Badge>}
+                    </div>
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell text-muted-foreground">
                     {u.vendor ? (
@@ -138,18 +219,20 @@ export default function AdminUsersPage() {
                               <CheckCircle className="h-4 w-4 mr-2 text-green-500" />Verify Email
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem onClick={() => setConfirm({ action: "reset_password", userId: u.id, label: "Send password reset email?" })}>
+                          <DropdownMenuItem onClick={() => setConfirm({ action: "reset_password", userId: u.id, label: "Send password reset email to this user?" })}>
                             <RefreshCw className="h-4 w-4 mr-2 text-blue-500" />Reset Password
                           </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                           {isBanned(u) ? (
-                            <DropdownMenuItem onClick={() => setConfirm({ action: "unban", userId: u.id, label: "Unban this user?" })}>
-                              <Shield className="h-4 w-4 mr-2 text-green-500" />Unban
+                            <DropdownMenuItem onClick={() => setConfirm({ action: "unban", userId: u.id, label: "Unban this user? They will regain access." })}>
+                              <Shield className="h-4 w-4 mr-2 text-green-500" />Unban User
                             </DropdownMenuItem>
                           ) : (
-                            <DropdownMenuItem onClick={() => setConfirm({ action: "ban", userId: u.id, label: "Ban this user? They won't be able to log in." })}>
+                            <DropdownMenuItem onClick={() => setConfirm({ action: "ban", userId: u.id, label: "Ban this user? They will not be able to log in." })}>
                               <Ban className="h-4 w-4 mr-2 text-orange-500" />Ban User
                             </DropdownMenuItem>
                           )}
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem className="text-destructive" onClick={() => setConfirm({ action: "delete", userId: u.id, label: "Permanently delete this account? This cannot be undone." })}>
                             <Trash2 className="h-4 w-4 mr-2" />Delete Account
                           </DropdownMenuItem>
