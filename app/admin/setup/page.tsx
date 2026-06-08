@@ -77,7 +77,8 @@ ALTER TABLE platform_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
 
 -- Allow reading platform settings publicly (used for homepage banner etc.)
-CREATE POLICY IF NOT EXISTS "public_read_settings" ON platform_settings FOR SELECT USING (true);`
+DROP POLICY IF EXISTS "public_read_settings" ON platform_settings;
+CREATE POLICY "public_read_settings" ON platform_settings FOR SELECT USING (true);`
 
 export default function AdminSetupPage() {
   const [copied, setCopied] = useState(false)
