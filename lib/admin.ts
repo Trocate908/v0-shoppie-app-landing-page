@@ -5,6 +5,7 @@ import { redirect } from "next/navigation"
 
 const ADMIN_EMAILS = [
   "miltonmukundwa@gmail.com",
+  "miltonmukundwa6@gmail.com",
   ...(process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(",").map((e) => e.trim()) : []),
 ]
 
