@@ -56,6 +56,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, announcement: data })
   }
 
+  if (body.action === "toggle") {
+    const { id, is_active } = body
+    const { error } = await db.from("announcements").update({ is_active }).eq("id", id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    await logAuditAction({
+      adminId: adminUser.id,
+      adminEmail: adminUser.email!,
+      action: is_active ? "activate_announcement" : "deactivate_announcement",
+      targetType: "announcement",
+      targetId: id,
+      ipAddress: req.headers.get("x-forwarded-for") ?? undefined,
+    })
+    return NextResponse.json({ ok: true })
+  }
+
   if (body.action === "delete") {
     const { error } = await db.from("announcements").delete().eq("id", body.id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -5,20 +5,18 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard, Users, Store, Package, Flag, Bell, Megaphone,
-  BarChart2, Settings, ClipboardList, Shield, LogOut, Menu, X,
+  BarChart2, Settings, ClipboardList, Shield, LogOut, Menu, X, Database,
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
-
-import { Database } from "lucide-react"
 
 const nav = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/vendors", label: "Vendors", icon: Store },
   { href: "/admin/products", label: "Products", icon: Package },
-  { href: "/admin/reports", label: "Reports", icon: Flag },
+  { href: "/admin/reports", label: "Reports", icon: Flag, badge: "reports" },
   { href: "/admin/notifications", label: "Notifications", icon: Bell },
   { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart2 },
@@ -31,6 +29,14 @@ export function AdminSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [pendingReports, setPendingReports] = useState(0)
+
+  useEffect(() => {
+    fetch("/api/admin/reports?status=pending")
+      .then(r => r.json())
+      .then(d => setPendingReports((d.reports ?? []).length))
+      .catch(() => {})
+  }, [])
 
   async function handleLogout() {
     const sb = createClient()
@@ -48,30 +54,37 @@ export function AdminSidebar() {
         </div>
       </div>
       <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto">
-        {nav.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            onClick={() => setOpen(false)}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-              pathname === href || pathname.startsWith(href + "/")
-                ? "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
-            )}
-          >
-            <Icon className="h-4 w-4 shrink-0" />
-            {label}
-          </Link>
-        ))}
+        {nav.map(({ href, label, icon: Icon, badge }) => {
+          const count = badge === "reports" ? pendingReports : 0
+          return (
+            <Link
+              key={href}
+              href={href}
+              onClick={() => setOpen(false)}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                pathname === href || pathname.startsWith(href + "/")
+                  ? "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="flex-1">{label}</span>
+              {count > 0 && (
+                <span className="text-xs bg-red-500 text-white rounded-full px-1.5 py-0.5 leading-none min-w-[18px] text-center">
+                  {count > 99 ? "99+" : count}
+                </span>
+              )}
+            </Link>
+          )
+        })}
       </nav>
       <div className="px-2 py-4 border-t border-border">
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive w-full transition-colors"
         >
-          <LogOut className="h-4 w-4" />
-          Sign Out
+          <LogOut className="h-4 w-4" />Sign Out
         </button>
       </div>
     </div>
@@ -79,7 +92,6 @@ export function AdminSidebar() {
 
   return (
     <>
-      {/* Mobile top bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 flex items-center gap-3 px-4 py-3 bg-card border-b border-border">
         <button onClick={() => setOpen(!open)} className="p-1 rounded-md hover:bg-accent">
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -88,19 +100,22 @@ export function AdminSidebar() {
           <Shield className="h-5 w-5 text-violet-600" />
           <span className="font-bold text-sm">Admin</span>
         </div>
+        {pendingReports > 0 && (
+          <span className="ml-auto text-xs bg-red-500 text-white rounded-full px-2 py-0.5">
+            {pendingReports} report{pendingReports !== 1 ? "s" : ""}
+          </span>
+        )}
       </div>
 
-      {/* Mobile drawer */}
       {open && (
         <div className="lg:hidden fixed inset-0 z-40" onClick={() => setOpen(false)}>
           <div className="absolute inset-0 bg-black/40" />
-          <div className="absolute left-0 top-0 bottom-0 w-64 bg-card border-r border-border" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute left-0 top-0 bottom-0 w-64 bg-card border-r border-border" onClick={e => e.stopPropagation()}>
             <SidebarContent />
           </div>
         </div>
       )}
 
-      {/* Desktop sidebar */}
       <aside className="hidden lg:flex flex-col w-60 shrink-0 border-r border-border bg-card h-screen sticky top-0">
         <SidebarContent />
       </aside>

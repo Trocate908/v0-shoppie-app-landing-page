@@ -1,12 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Search, CheckCircle, XCircle, Pause, Trash2, MoreVertical } from "lucide-react"
+import { Search, CheckCircle, XCircle, Pause, Trash2, MoreVertical, RefreshCw, Play } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Image from "next/image"
 
 interface Vendor {
@@ -26,6 +27,7 @@ export default function AdminVendorsPage() {
   const [filtered, setFiltered] = useState<Vendor[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
   const [confirm, setConfirm] = useState<{ action: string; vendorId: string; label: string } | null>(null)
   const { toast } = useToast()
 
@@ -41,9 +43,17 @@ export default function AdminVendorsPage() {
   useEffect(() => { load() }, [])
 
   useEffect(() => {
-    const q = query.toLowerCase()
-    setFiltered(q ? vendors.filter(v => v.shop_name?.toLowerCase().includes(q)) : vendors)
-  }, [query, vendors])
+    let result = vendors
+    if (query) {
+      const q = query.toLowerCase()
+      result = result.filter(v => v.shop_name?.toLowerCase().includes(q))
+    }
+    if (statusFilter === "verified") result = result.filter(v => v.is_verified)
+    if (statusFilter === "unverified") result = result.filter(v => !v.is_verified)
+    if (statusFilter === "open") result = result.filter(v => v.is_open)
+    if (statusFilter === "closed") result = result.filter(v => !v.is_open)
+    setFiltered(result)
+  }, [query, statusFilter, vendors])
 
   async function doAction(action: string, vendorId: string) {
     const r = await fetch("/api/admin/vendors", {
@@ -57,23 +67,54 @@ export default function AdminVendorsPage() {
     setConfirm(null)
   }
 
+  const statsBar = [
+    { label: "Total", value: vendors.length, color: "text-blue-600" },
+    { label: "Verified", value: vendors.filter(v => v.is_verified).length, color: "text-green-600" },
+    { label: "Open", value: vendors.filter(v => v.is_open).length, color: "text-emerald-600" },
+    { label: "Closed", value: vendors.filter(v => !v.is_open).length, color: "text-red-600" },
+  ]
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold">Vendor Management</h1>
-          <p className="text-muted-foreground text-sm">{vendors.length} total vendors</p>
+          <div className="flex gap-4 mt-1">
+            {statsBar.map(s => (
+              <span key={s.label} className="text-xs text-muted-foreground">
+                {s.label}: <span className={`font-semibold ${s.color}`}>{s.value}</span>
+              </span>
+            ))}
+          </div>
         </div>
-        <div className="relative w-full sm:w-72">
+        <button onClick={load} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-border hover:bg-accent transition-colors">
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh
+        </button>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search vendors…" className="pl-9" value={query} onChange={e => setQuery(e.target.value)} />
         </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Filter" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Vendors</SelectItem>
+            <SelectItem value="verified">Verified Only</SelectItem>
+            <SelectItem value="unverified">Unverified Only</SelectItem>
+            <SelectItem value="open">Open Shops</SelectItem>
+            <SelectItem value="closed">Closed Shops</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
+
+      <p className="text-sm text-muted-foreground">{filtered.length} vendor{filtered.length !== 1 ? "s" : ""} shown</p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {loading ? (
           Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="bg-card border border-border rounded-xl p-4 h-40 animate-pulse" />
+            <div key={i} className="bg-card border border-border rounded-xl p-4 h-44 animate-pulse" />
           ))
         ) : filtered.length === 0 ? (
           <div className="col-span-3 text-center py-12 text-muted-foreground">No vendors found</div>
@@ -88,7 +129,7 @@ export default function AdminVendorsPage() {
                 )}
                 <div className="min-w-0">
                   <p className="font-semibold truncate">{v.shop_name}</p>
-                  <p className="text-xs text-muted-foreground">{v.locations?.city ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground">{v.locations?.city ?? "—"}{v.locations?.country ? `, ${v.locations.country}` : ""}</p>
                 </div>
               </div>
               <DropdownMenu>
@@ -105,10 +146,18 @@ export default function AdminVendorsPage() {
                       <CheckCircle className="h-4 w-4 mr-2 text-green-500" />Verify Vendor
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem onClick={() => setConfirm({ action: "suspend", vendorId: v.id, label: "Suspend this vendor's shop?" })}>
-                    <Pause className="h-4 w-4 mr-2 text-amber-500" />Suspend Shop
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="text-destructive" onClick={() => setConfirm({ action: "delete", vendorId: v.id, label: "Delete this vendor permanently?" })}>
+                  <DropdownMenuSeparator />
+                  {v.is_open ? (
+                    <DropdownMenuItem onClick={() => setConfirm({ action: "suspend", vendorId: v.id, label: "Suspend this vendor's shop? It will appear closed to buyers." })}>
+                      <Pause className="h-4 w-4 mr-2 text-amber-500" />Suspend Shop
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem onClick={() => setConfirm({ action: "reopen", vendorId: v.id, label: "Re-open this vendor's shop?" })}>
+                      <Play className="h-4 w-4 mr-2 text-green-500" />Re-open Shop
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-destructive" onClick={() => setConfirm({ action: "delete", vendorId: v.id, label: "Delete this vendor and all their data permanently?" })}>
                     <Trash2 className="h-4 w-4 mr-2" />Delete Vendor
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -121,13 +170,13 @@ export default function AdminVendorsPage() {
                   <CheckCircle className="h-3 w-3 mr-1" />Verified
                 </Badge>
               )}
-              <Badge variant={v.is_open ? "outline" : "secondary"} className="text-xs">
+              <Badge variant={v.is_open ? "outline" : "secondary"} className={`text-xs ${v.is_open ? "text-green-600 border-green-200" : ""}`}>
                 {v.is_open ? "Open" : "Closed"}
               </Badge>
             </div>
 
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{v.product_count} products</span>
+            <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border pt-2">
+              <span>{v.product_count} product{v.product_count !== 1 ? "s" : ""}</span>
               <span>Since {new Date(v.created_at).toLocaleDateString()}</span>
             </div>
           </div>
