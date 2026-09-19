@@ -107,8 +107,8 @@ export default function ContactPage() {
                       </div>
                       <div className="flex-1">
                         <h5 className="font-semibold text-foreground">Call / SMS</h5>
-                        <a href="tel:+263787795039" className="text-sm text-primary hover:underline">
-                          +263 78 779 5039
+                        <a href="tel:+263789648840" className="text-sm text-primary hover:underline">
+                          +263 78 964 8840
                         </a>
                       </div>
                     </div>
