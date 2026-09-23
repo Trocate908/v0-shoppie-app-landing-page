@@ -57,6 +57,21 @@ async function getAllProducts() {
   return (data || []) as unknown as Product[]
 }
 
+/** Product ids ranked by views in the last 7 days (existing DB function).
+ *  Falls back gracefully to an empty list if the RPC is unavailable. */
+async function getTrendingIds(): Promise<string[]> {
+  const supabase = await createClient()
+  try {
+    const { data, error } = await supabase.rpc("get_trending_products", { limit_count: 12 })
+    if (error || !Array.isArray(data)) return []
+    return data
+      .map((row: { product_id?: string }) => row.product_id)
+      .filter((v): v is string => typeof v === "string")
+  } catch {
+    return []
+  }
+}
+
 async function getAllLocations() {
   const supabase = await createClient()
   const { data, error } = await supabase
@@ -85,11 +100,19 @@ function StoreSkeleton() {
 }
 
 export default async function RootPage() {
-  const [products, locations] = await Promise.all([getAllProducts(), getAllLocations()])
+  const [products, locations, trendingIds] = await Promise.all([
+    getAllProducts(),
+    getAllLocations(),
+    getTrendingIds(),
+  ])
 
   return (
     <Suspense fallback={<StoreSkeleton />}>
-      <AppShell products={products} locations={locations} />
+      <AppShell
+        products={products}
+        locations={locations}
+        trendingIds={trendingIds}
+      />
     </Suspense>
   )
 }

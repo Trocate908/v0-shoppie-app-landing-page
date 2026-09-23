@@ -37,6 +37,7 @@ import {
   Sparkles,
   Search,
   ArrowUpDown,
+  Flame,
   Layers,
   Shirt,
   Cpu,
@@ -52,6 +53,9 @@ import {
   Star,
 } from "lucide-react"
 import Link from "next/link"
+import HorizontalProductCarousel, {
+  type CarouselProduct,
+} from "@/components/horizontal-product-carousel"
 import WhatsAppButton from "@/components/whatsapp-button"
 import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
@@ -80,6 +84,8 @@ interface Product {
   image_url: string | null
   image_urls: string[] | null
   in_stock: boolean
+  created_at?: string | null
+  is_featured?: boolean
   vendor: {
     id: string
     shop_name: string
@@ -95,6 +101,8 @@ interface BrowseProductsClientProps {
   products: Product[]
   locations: Location[]
   visitorCountry: string | null
+  /** Product ids ranked by 7-day views (from the get_trending_products RPC). */
+  trendingIds?: string[]
 }
 
 const CATEGORY_ICONS: Record<string, typeof Layers> = {
@@ -133,6 +141,7 @@ export default function BrowseProductsClient({
   products: initialProducts,
   locations,
   visitorCountry: initialVisitorCountry,
+  trendingIds = [],
 }: BrowseProductsClientProps) {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
@@ -344,6 +353,59 @@ export default function BrowseProductsClient({
     initialProducts.forEach((p) => { if (p.category) set.add(p.category) })
     return PRODUCT_CATEGORIES.filter((c) => set.has(c))
   }, [initialProducts])
+
+  /* ── Homepage discovery carousels ──────────────────────────────────── */
+
+  // "Near you" scope: chosen market → city → detected country, whatever is available.
+  const nearbyLocation = useMemo(() => {
+    if (selectedLocationData) return selectedLocationData
+    const scopeCountry = selectedCountry || detectedCountry
+    if (scopeCountry) {
+      const inCountry = locations.filter((l) => l.country === scopeCountry)
+      if (selectedCity) {
+        const inCity = inCountry.find((l) => l.city === selectedCity)
+        if (inCity) return inCity
+      }
+      return inCountry[0] ?? null
+    }
+    return null
+  }, [selectedLocationData, selectedCountry, selectedCity, detectedCountry, locations])
+
+  const carouselProducts = useMemo((): CarouselProduct[] => initialProducts, [initialProducts])
+
+  const featuredProducts = useMemo(() => {
+    const withFlag = carouselProducts.filter((p) => (p as CarouselProduct).is_featured)
+    const source = withFlag.length > 0 ? withFlag : carouselProducts.filter((p) => p.vendor.is_verified)
+    return source.slice(0, 10)
+  }, [carouselProducts])
+
+  const trendingProducts = useMemo(() => {
+    const rank = new Map(trendingIds.map((id, i) => [id, i] as const))
+    return carouselProducts
+      .filter((p) => rank.has(p.id))
+      .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
+      .slice(0, 10)
+  }, [carouselProducts, trendingIds])
+
+  const newArrivals = useMemo(() => {
+    const byDate = [...carouselProducts].sort((a, b) => {
+      const da = a.created_at ? new Date(a.created_at).getTime() : 0
+      const db = b.created_at ? new Date(b.created_at).getTime() : 0
+      return db - da
+    })
+    return byDate.slice(0, 10)
+  }, [carouselProducts])
+
+  const nearYouProducts = useMemo(() => {
+    if (!nearbyLocation) return []
+    const cityMatch = carouselProducts.filter(
+      (p) => p.vendor.location?.city === nearbyLocation.city,
+    )
+    if (cityMatch.length > 0) return cityMatch.slice(0, 10)
+    return carouselProducts
+      .filter((p) => p.vendor.location?.country === nearbyLocation.country)
+      .slice(0, 10)
+  }, [carouselProducts, nearbyLocation])
 
   return (
     <>
@@ -697,6 +759,49 @@ export default function BrowseProductsClient({
               })}
             </div>
           </div>
+
+          {/* ── Discovery carousels (Featured / Trending / New / Near you) ── */}
+          {(featuredProducts.length > 0 ||
+            trendingProducts.length > 0 ||
+            newArrivals.length > 0 ||
+            nearYouProducts.length > 0) && (
+            <div className="space-y-6">
+              <HorizontalProductCarousel
+                title="Featured"
+                icon={Star}
+                products={featuredProducts}
+                seeAllUrl="/browse"
+                accentClassName="bg-amber-500/15 text-amber-500"
+              />
+              <HorizontalProductCarousel
+                title="Trending"
+                icon={Flame}
+                products={trendingProducts}
+                seeAllUrl="/browse"
+                accentClassName="bg-orange-500/15 text-orange-500"
+              />
+              <HorizontalProductCarousel
+                title="New Arrivals"
+                icon={Sparkles}
+                products={newArrivals}
+                seeAllUrl="/browse"
+                accentClassName="bg-emerald-500/15 text-emerald-500"
+              />
+              {nearbyLocation && (
+                <HorizontalProductCarousel
+                  title={`Near You · ${nearbyLocation.city}`}
+                  icon={MapPin}
+                  products={nearYouProducts}
+                  seeAllUrl={
+                    nearbyLocation.id
+                      ? `/products?location=${nearbyLocation.id}`
+                      : "/browse"
+                  }
+                  accentClassName="bg-sky-500/15 text-sky-500"
+                />
+              )}
+            </div>
+          )}
 
           {/* ── Active filter pills ── */}
           {activeFiltersCount > 0 && (
