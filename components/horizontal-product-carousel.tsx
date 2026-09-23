@@ -49,6 +49,9 @@ export interface HorizontalProductCarouselProps {
   emptyStateMessage?: string
   /** Accent classes for the header icon chip, e.g. "bg-amber-500/15 text-amber-500". */
   accentClassName?: string
+  /** "card" = standard product card. "banner" = wide image-first banner
+   *  showing only the price (used for the Featured section). */
+  variant?: "card" | "banner"
 }
 
 /** How many cards are visible per breakpoint (width of one card relative to
@@ -56,8 +59,14 @@ export interface HorizontalProductCarouselProps {
 const CARD_WIDTH_CLASSES =
   "w-[44%] sm:w-[31%] md:w-[23.5%] lg:w-[19%] xl:w-[16%]"
 
+const BANNER_WIDTH_CLASSES =
+  "w-[80%] sm:w-[62%] md:w-[46%] lg:w-[36%] xl:w-[30%]"
+
 const IMAGE_SIZES =
   "(max-width: 640px) 44vw, (max-width: 768px) 31vw, (max-width: 1024px) 24vw, (max-width: 1280px) 19vw, 16vw"
+
+const BANNER_IMAGE_SIZES =
+  "(max-width: 640px) 80vw, (max-width: 768px) 62vw, (max-width: 1024px) 46vw, (max-width: 1280px) 36vw, 30vw"
 
 function resolveImage(product: CarouselProduct): string | null {
   if (Array.isArray(product.image_urls)) {
@@ -91,9 +100,11 @@ function isActivelyVerified(product: CarouselProduct): boolean {
 export function CarouselProductCard({
   product,
   eager = false,
+  variant = "card",
 }: {
   product: CarouselProduct
   eager?: boolean
+  variant?: "card" | "banner"
 }) {
   const img = resolveImage(product)
   const discount = discountPercent(product)
@@ -101,6 +112,58 @@ export function CarouselProductCard({
   const locationLabel = location
     ? [location.market_name, location.city].filter(Boolean).join(", ") || null
     : null
+
+  if (variant === "banner") {
+    return (
+      <Link
+        href={`/product/${product.id}`}
+        aria-label={`${product.name}, ${product.price.toFixed(2)} USD`}
+        className={[
+          "group/card relative block shrink-0 snap-start overflow-hidden rounded-2xl border border-border/60 bg-card",
+          "shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          BANNER_WIDTH_CLASSES,
+        ].join(" ")}
+      >
+        <div className="relative aspect-[16/9] w-full overflow-hidden bg-muted sm:aspect-[2/1]">
+          {img ? (
+            <Image
+              src={img}
+              alt={`${product.name} from ${product.vendor.shop_name}`}
+              fill
+              className="object-cover transition-transform duration-300 group-hover/card:scale-[1.03]"
+              loading={eager ? "eager" : "lazy"}
+              sizes={BANNER_IMAGE_SIZES}
+              quality={75}
+              priority={eager}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <Image
+                src={FALLBACK_IMAGE}
+                alt=""
+                width={48}
+                height={48}
+                className="h-12 w-12 opacity-30"
+                loading="lazy"
+              />
+            </div>
+          )}
+
+          {/* Bottom scrim so the price stays readable on any image */}
+          <div
+            className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent"
+            aria-hidden
+          />
+
+          {/* Price only */}
+          <span className="absolute bottom-3 left-3 rounded-full bg-background/95 px-3 py-1 text-base font-extrabold text-primary shadow-md">
+            ${product.price.toFixed(2)}
+          </span>
+        </div>
+      </Link>
+    )
+  }
 
   return (
     <Link
@@ -195,7 +258,16 @@ export function CarouselProductCard({
   )
 }
 
-function CarouselCardSkeleton() {
+function CarouselCardSkeleton({ variant = "card" }: { variant?: "card" | "banner" }) {
+  if (variant === "banner") {
+    return (
+      <div className={`shrink-0 snap-start ${BANNER_WIDTH_CLASSES}`}>
+        <div className="overflow-hidden rounded-2xl border border-border/60 bg-card">
+          <Skeleton className="aspect-[16/9] w-full rounded-none" />
+        </div>
+      </div>
+    )
+  }
   return (
     <div className={`shrink-0 snap-start ${CARD_WIDTH_CLASSES}`}>
       <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
@@ -221,6 +293,7 @@ export default function HorizontalProductCarousel({
   loading = false,
   emptyStateMessage,
   accentClassName = "bg-primary/10 text-primary",
+  variant = "card",
 }: HorizontalProductCarouselProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
@@ -259,7 +332,7 @@ export default function HorizontalProductCarousel({
         <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
           <div className="flex gap-3 overflow-hidden pb-1">
             {Array.from({ length: 6 }).map((_, i) => (
-              <CarouselCardSkeleton key={i} />
+              <CarouselCardSkeleton key={i} variant={variant} />
             ))}
           </div>
         </div>
@@ -330,7 +403,12 @@ export default function HorizontalProductCarousel({
           ].join(" ")}
         >
           {products.map((product, i) => (
-            <CarouselProductCard key={product.id} product={product} eager={i < 2} />
+            <CarouselProductCard
+              key={product.id}
+              product={product}
+              eager={i < 2}
+              variant={variant}
+            />
           ))}
         </div>
 
