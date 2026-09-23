@@ -4,10 +4,9 @@ import { useState, useEffect } from "react"
 import { useTheme } from "@/components/theme-provider"
 import {
   Moon, Sun, LogOut, Info, FileText, Phone, MapPin, Heart,
-  ChevronRight, Store, Plus, RefreshCw, Check, Trash2, Wrench,
-  Bug, Palette, ShieldCheck, Bell, Package,
+  ChevronRight, Store, Plus, RefreshCw, Check, Trash2,
+  Palette, ShieldCheck, Bell, Package,
 } from "lucide-react"
-import { isDevModeEnabled, setDevModeEnabled, subscribeToDevMode } from "@/lib/dev-mode"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { createBrowserClient } from "@/lib/supabase/client"
@@ -93,15 +92,12 @@ export default function SettingsTab() {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([])
   const [switchingTo, setSwitchingTo] = useState<string | null>(null)
-  const [devMode, setDevMode] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
 
   useEffect(() => {
     setMounted(true)
     setSavedAccounts(getSavedAccounts())
-    setDevMode(isDevModeEnabled())
-    const unsubDev = subscribeToDevMode(setDevMode)
     const supabase = createBrowserClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
@@ -120,7 +116,6 @@ export default function SettingsTab() {
           })
       }
     })
-    return () => { unsubDev() }
   }, [])
 
   const isDark = theme === "dark"
@@ -396,40 +391,6 @@ export default function SettingsTab() {
               label="Terms & Conditions"
               href="/terms"
             />
-          </MenuGroup>
-        </section>
-
-        {/* ── Developer Options ── */}
-        <section>
-          <SectionLabel>Developer</SectionLabel>
-          <MenuGroup>
-            <div className="flex items-center gap-3 px-4 py-3.5">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-500">
-                <Wrench className="h-4 w-4 text-white" />
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground">Developer Options</p>
-                <p className="text-xs text-muted-foreground">Unlocks diagnostics</p>
-              </div>
-              {mounted && (
-                <Switch
-                  checked={devMode}
-                  onCheckedChange={(checked) => {
-                    setDevModeEnabled(checked)
-                    setDevMode(checked)
-                  }}
-                  aria-label="Toggle developer options"
-                />
-              )}
-            </div>
-            {devMode && (
-              <MenuItem
-                icon={<Bug className="h-4 w-4 text-white" />}
-                iconBg="bg-red-500"
-                label="Notification Diagnostics"
-                href="/notifications/debug"
-              />
-            )}
           </MenuGroup>
         </section>
 
