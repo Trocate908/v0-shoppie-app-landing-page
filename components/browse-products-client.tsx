@@ -356,21 +356,6 @@ export default function BrowseProductsClient({
 
   /* ── Homepage discovery carousels ──────────────────────────────────── */
 
-  // "Near you" scope: chosen market → city → detected country, whatever is available.
-  const nearbyLocation = useMemo(() => {
-    if (selectedLocationData) return selectedLocationData
-    const scopeCountry = selectedCountry || detectedCountry
-    if (scopeCountry) {
-      const inCountry = locations.filter((l) => l.country === scopeCountry)
-      if (selectedCity) {
-        const inCity = inCountry.find((l) => l.city === selectedCity)
-        if (inCity) return inCity
-      }
-      return inCountry[0] ?? null
-    }
-    return null
-  }, [selectedLocationData, selectedCountry, selectedCity, detectedCountry, locations])
-
   const carouselProducts = useMemo((): CarouselProduct[] => initialProducts, [initialProducts])
 
   const featuredProducts = useMemo(() => {
@@ -395,17 +380,6 @@ export default function BrowseProductsClient({
     })
     return byDate.slice(0, 10)
   }, [carouselProducts])
-
-  const nearYouProducts = useMemo(() => {
-    if (!nearbyLocation) return []
-    const cityMatch = carouselProducts.filter(
-      (p) => p.vendor.location?.city === nearbyLocation.city,
-    )
-    if (cityMatch.length > 0) return cityMatch.slice(0, 10)
-    return carouselProducts
-      .filter((p) => p.vendor.location?.country === nearbyLocation.country)
-      .slice(0, 10)
-  }, [carouselProducts, nearbyLocation])
 
   return (
     <>
@@ -760,17 +734,17 @@ export default function BrowseProductsClient({
             </div>
           </div>
 
-          {/* ── Discovery carousels (Featured / Trending / New / Near you) ── */}
+          {/* ── Discovery carousels (Featured / Trending / New Arrivals) ── */}
           {(featuredProducts.length > 0 ||
             trendingProducts.length > 0 ||
-            newArrivals.length > 0 ||
-            nearYouProducts.length > 0) && (
+            newArrivals.length > 0) && (
             <div className="space-y-6">
               <HorizontalProductCarousel
                 title="Featured"
                 icon={Star}
                 products={featuredProducts}
                 seeAllUrl="/browse"
+                variant="banner"
                 accentClassName="bg-amber-500/15 text-amber-500"
               />
               <HorizontalProductCarousel
@@ -787,19 +761,6 @@ export default function BrowseProductsClient({
                 seeAllUrl="/browse"
                 accentClassName="bg-emerald-500/15 text-emerald-500"
               />
-              {nearbyLocation && (
-                <HorizontalProductCarousel
-                  title={`Near You · ${nearbyLocation.city}`}
-                  icon={MapPin}
-                  products={nearYouProducts}
-                  seeAllUrl={
-                    nearbyLocation.id
-                      ? `/products?location=${nearbyLocation.id}`
-                      : "/browse"
-                  }
-                  accentClassName="bg-sky-500/15 text-sky-500"
-                />
-              )}
             </div>
           )}
 
