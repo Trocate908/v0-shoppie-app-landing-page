@@ -101,10 +101,13 @@ export function CarouselProductCard({
   product,
   eager = false,
   variant = "card",
+  animationDelayMs = 0,
 }: {
   product: CarouselProduct
   eager?: boolean
   variant?: "card" | "banner"
+  /** Stagger offset for the banner entrance animation. */
+  animationDelayMs?: number
 }) {
   const img = resolveImage(product)
   const discount = discountPercent(product)
@@ -118,7 +121,9 @@ export function CarouselProductCard({
       <Link
         href={`/product/${product.id}`}
         aria-label={`${product.name}, ${product.price.toFixed(2)} USD`}
+        style={{ animationDelay: `${animationDelayMs}ms` }}
         className={[
+          "banner-animate-in banner-shine",
           "group/card relative block shrink-0 snap-start overflow-hidden rounded-2xl border border-border/60 bg-card",
           "shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
@@ -131,7 +136,7 @@ export function CarouselProductCard({
               src={img}
               alt={`${product.name} from ${product.vendor.shop_name}`}
               fill
-              className="object-cover transition-transform duration-300 group-hover/card:scale-[1.03]"
+              className="banner-ken-burns object-cover"
               loading={eager ? "eager" : "lazy"}
               sizes={BANNER_IMAGE_SIZES}
               quality={75}
@@ -157,7 +162,10 @@ export function CarouselProductCard({
           />
 
           {/* Price only */}
-          <span className="absolute bottom-3 left-3 rounded-full bg-background/95 px-3 py-1 text-base font-extrabold text-primary shadow-md">
+          <span
+            style={{ animationDelay: `${animationDelayMs + 220}ms` }}
+            className="banner-price-pop absolute bottom-3 left-3 rounded-full bg-background/95 px-3 py-1 text-base font-extrabold text-primary shadow-md"
+          >
             ${product.price.toFixed(2)}
           </span>
         </div>
@@ -408,6 +416,7 @@ export default function HorizontalProductCarousel({
               product={product}
               eager={i < 2}
               variant={variant}
+              animationDelayMs={variant === "banner" ? i * 90 : 0}
             />
           ))}
         </div>
