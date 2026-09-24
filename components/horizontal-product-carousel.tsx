@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, type ComponentType } from "react"
+import { useRevealOnScroll } from "@/hooks/use-reveal-on-scroll"
 import Image from "next/image"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, MapPin, Package } from "lucide-react"
@@ -306,6 +307,9 @@ export default function HorizontalProductCarousel({
   variant = "card",
 }: HorizontalProductCarouselProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
+  // Fades the whole section up as it enters the viewport. The hook reveals
+  // immediately for reduced-motion users, so nothing stays hidden.
+  const { ref: revealRef, isRevealed } = useRevealOnScroll<HTMLElement>()
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
 
@@ -371,7 +375,11 @@ export default function HorizontalProductCarousel({
   }
 
   return (
-    <section aria-label={title} className="group/carousel min-w-0">
+    <section
+      ref={revealRef}
+      aria-label={title}
+      className={`group/carousel reveal-on-scroll min-w-0 ${isRevealed ? "is-revealed" : ""}`}
+    >
       <SectionHeader
         title={title}
         icon={Icon}
@@ -388,7 +396,7 @@ export default function HorizontalProductCarousel({
           disabled={!canScrollLeft}
           aria-label={`Scroll ${title} backwards`}
           className={[
-            "absolute -left-1 top-[38%] z-10 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-border",
+            "tap-target absolute -left-1 top-[38%] z-10 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-border",
             "bg-background/90 shadow-md backdrop-blur transition-opacity duration-200 md:flex",
             "hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
             canScrollLeft
@@ -431,7 +439,7 @@ export default function HorizontalProductCarousel({
           disabled={!canScrollRight}
           aria-label={`Scroll ${title} forwards`}
           className={[
-            "absolute -right-1 top-[38%] z-10 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-border",
+            "tap-target absolute -right-1 top-[38%] z-10 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-border",
             "bg-background/90 shadow-md backdrop-blur transition-opacity duration-200 md:flex",
             "hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
             canScrollRight

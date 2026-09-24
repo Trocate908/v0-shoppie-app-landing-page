@@ -106,7 +106,15 @@ export default function FavoriteButton({
   }
 
   return (
-    <Button variant={variant} size={size} onClick={toggleFavorite} disabled={isLoading} className="gap-2">
+    <Button
+      variant={variant}
+      size={size}
+      onClick={toggleFavorite}
+      disabled={isLoading}
+      // `tap-target` extends the hit area to the 44px mobile minimum without
+      // changing the button's rendered size.
+      className="tap-target gap-2"
+    >
       <Heart className={`h-4 w-4 ${isFavorite ? "fill-current text-red-500" : ""}`} />
       {showLabel && <span>{isFavorite ? "Saved" : "Save"}</span>}
     </Button>

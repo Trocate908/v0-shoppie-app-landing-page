@@ -701,7 +701,7 @@ export default function BrowseProductsClient({
                     key="All"
                     onClick={() => setSelectedCategory("")}
                     className={[
-                      "inline-flex shrink-0 items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all duration-150 whitespace-nowrap",
+                      "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all duration-150 whitespace-nowrap",
                       isActive
                         ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25 scale-[1.02]"
                         : `${colors.bg} ${colors.border} text-foreground hover:opacity-80`,
@@ -721,7 +721,7 @@ export default function BrowseProductsClient({
                     key={cat}
                     onClick={() => setSelectedCategory(isActive ? "" : cat)}
                     className={[
-                      "inline-flex shrink-0 items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all duration-150 whitespace-nowrap",
+                      "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all duration-150 whitespace-nowrap",
                       isActive
                         ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25 scale-[1.02]"
                         : `${colors.bg} ${colors.border} text-foreground hover:opacity-80`,
