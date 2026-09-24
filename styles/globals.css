@@ -37,6 +37,13 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Hover-lift shadow. Black shadows read as depth on the light background but
+     disappear against the near-black dark-mode surface, so dark mode swaps to
+     a light-based shadow instead of relying on a darker black. */
+  --lift-shadow:
+    0 10px 24px -8px rgb(0 0 0 / 0.18), 0 2px 8px -2px rgb(0 0 0 / 0.1);
+  --shine-sweep: rgb(255 255 255 / 0.22);
 }
 
 .dark {
@@ -72,6 +79,12 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
+
+  /* Light-based lift shadow — a black shadow is invisible on a dark surface.
+     Kept subtle so the card still reads as lifted, not glowing. */
+  --lift-shadow:
+    0 10px 24px -8px rgb(255 255 255 / 0.14), 0 2px 8px -2px rgb(0 0 0 / 0.6);
+  --shine-sweep: rgb(255 255 255 / 0.3);
 }
 
 @theme inline {
@@ -189,10 +202,12 @@
     content: "";
     position: absolute;
     inset: 0;
+    /* Token-driven so the sweep stays visible on dark surfaces instead of
+       washing out against a light-on-dark image. */
     background: linear-gradient(
       100deg,
       transparent 30%,
-      rgba(255, 255, 255, 0.22) 50%,
+      var(--shine-sweep) 50%,
       transparent 70%
     );
     transform: translateX(-130%) skewX(-18deg);
@@ -219,9 +234,7 @@
   .carousel-card-lift:focus-visible {
     transform: translateY(-2px);
     border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
-    box-shadow:
-      0 10px 24px -8px rgb(0 0 0 / 0.18),
-      0 2px 8px -2px rgb(0 0 0 / 0.1);
+    box-shadow: var(--lift-shadow);
   }
 
   .card-image-zoom {
@@ -233,5 +246,51 @@
   .carousel-card-lift:hover .card-image-zoom,
   .carousel-card-lift:focus-visible .card-image-zoom {
     transform: scale(1.04);
+  }
+}
+
+/* ── Touch targets ────────────────────────────────────────────────────── */
+
+/* Icon buttons and chips are visually 32–36px, but iOS/Android guidance wants a
+   44px minimum tap area. Rather than inflate the artwork, extend the hit
+   region with an invisible pseudo-element. Applied unconditionally — it only
+   enlarges the clickable box, never the rendered size. */
+.tap-target {
+  position: relative;
+}
+
+.tap-target::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
+/* ── Scroll reveal ────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes reveal-up {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Starts hidden and lifts in once the observer marks it revealed. The hook
+     sets the revealed state immediately for reduced-motion users, so content
+     is never trapped invisible. */
+  .reveal-on-scroll {
+    opacity: 0;
+  }
+
+  .reveal-on-scroll.is-revealed {
+    animation: reveal-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
 }
