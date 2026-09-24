@@ -23,6 +23,8 @@ interface Product {
   image_urls: string[] | null
   in_stock: boolean
   created_at: string | null
+  /** Present only once scripts/38_add_product_featured.sql has been run. */
+  is_featured?: boolean
   vendor: {
     id: string
     shop_name: string
@@ -43,8 +45,12 @@ async function getAllProducts() {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from("products")
+    // `*` rather than an explicit column list so `is_featured` comes through
+    // once the column exists (see scripts/38_add_product_featured.sql) without
+    // naming it here. Naming an absent column makes PostgREST error, and the
+    // `if (error) return []` below would then blank the whole homepage.
     .select(`
-      id, name, description, price, category, image_url, image_urls, in_stock, created_at,
+      *,
       vendor:vendors!inner(
         id, shop_name, is_open, is_verified, verification_expires_at, whatsapp_number,
         location:locations!inner(id, country, city, market_name)
