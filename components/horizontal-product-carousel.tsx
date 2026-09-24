@@ -389,6 +389,21 @@ export default function HorizontalProductCarousel({
       />
 
       <div className="relative">
+        {/* Edge fades — signal that content continues past the viewport edge.
+            Each only appears when there is actually more to scroll to. */}
+        {canScrollLeft && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-0 z-[1] hidden w-12 bg-gradient-to-r from-background to-transparent md:block"
+          />
+        )}
+        {canScrollRight && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 z-[1] hidden w-12 bg-gradient-to-l from-background to-transparent md:block"
+          />
+        )}
+
         {/* Desktop nav — previous */}
         <button
           type="button"
@@ -400,7 +415,7 @@ export default function HorizontalProductCarousel({
             "bg-background/90 shadow-md backdrop-blur transition-opacity duration-200 md:flex",
             "hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
             canScrollLeft
-              ? "opacity-0 group-hover/carousel:opacity-100 focus-visible:opacity-100"
+              ? "opacity-60 group-hover/carousel:opacity-100 focus-visible:opacity-100"
               : "pointer-events-none opacity-0",
           ].join(" ")}
         >
@@ -443,13 +458,25 @@ export default function HorizontalProductCarousel({
             "bg-background/90 shadow-md backdrop-blur transition-opacity duration-200 md:flex",
             "hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
             canScrollRight
-              ? "opacity-0 group-hover/carousel:opacity-100 focus-visible:opacity-100"
+              ? "opacity-60 group-hover/carousel:opacity-100 focus-visible:opacity-100"
               : "pointer-events-none opacity-0",
           ].join(" ")}
         >
           <ChevronRight className="h-4 w-4" aria-hidden />
         </button>
       </div>
+
+      {/* Touch affordance — the arrows are hidden on small screens, so hint
+          that the row scrolls. Suppressed once the user reaches the end. */}
+      {canScrollRight && (
+        <p
+          aria-hidden
+          className="mt-1 flex items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground sm:hidden"
+        >
+          Swipe for more
+          <ChevronRight className="h-3 w-3 animate-pulse" />
+        </p>
+      )}
     </section>
   )
 }

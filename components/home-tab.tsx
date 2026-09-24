@@ -52,12 +52,12 @@ export default function HomeTab({ onNavigate }: HomeTabProps) {
               onClick={() => onNavigate("store")}
             >
               <Store className="h-5 w-5" />
-              Browse Products
+              Browse all products
             </Button>
             <Link href="/locations" className="w-full sm:w-auto">
               <Button size="lg" variant="outline" className="w-full gap-2 bg-transparent">
                 <MapPin className="h-5 w-5" />
-                Find Products Near You
+                Shop by location
               </Button>
             </Link>
           </div>
