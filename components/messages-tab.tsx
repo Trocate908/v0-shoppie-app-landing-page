@@ -558,17 +558,22 @@ function ConversationItem({
               )}
             </div>
 
-            {/* Row 3: presence / product context */}
-            <p className="flex items-center gap-1 truncate text-[11px]">
+            {/* Row 3: presence + the product this chat is about.
+                The product used to be a fallback that presence replaced, so it
+                disappeared the moment the other party was online or had a
+                last-seen time — losing the context of what you're discussing. */}
+            <p className="flex items-center gap-1 text-[11px]">
               {online ? (
-                <span className="font-medium text-emerald-600 dark:text-emerald-400">● online</span>
+                <span className="shrink-0 font-medium text-emerald-600 dark:text-emerald-400">● online</span>
               ) : lastSeenText ? (
-                <span className="text-muted-foreground/70">{lastSeenText}</span>
-              ) : (
-                <span className="truncate text-muted-foreground/60">
-                  {products?.name ?? "Product enquiry"}
-                </span>
+                <span className="shrink-0 text-muted-foreground/70">{lastSeenText}</span>
+              ) : null}
+              {(online || lastSeenText) && products?.name && (
+                <span aria-hidden className="shrink-0 text-muted-foreground/30">·</span>
               )}
+              <span className="truncate text-muted-foreground/60">
+                {products?.name ?? "Product enquiry"}
+              </span>
             </p>
           </div>
         </button>
@@ -576,8 +581,16 @@ function ConversationItem({
         {/* Delete button — visible on hover */}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete() }}
-          aria-label="Delete conversation"
-          className="flex shrink-0 items-center justify-center px-3 py-3.5 text-muted-foreground/30 opacity-0 transition-all group-hover:opacity-100 hover:text-destructive"
+          aria-label={`Delete conversation with ${shopName}`}
+          className={cn(
+            "tap-target mr-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+            "text-muted-foreground/40 transition-all hover:bg-destructive/10 hover:text-destructive",
+            // Touch devices have no hover, so a hover-only control is
+            // unreachable there. Stay visible without hover support and use the
+            // quieter reveal on pointer devices.
+            "opacity-100 [@media(hover:hover)]:opacity-0",
+            "[@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100"
+          )}
         >
           <Trash2 className="h-4 w-4" />
         </button>

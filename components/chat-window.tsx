@@ -8,6 +8,7 @@ import {
   KeyboardEvent,
   ChangeEvent,
 } from "react"
+import Link from "next/link"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -45,6 +46,7 @@ import {
   ArrowDown,
   X,
   ImageIcon,
+  ChevronRight,
 } from "lucide-react"
 import Image from "next/image"
 import { format, isToday, isYesterday } from "date-fns"
@@ -533,14 +535,20 @@ export default function ChatWindow({
         onDeleteConversation={() => setConfirmDeleteChat(true)}
       />
 
-      {/* Product context strip */}
+      {/* Product context strip. Links through to the listing, so you can
+          re-check the item you're negotiating over without leaving the chat
+          and finding it again. */}
       {conversation.products && (
-        <div className="sticky top-[60px] z-[9] flex shrink-0 items-center gap-2.5 border-b border-border bg-muted/40 px-4 py-2 backdrop-blur">
+        <Link
+          href={`/product/${conversation.product_id}`}
+          aria-label={`View ${conversation.products.name}`}
+          className="sticky top-[60px] z-[9] flex shrink-0 items-center gap-2.5 border-b border-border bg-muted/40 px-4 py-2 backdrop-blur transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+        >
           <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md bg-background">
             {conversation.products.image_url ? (
               <Image
                 src={conversation.products.image_url}
-                alt={conversation.products.name}
+                alt=""
                 fill
                 className="object-cover"
                 sizes="36px"
@@ -559,7 +567,8 @@ export default function ChatWindow({
               ${conversation.products.price.toFixed(2)}
             </p>
           </div>
-        </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        </Link>
       )}
 
       {/* Messages list */}
@@ -990,14 +999,22 @@ function MessageBubble({ message, isOwn, onEdit, onDelete, onCopy }: MessageBubb
         </div>
       </div>
 
-      {/* Actions menu — available for every message */}
-      <div className="mb-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      {/* Actions menu — available for every message. Kept visible where hover
+          isn't available, otherwise copy/edit/delete are unreachable on touch.
+          No tap-target overlay here: the pseudo-element would sit over the
+          adjacent bubble and steal taps meant for the message text. */}
+      <div
+        className={cn(
+          "mb-1 transition-opacity focus-within:opacity-100",
+          "opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+        )}
+      >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
+              className="h-8 w-8"
               aria-label="Message options"
             >
               <MoreVertical className="h-3.5 w-3.5" />
