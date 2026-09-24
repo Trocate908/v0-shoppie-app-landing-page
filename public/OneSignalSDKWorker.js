@@ -1,7 +1,11 @@
 // ShoppieApp Service Worker — native VAPID web push + PWA caching.
 // Registered at scope "/" so it handles the full origin.
 
-const CACHE_VERSION = "v4"
+// Bump this whenever shipped assets must be re-fetched by every client. It
+// renames all three caches below, so "activate" purges the previous generation
+// and "install" re-precaches the shell — the only lever that forces an already
+// installed client off a stale bundle.
+const CACHE_VERSION = "v5"
 const STATIC_CACHE  = `shoppie-static-${CACHE_VERSION}`
 const DYNAMIC_CACHE = `shoppie-dynamic-${CACHE_VERSION}`
 const IMAGE_CACHE   = `shoppie-images-${CACHE_VERSION}`
