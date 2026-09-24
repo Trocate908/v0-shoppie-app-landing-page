@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ComponentType } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, MapPin, Package } from "lucide-react"
+import { EmptyState } from "@/components/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import FavoriteButton from "@/components/favorite-button"
 import { VerificationBadge } from "@/components/verification-badge"
@@ -360,10 +361,11 @@ export default function HorizontalProductCarousel({
           seeAllUrl={seeAllUrl}
           seeAllLabel={seeAllLabel}
         />
-        <div className="flex items-center gap-2 rounded-xl border border-dashed border-border bg-card/50 px-4 py-5 text-sm text-muted-foreground">
-          <Package className="h-4 w-4 shrink-0" aria-hidden />
-          {emptyStateMessage}
-        </div>
+        <EmptyState
+          icon={Package}
+          title={emptyStateMessage}
+          minHeightClassName="min-h-[160px]"
+        />
       </section>
     )
   }

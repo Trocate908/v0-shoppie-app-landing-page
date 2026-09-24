@@ -36,6 +36,7 @@ import {
 import Image from "next/image"
 import { createBrowserClient } from "@/lib/supabase/client"
 import Link from "next/link"
+import { EmptyState } from "@/components/empty-state"
 import { VerificationBadge } from "@/components/verification-badge"
 import { PRODUCT_CATEGORIES } from "@/lib/constants"
 
@@ -229,17 +230,12 @@ export default function ProductsClient({ products, trendingIds = [] }: ProductsC
 
   if (products.length === 0) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center rounded-3xl border-2 border-dashed border-border bg-card/50">
-        <div className="text-center px-6">
-          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
-            <ShoppingBag className="h-9 w-9 text-primary" />
-          </div>
-          <p className="text-lg font-bold text-foreground">No products yet in this market</p>
-          <p className="mt-2 text-sm text-muted-foreground max-w-xs mx-auto">
-            Vendors are getting set up — check back soon!
-          </p>
-        </div>
-      </div>
+      <EmptyState
+        icon={ShoppingBag}
+        title="No products yet in this market"
+        description="Vendors are getting set up — check back soon!"
+        minHeightClassName="min-h-[400px]"
+      />
     )
   }
 
@@ -409,23 +405,22 @@ export default function ProductsClient({ products, trendingIds = [] }: ProductsC
 
       {/* ── Products grid ── */}
       {filteredProducts.length === 0 ? (
-        <div className="flex min-h-[300px] items-center justify-center rounded-3xl border-2 border-dashed border-border bg-card/50">
-          <div className="text-center px-6">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-              <Search className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <p className="text-sm font-bold text-foreground">No products match your filters</p>
-            <p className="mt-1 text-xs text-muted-foreground">Try a different category or search term.</p>
+        <EmptyState
+          icon={Search}
+          title="No products match your filters"
+          description="Try a different category or search term."
+          action={
             <Button
               variant="outline"
               size="sm"
-              className="mt-4 rounded-full"
+              className="rounded-full"
               onClick={() => { setActiveChip("All"); setSearchQuery("") }}
             >
               Reset filters
             </Button>
-          </div>
-        </div>
+          }
+          minHeightClassName="min-h-[300px]"
+        />
       ) : (
         <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
           {filteredProducts.map((product) => {

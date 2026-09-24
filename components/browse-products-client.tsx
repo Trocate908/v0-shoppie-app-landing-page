@@ -56,6 +56,7 @@ import Link from "next/link"
 import HorizontalProductCarousel, {
   type CarouselProduct,
 } from "@/components/horizontal-product-carousel"
+import { EmptyState } from "@/components/empty-state"
 import WhatsAppButton from "@/components/whatsapp-button"
 import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
@@ -816,27 +817,28 @@ export default function BrowseProductsClient({
 
           {/* ── Products Grid ── */}
           {filteredProducts.length === 0 ? (
-            <div className="flex min-h-[360px] items-center justify-center rounded-3xl border-2 border-dashed border-border bg-card/50 px-6">
-              <div className="max-w-sm text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                  <PackageOpen className="h-7 w-7 text-muted-foreground" />
-                </div>
-                <p className="text-base font-bold text-foreground">
-                  {searchQuery || activeFiltersCount > 0 ? "No products found" : "No products available"}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {searchQuery || activeFiltersCount > 0
-                    ? "Try adjusting your search or filters to see more results."
-                    : "Check back soon — new items are added every day."}
-                </p>
-                {(searchQuery || activeFiltersCount > 0) && (
-                  <Button variant="outline" size="sm" className="mt-4 rounded-full"
-                    onClick={() => { setSearchQuery(""); clearAllFilters() }}>
+            <EmptyState
+              icon={PackageOpen}
+              title={searchQuery || activeFiltersCount > 0 ? "No products found" : "No products available"}
+              description={
+                searchQuery || activeFiltersCount > 0
+                  ? "Try adjusting your search or filters to see more results."
+                  : "Check back soon — new items are added every day."
+              }
+              action={
+                searchQuery || activeFiltersCount > 0 ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => { setSearchQuery(""); clearAllFilters() }}
+                  >
                     Clear search &amp; filters
                   </Button>
-                )}
-              </div>
-            </div>
+                ) : undefined
+              }
+              minHeightClassName="min-h-[360px]"
+            />
           ) : (
             <div className="grid grid-cols-2 gap-x-2 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {filteredProducts.map((product, index) => {
