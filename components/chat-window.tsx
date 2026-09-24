@@ -129,6 +129,8 @@ export default function ChatWindow({
   const [confirmDeleteChat, setConfirmDeleteChat] = useState(false)
   // Typing indicator: true when the OTHER participant is currently typing
   const [isOtherTyping, setIsOtherTyping] = useState(false)
+  // Captured once so bubbles that arrive later can be told apart from history.
+  const [mountedAt] = useState(() => Date.now())
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -277,9 +279,24 @@ export default function ChatWindow({
           setMessages((prev) => prev.filter((m) => m.id !== removed.id))
         }
       )
+      .on("broadcast", { event: "typing" }, (payload) => {
+        const from = (payload?.payload as { userId?: string } | undefined)?.userId
+        if (!from || from === currentUserId) return
+        setIsOtherTyping(true)
+        if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current)
+        // Self-healing: if the sender never signals that they stopped (closed
+        // tab, dropped connection), drop the indicator instead of leaving it on.
+        typingStopTimerRef.current = setTimeout(() => setIsOtherTyping(false), 3000)
+      })
       .subscribe()
 
+    // Held so the composer can broadcast without re-subscribing per keystroke.
+    typingChannelRef.current = channel
+
     return () => {
+      typingChannelRef.current = null
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current)
+      setIsOtherTyping(false)
       supabase.removeChannel(channel)
     }
   }, [conversation.id, currentUserId, otherName])
@@ -524,52 +541,69 @@ export default function ChatWindow({
   const groupedMessages = groupByDate(messages)
   const canSend = !!(input.trim() || pendingImage) && !sending
 
+  // Throttled, so holding a key down doesn't flood the channel.
+  function notifyTyping() {
+    const channel = typingChannelRef.current
+    if (!channel) return
+    const now = Date.now()
+    if (now - lastTypingSentAtRef.current < 2000) return
+    lastTypingSentAtRef.current = now
+    channel
+      .send({ type: "broadcast", event: "typing", payload: { userId: currentUserId } })
+      .then(() => {})
+      .catch(() => {})
+  }
+
   return (
     <div className="flex h-dvh flex-col bg-background">
-      {/* Header */}
-      <ChatHeader
-        conversation={conversation}
-        currentUserId={currentUserId}
-        otherName={otherName}
-        onBack={onBack}
-        onDeleteConversation={() => setConfirmDeleteChat(true)}
-      />
+      {/* The chat header and the product strip share one sticky block, so the
+          strip's offset never has to hardcode the header height. */}
+      <div className="sticky top-0 z-20 shrink-0 border-b border-border/60 bg-background/85 backdrop-blur-xl">
+        <ChatHeader
+          conversation={conversation}
+          currentUserId={currentUserId}
+          otherName={otherName}
+          isOtherTyping={isOtherTyping}
+          onBack={onBack}
+          onDeleteConversation={() => setConfirmDeleteChat(true)}
+        />
 
-      {/* Product context strip. Links through to the listing, so you can
-          re-check the item you're negotiating over without leaving the chat
-          and finding it again. */}
-      {conversation.products && (
-        <Link
-          href={`/product/${conversation.product_id}`}
-          aria-label={`View ${conversation.products.name}`}
-          className="sticky top-[60px] z-[9] flex shrink-0 items-center gap-2.5 border-b border-border bg-muted/40 px-4 py-2 backdrop-blur transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
-        >
-          <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md bg-background">
-            {conversation.products.image_url ? (
-              <Image
-                src={conversation.products.image_url}
-                alt=""
-                fill
-                className="object-cover"
-                sizes="36px"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center">
-                <Package className="h-4 w-4 text-muted-foreground" />
-              </div>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-medium leading-tight text-foreground">
-              {conversation.products.name}
-            </p>
-            <p className="text-[11px] font-semibold leading-tight text-primary">
-              ${conversation.products.price.toFixed(2)}
-            </p>
-          </div>
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-        </Link>
-      )}
+        {/* Product context strip. Links through to the listing, so you can
+            re-check the item you're negotiating over without leaving the chat
+            and finding it again. */}
+        {conversation.products && (
+          <Link
+            href={`/product/${conversation.product_id}`}
+            aria-label={`View ${conversation.products.name}`}
+            className="flex items-center gap-2.5 border-t border-border/50 bg-muted/40 px-4 py-2 transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+          >
+            <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md bg-background">
+              {conversation.products.image_url ? (
+                <Image
+                  src={conversation.products.image_url}
+                  alt=""
+                  fill
+                  className="object-cover"
+                  sizes="36px"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center">
+                  <Package className="h-4 w-4 text-muted-foreground" />
+                </div>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium leading-tight text-foreground">
+                {conversation.products.name}
+              </p>
+              <p className="text-[11px] font-semibold leading-tight text-primary">
+                ${conversation.products.price.toFixed(2)}
+              </p>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          </Link>
+        )}
+      </div>
 
       {/* Messages list */}
       <main
@@ -577,33 +611,44 @@ export default function ChatWindow({
         className="relative flex-1 overflow-y-auto px-4 py-3"
       >
         {loading ? (
-          <div className="flex h-full items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
+          <ChatMessagesSkeleton />
         ) : messages.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            No messages yet. Say hello!
-          </p>
+          <ChatEmptyState
+            otherName={otherName}
+            avatarUrl={
+              conversation.is_buyer
+                ? conversation.vendors?.profile_picture_url ?? null
+                : null
+            }
+            onPickIcebreaker={(text) => {
+              setInput(text)
+              inputRef.current?.focus()
+            }}
+          />
         ) : (
-          <div className="space-y-1">
+          <>
             {groupedMessages.map(({ dateLabel, msgs }) => (
               <div key={dateLabel}>
                 {/* Date divider */}
-                <div className="flex items-center gap-3 py-3">
-                  <div className="h-px flex-1 bg-border" />
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <div className="flex items-center justify-center py-4">
+                  <span className="rounded-full bg-muted/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground ring-1 ring-border/50">
                     {dateLabel}
                   </span>
-                  <div className="h-px flex-1 bg-border" />
                 </div>
 
-                {msgs.map((msg) => {
+                {msgs.map((msg, i) => {
                   const isOwn = msg.sender_id === currentUserId
+                  const prev = msgs[i - 1]
+                  const next = msgs[i + 1]
                   return (
                     <MessageBubble
                       key={msg.id}
                       message={msg}
                       isOwn={isOwn}
+                      isFirstInGroup={!prev || prev.sender_id !== msg.sender_id}
+                      isLastInGroup={!next || next.sender_id !== msg.sender_id}
+                      // Tolerates a little clock skew between server and client.
+                      animateIn={new Date(msg.created_at).getTime() > mountedAt - 5000}
                       onEdit={() => startEdit(msg)}
                       onDelete={() => deleteMessage(msg.id)}
                       onCopy={() => msg.content && copyMessage(msg.content)}
@@ -612,7 +657,21 @@ export default function ChatWindow({
                 })}
               </div>
             ))}
-          </div>
+
+            {/* Typing indicator */}
+            {isOtherTyping && (
+              <div className="mt-1.5 flex justify-start">
+                <div
+                  aria-label={`${otherName} is typing`}
+                  className="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-muted px-3 py-2.5 ring-1 ring-border/60"
+                >
+                  <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                  <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                  <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                </div>
+              </div>
+            )}
+          </>
         )}
         <div ref={bottomRef} />
 
@@ -691,7 +750,7 @@ export default function ChatWindow({
       {/* Input bar */}
       <div className="shrink-0 border-t border-border bg-background px-3 py-2">
         <div className="flex items-end gap-2">
-          <div className="flex flex-1 items-end gap-0.5 rounded-2xl bg-muted/60 pl-1 pr-2 ring-0 focus-within:ring-1 focus-within:ring-primary/40">
+          <div className="flex flex-1 items-end gap-0.5 rounded-3xl bg-muted/50 pl-1 pr-2 ring-1 ring-border/60 transition-shadow focus-within:bg-background focus-within:ring-primary/30 focus-within:shadow-sm">
             {/* Emoji toggle */}
             <Button
               type="button"
@@ -712,11 +771,14 @@ export default function ChatWindow({
             <Textarea
               ref={inputRef}
               value={editingMessage ? editContent : input}
-              onChange={(e) =>
-                editingMessage
-                  ? setEditContent(e.target.value)
-                  : setInput(e.target.value)
-              }
+              onChange={(e) => {
+                if (editingMessage) {
+                  setEditContent(e.target.value)
+                } else {
+                  setInput(e.target.value)
+                  notifyTyping()
+                }
+              }}
               onKeyDown={handleKeyDown}
               onFocus={() => setShowEmoji(false)}
               placeholder={editingMessage ? "Edit message…" : "Message"}
@@ -757,7 +819,7 @@ export default function ChatWindow({
                 : !canSend
             }
             aria-label={editingMessage ? "Save edit" : "Send message"}
-            className="h-11 w-11 shrink-0 rounded-full shadow-sm"
+            className="h-11 w-11 shrink-0 rounded-full shadow-sm transition-transform hover:scale-105 active:scale-95 disabled:hover:scale-100"
           >
             {sending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -803,12 +865,14 @@ function ChatHeader({
   conversation,
   currentUserId,
   otherName,
+  isOtherTyping,
   onBack,
   onDeleteConversation,
 }: {
   conversation: Conversation
   currentUserId: string
   otherName: string
+  isOtherTyping: boolean
   onBack: () => void
   onDeleteConversation: () => void
 }) {
@@ -828,14 +892,20 @@ function ChatHeader({
     : null
 
   return (
-    <header className="sticky top-0 z-10 flex h-[60px] shrink-0 items-center gap-3 border-b border-border bg-background/95 px-2 pr-2 backdrop-blur">
-      <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back" className="shrink-0">
+    <header className="flex h-[60px] shrink-0 items-center gap-2.5 px-2">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onBack}
+        aria-label="Back"
+        className="tap-target h-9 w-9 shrink-0 rounded-full"
+      >
         <ArrowLeft className="h-5 w-5" />
       </Button>
 
       {/* Avatar with online dot */}
       <div className="relative shrink-0">
-        <div className="relative h-10 w-10 overflow-hidden rounded-full bg-muted ring-1 ring-border">
+        <div className="relative h-10 w-10 overflow-hidden rounded-full bg-muted ring-2 ring-border/60">
           {avatarUrl ? (
             <Image
               src={avatarUrl}
@@ -853,7 +923,7 @@ function ChatHeader({
         {online && (
           <span
             aria-label="Online"
-            className="absolute bottom-0 right-0 block h-3 w-3 rounded-full border-2 border-background bg-green-500"
+            className="absolute -bottom-0.5 -right-0.5 block h-3.5 w-3.5 rounded-full border-2 border-background bg-emerald-500"
           />
         )}
       </div>
@@ -873,9 +943,13 @@ function ChatHeader({
             />
           )}
         </div>
-        <p className="truncate text-xs leading-tight">
-          {online ? (
-            <span className="font-medium text-green-600 dark:text-green-500">online</span>
+        {/* Live presence line. Typing outranks online/last-seen, because it's
+            the more useful signal while you're composing a reply. */}
+        <p className="truncate text-[11px] leading-tight">
+          {isOtherTyping ? (
+            <span className="font-medium text-primary">typing…</span>
+          ) : online ? (
+            <span className="font-medium text-emerald-600 dark:text-emerald-500">online now</span>
           ) : lastSeenText ? (
             <span className="text-muted-foreground">{lastSeenText}</span>
           ) : (
@@ -891,7 +965,7 @@ function ChatHeader({
             variant="ghost"
             size="icon"
             aria-label="Chat options"
-            className="shrink-0"
+            className="tap-target h-9 w-9 shrink-0 rounded-full"
           >
             <MoreVertical className="h-5 w-5" />
           </Button>
@@ -932,12 +1006,27 @@ function MessageTick({ delivered, read }: MessageTickProps) {
 interface MessageBubbleProps {
   message: Message
   isOwn: boolean
+  /** Consecutive messages from one sender cluster together. */
+  isFirstInGroup: boolean
+  isLastInGroup: boolean
+  /** Only messages arriving after mount animate in, so opening a long thread
+      doesn't replay the entrance animation on the whole history. */
+  animateIn: boolean
   onEdit: () => void
   onDelete: () => void
   onCopy: () => void
 }
 
-function MessageBubble({ message, isOwn, onEdit, onDelete, onCopy }: MessageBubbleProps) {
+function MessageBubble({
+  message,
+  isOwn,
+  isFirstInGroup,
+  isLastInGroup,
+  animateIn,
+  onEdit,
+  onDelete,
+  onCopy,
+}: MessageBubbleProps) {
   const timeStr = format(new Date(message.created_at), "HH:mm")
 
   if (message.deleted) {
@@ -953,17 +1042,31 @@ function MessageBubble({ message, isOwn, onEdit, onDelete, onCopy }: MessageBubb
   return (
     <div
       className={cn(
-        "group my-0.5 flex items-end gap-1",
-        isOwn ? "flex-row-reverse" : "flex-row"
+        "group flex items-end gap-1",
+        isFirstInGroup ? "mt-2" : "mt-0.5",
+        isOwn ? "flex-row-reverse" : "flex-row",
+        animateIn && "bubble-in"
       )}
     >
-      {/* Bubble */}
+      {/* Bubble. Incoming bubbles carry a hairline ring so they stay legible
+          against the muted surface in both themes. */}
       <div
         className={cn(
           "relative max-w-[75%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm",
           isOwn
-            ? "rounded-br-sm bg-primary text-primary-foreground"
-            : "rounded-bl-sm bg-muted text-foreground"
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted text-foreground ring-1 ring-border/60",
+          // Corners that touch a neighbouring message from the same sender get
+          // squared off, and the tail is kept only on the last one in a run.
+          isOwn
+            ? cn(
+                isFirstInGroup ? "rounded-tr-2xl" : "rounded-tr-md",
+                isLastInGroup ? "rounded-br-sm" : "rounded-br-md"
+              )
+            : cn(
+                isFirstInGroup ? "rounded-tl-2xl" : "rounded-tl-md",
+                isLastInGroup ? "rounded-bl-sm" : "rounded-bl-md"
+              )
         )}
       >
         {message.image_url && (
@@ -1055,6 +1158,76 @@ function MessageBubble({ message, isOwn, onEdit, onDelete, onCopy }: MessageBubb
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+      </div>
+    </div>
+  )
+}
+
+// ─── Chat states ───────────────────────────────────────────────────────────────
+
+function ChatMessagesSkeleton() {
+  // Bubble-shaped placeholders that alternate sides, so the thread reads as
+  // "messages are coming" rather than showing a bare spinner.
+  const widths = ["w-3/5", "w-2/5", "w-3/4", "w-1/2", "w-2/3"]
+  return (
+    <div aria-label="Loading messages" className="space-y-3 py-2">
+      {widths.map((w, i) => (
+        <div key={i} className={cn("flex", i % 2 === 0 ? "justify-start" : "justify-end")}>
+          <div className={cn("skeleton-shimmer h-10 rounded-2xl", w)} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ChatEmptyState({
+  otherName,
+  avatarUrl,
+  onPickIcebreaker,
+}: {
+  otherName: string
+  avatarUrl: string | null
+  onPickIcebreaker: (text: string) => void
+}) {
+  // Openers pre-fill the composer rather than sending straight away — the user
+  // can still edit before it goes out.
+  const icebreakers = [
+    "Hi, is this still available?",
+    "Can you do a better price?",
+    "Where are you located?",
+  ]
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-2 text-center">
+      <div className="relative mb-4">
+        <div aria-hidden className="absolute inset-0 -m-4 rounded-full bg-primary/10 blur-xl" />
+        <div className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-muted ring-1 ring-border/60">
+          {avatarUrl ? (
+            <Image src={avatarUrl} alt="" fill className="object-cover" sizes="64px" />
+          ) : (
+            <span className="text-xl font-bold uppercase text-muted-foreground">
+              {otherName.charAt(0)}
+            </span>
+          )}
+        </div>
+      </div>
+      <p className="text-base font-semibold tracking-tight text-foreground">
+        Start the conversation
+      </p>
+      <p className="mt-1 max-w-[16rem] text-xs leading-relaxed text-muted-foreground">
+        Ask {otherName} about this item — most vendors reply within a few hours.
+      </p>
+      <div className="mt-5 flex flex-wrap justify-center gap-2">
+        {icebreakers.map((text) => (
+          <button
+            key={text}
+            type="button"
+            onClick={() => onPickIcebreaker(text)}
+            className="tap-target rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
+          >
+            {text}
+          </button>
+        ))}
       </div>
     </div>
   )
