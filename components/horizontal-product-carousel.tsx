@@ -123,9 +123,9 @@ export function CarouselProductCard({
         aria-label={`${product.name}, ${product.price.toFixed(2)} USD`}
         style={{ animationDelay: `${animationDelayMs}ms` }}
         className={[
-          "banner-animate-in banner-shine",
+          "banner-animate-in banner-shine carousel-card-lift",
           "group/card relative block shrink-0 snap-start overflow-hidden rounded-2xl border border-border/60 bg-card",
-          "shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
+          "shadow-sm",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           BANNER_WIDTH_CLASSES,
         ].join(" ")}
@@ -178,8 +178,9 @@ export function CarouselProductCard({
       href={`/product/${product.id}`}
       aria-label={`${product.name}, ${product.price.toFixed(2)} USD, from ${product.vendor.shop_name}`}
       className={[
+        "carousel-card-lift",
         "group/card relative flex shrink-0 flex-col snap-start rounded-xl border border-border/60 bg-card",
-        "overflow-hidden shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
+        "overflow-hidden shadow-sm",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         CARD_WIDTH_CLASSES,
       ].join(" ")}
@@ -191,7 +192,7 @@ export function CarouselProductCard({
             src={img}
             alt={`${product.name} from ${product.vendor.shop_name}`}
             fill
-            className="object-cover transition-transform duration-300 group-hover/card:scale-[1.04]"
+            className="card-image-zoom object-cover"
             loading={eager ? "eager" : "lazy"}
             sizes={IMAGE_SIZES}
             quality={70}
