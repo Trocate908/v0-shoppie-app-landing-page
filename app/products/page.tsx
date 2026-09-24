@@ -8,6 +8,23 @@ import ProfileButton from "@/components/profile-button"
 import Image from "next/image"
 import { AppFooter } from "@/components/app-footer"
 
+/* Shop open/closed status is rendered on this page, so the static output has
+   to be regenerated when a vendor flips their shop.
+
+   The normal path does that explicitly: POST /api/vendor/shop-status writes
+   `is_open` and calls `revalidatePath("/products")` in the same request, so the
+   vendor's own toggle is reflected immediately.
+
+   This 60s window is the fallback for writes that bypass that route — notably
+   the admin panel (/api/admin/vendors), which updates `is_open` directly — and
+   for shop creation at signup, where no invalidation call exists. Without it,
+   those writes would leave this page serving build-time status indefinitely.
+
+   It is a bound, not a guarantee: ISR is stale-while-revalidate, so the first
+   request after the window expires still gets the cached page while
+   regeneration runs for the next one. */
+export const revalidate = 60
+
 export const metadata = {
   title: "Products - ShoppieApp",
   description: "Browse products from local vendors",

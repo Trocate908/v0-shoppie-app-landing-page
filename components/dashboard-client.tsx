@@ -164,10 +164,18 @@ export function DashboardClient({ vendor, stats, userId }: Props) {
 
   const handleToggleShop = async (checked: boolean) => {
     setIsUpdating(true)
-    const supabase = createBrowserClient()
     try {
-      const { error } = await supabase.from("vendors").update({ is_open: checked }).eq("id", vendor.id)
-      if (error) throw error
+      // Goes through the server route so the ISR caches for the homepage,
+      // browse, products and shop pages are invalidated in the same request.
+      // A direct Supabase write from here would leave them stale.
+      const response = await fetch("/api/vendor/shop-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isOpen: checked }),
+      })
+
+      if (!response.ok) throw new Error(`Failed to update shop status (${response.status})`)
+
       setIsOpen(checked)
       toast({ title: checked ? "Shop is now Open" : "Shop is now Closed" })
     } catch {
