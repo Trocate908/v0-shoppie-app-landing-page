@@ -334,6 +334,38 @@ export default function StatusRow({
     // Run cleanup and fetch in parallel — don't wait for cleanup before showing statuses
     fetchStatuses()
     fetch("/api/cleanup-statuses", { method: "POST" }).then(() => fetchStatuses()).catch(() => {})
+
+    // Catch up when the tab is backgrounded and then returned to — without
+    // this, a user who leaves the Store tab open never sees new posts.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchStatuses()
+    }
+    window.addEventListener("focus", onVisible)
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      window.removeEventListener("focus", onVisible)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
+  }, [])
+
+  // Push updates so a new post appears without waiting for a refetch trigger.
+  // Requires `shop_statuses` in the `supabase_realtime` publication; until that
+  // migration is applied the channel simply never fires and the focus refetch
+  // above remains the fallback, so this is safe to ship either way.
+  useEffect(() => {
+    const supabase = createBrowserClient()
+    const channel = supabase
+      .channel("shop-statuses-feed")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "shop_statuses" },
+        () => { fetchStatuses() }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   async function fetchStatuses() {
