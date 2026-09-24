@@ -171,8 +171,9 @@
   }
 
   .banner-animate-in {
-    opacity: 0;
-    animation: banner-fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    /* `backwards` (not `forwards`) so the animation doesn't pin `transform`
+       for the element's lifetime — hover lift on the card must still work. */
+    animation: banner-fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   }
 
   .banner-ken-burns {
@@ -200,5 +201,37 @@
 
   .banner-shine:hover::after {
     animation: banner-shine 0.9s ease-out;
+  }
+
+  /* ── Card carousel hover treatment (Trending / New Arrivals) ────────── */
+
+  /* Applies to both variants' cards. Lift + deepening shadow are transitioned
+     (not keyframed) so they mirror the banner's hover behavior and cancel
+     cleanly mid-transition. The keyframe-locked transform is freed by using
+     `backwards` fill above; per-card `animation-delay` needs it. */
+  .carousel-card-lift {
+    transition-property: transform, box-shadow, border-color;
+    transition-duration: 280ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .carousel-card-lift:hover,
+  .carousel-card-lift:focus-visible {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
+    box-shadow:
+      0 10px 24px -8px rgb(0 0 0 / 0.18),
+      0 2px 8px -2px rgb(0 0 0 / 0.1);
+  }
+
+  .card-image-zoom {
+    transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Image zoom is grouped under the card's own group so it keeps working
+     independently of the lift transition. */
+  .carousel-card-lift:hover .card-image-zoom,
+  .carousel-card-lift:focus-visible .card-image-zoom {
+    transform: scale(1.04);
   }
 }
