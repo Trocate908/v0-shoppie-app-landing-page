@@ -747,6 +747,7 @@ export default function BrowseProductsClient({
                 seeAllUrl="/browse"
                 variant="banner"
                 accentClassName="bg-amber-500/15 text-amber-500"
+                autoPlay
               />
               <HorizontalProductCarousel
                 title="Trending"
