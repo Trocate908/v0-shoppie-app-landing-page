@@ -292,7 +292,7 @@ export default function MessagesTab({
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background pb-20">
+    <div className="chat-bg-pattern relative flex min-h-dvh flex-col bg-background pb-20">
       {/* Header */}
       <header
         ref={attachHeader}
@@ -372,7 +372,7 @@ export default function MessagesTab({
       </header>
 
       {/* Content */}
-      <main className="flex-1">
+      <main className="relative flex-1">
         {loading ? (
           <ConversationsSkeleton />
         ) : !isAuthenticated ? (
@@ -425,11 +425,13 @@ export default function MessagesTab({
                   style={{ top: headerHeight }}
                   className="sticky z-[1] flex items-center gap-3 bg-background/85 px-4 py-2 backdrop-blur"
                 >
-                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
+                  {/* Full opacity: at 10px on the patterned wallpaper, the
+                      70% muted tone dropped below readable contrast. */}
+                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                     {label}
                   </span>
                   <div className="h-px flex-1 bg-border/50" />
-                  <span className="text-[10px] font-semibold tabular-nums text-muted-foreground/50">
+                  <span className="text-[10px] font-semibold tabular-nums text-muted-foreground">
                     {items.length}
                   </span>
                 </div>
@@ -625,7 +627,7 @@ function ConversationItem({
                   ● online
                 </span>
               ) : lastSeenText ? (
-                <span className="shrink-0 text-[11px] text-muted-foreground/70">{lastSeenText}</span>
+                <span className="shrink-0 text-[11px] text-muted-foreground">{lastSeenText}</span>
               ) : null}
               <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-background/80 py-0.5 pl-0.5 pr-2 ring-1 ring-border/60">
                 <span className="relative h-5 w-5 shrink-0 overflow-hidden rounded-full bg-muted">

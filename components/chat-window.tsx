@@ -560,7 +560,7 @@ export default function ChatWindow({
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-background">
+    <div className="chat-bg-pattern relative flex h-dvh flex-col bg-background">
       {/* The chat header and the product strip share one sticky block, so the
           strip's offset never has to hardcode the header height. */}
       <div className="sticky top-0 z-20 shrink-0 border-b border-border/60 bg-background/85 backdrop-blur-xl">
@@ -1471,7 +1471,9 @@ function ChatEmptyState({
       <p className="text-base font-semibold tracking-tight text-foreground">
         Start the conversation
       </p>
-      <p className="mt-1 max-w-[16rem] text-xs leading-relaxed text-muted-foreground">
+      {/* Solid pill behind the tagline: bare 12px muted text lost contrast
+          sitting directly on the patterned wallpaper. */}
+      <p className="mt-1 max-w-[16rem] rounded-full bg-card/90 px-3 py-1 text-xs leading-relaxed text-muted-foreground shadow-sm ring-1 ring-border/50">
         Ask {otherName} about this item — most vendors reply within a few hours.
       </p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
