@@ -3,6 +3,14 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { sendWebPushToSubscriptions, type WebPushMessage } from "@/lib/push/server"
 import { emitToUser } from "@/lib/socket-server"
 
+// This project does not provide Supabase generated Database types yet. Keep
+// notification-table access dynamic until those types are introduced.
+type AdminClient = Omit<ReturnType<typeof createAdminClient>, "from"> & {
+  from: (table: string) => any
+}
+type PushTokenRow = { user_id?: string | null; token: string }
+type VendorRow = { id?: string; user_id?: string | null; vendor_id?: string | null }
+
 export type NotificationType =
   | "message"
   | "trending"
@@ -14,7 +22,15 @@ export type NotificationType =
 export type DispatchTarget =
   | { userId: string }
   | { userIds: string[] }
-  | { audience: "all_shoppers" | "all_vendors_with_products" | "all_vendors_without_products" | "all" }
+  | {
+      audience:
+        | "all_shoppers"
+        | "all_vendors"
+        | "all_vendors_with_products"
+        | "all_vendors_without_products"
+        | "all_vendors_verified"
+        | "all"
+    }
 
 export type DispatchInput = {
   type: NotificationType
@@ -38,40 +54,72 @@ function toAbsolute(link?: string): string | undefined {
 // ── Token helpers ───────────────────────────────────────────────────────────
 
 async function getTokensForUsers(
-  supabase: ReturnType<typeof createAdminClient>,
+  supabase: AdminClient,
   userIds: string[],
 ): Promise<{ userId: string; token: string }[]> {
   if (userIds.length === 0) return []
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("push_tokens")
     .select("user_id, token")
     .eq("enabled", true)
     .in("user_id", userIds)
-  return (data ?? []).map((r) => ({ userId: r.user_id as string, token: r.token as string }))
+  if (error) throw error
+  return ((data ?? []) as PushTokenRow[]).map((row) => ({
+    userId: row.user_id as string,
+    token: row.token,
+  }))
 }
 
-async function getAllTokens(
-  supabase: ReturnType<typeof createAdminClient>,
+async function getTokensForAudience(
+  supabase: AdminClient,
+  audience: "all" | "all_shoppers",
 ): Promise<string[]> {
-  const { data } = await supabase
+  let query = supabase
     .from("push_tokens")
-    .select("token")
+    .select("user_id, token")
     .eq("enabled", true)
-  return (data ?? []).map((r) => r.token as string)
+
+  if (audience === "all_shoppers") {
+    query = query.in("user_type", ["shopper", "anonymous"])
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+
+  const tokenRows = (data ?? []) as PushTokenRow[]
+  if (audience === "all") {
+    return tokenRows.map((row) => row.token)
+  }
+
+  const { data: vendors, error: vendorError } = await supabase
+    .from("vendors")
+    .select("user_id")
+    .limit(5000)
+  if (vendorError) throw vendorError
+
+  const vendorUserIds = new Set(
+    ((vendors ?? []) as VendorRow[])
+      .map((vendor) => vendor.user_id)
+      .filter((id): id is string => Boolean(id)),
+  )
+  return tokenRows
+    .filter((row) => !row.user_id || !vendorUserIds.has(row.user_id))
+    .map((row) => row.token)
 }
 
 async function pruneInvalidTokens(
-  supabase: ReturnType<typeof createAdminClient>,
+  supabase: AdminClient,
   invalidTokens: string[],
 ) {
   if (invalidTokens.length === 0) return
-  await supabase.from("push_tokens").delete().in("token", invalidTokens)
+  const { error } = await supabase.from("push_tokens").delete().in("token", invalidTokens)
+  if (error) throw error
 }
 
 // ── Audience resolver ───────────────────────────────────────────────────────
 
 async function resolveUserIds(
-  supabase: ReturnType<typeof createAdminClient>,
+  supabase: AdminClient,
   target: DispatchTarget,
 ): Promise<string[]> {
   if ("userId" in target) return [target.userId]
@@ -83,33 +131,73 @@ async function resolveUserIds(
     const { audience } = target
 
     if (audience === "all_shoppers" || audience === "all") {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("push_tokens")
         .select("user_id")
         .eq("enabled", true)
         .in("user_type", ["shopper", "anonymous"])
         .not("user_id", "is", null)
-      data?.forEach((r) => r.user_id && userIds.add(r.user_id))
+      if (error) throw error
+      ;((data ?? []) as PushTokenRow[]).forEach((row) => {
+        if (row.user_id) userIds.add(row.user_id)
+      })
     }
 
-    if (audience === "all_vendors_with_products" || audience === "all") {
-      const { data } = await supabase
+    if (audience === "all_vendors" || audience === "all") {
+      const { data, error } = await supabase
+        .from("vendors")
+        .select("user_id")
+        .limit(5000)
+      if (error) throw error
+      ;((data ?? []) as VendorRow[]).forEach((vendor) => {
+        if (vendor.user_id) userIds.add(vendor.user_id)
+      })
+    }
+
+    if (audience === "all_vendors_verified") {
+      const { data, error } = await supabase
+        .from("vendors")
+        .select("user_id")
+        .eq("is_verified", true)
+        .limit(5000)
+      if (error) throw error
+      ;((data ?? []) as VendorRow[]).forEach((vendor) => {
+        if (vendor.user_id) userIds.add(vendor.user_id)
+      })
+    }
+
+    if (audience === "all_vendors_with_products") {
+      const { data, error } = await supabase
         .from("vendors")
         .select("user_id, products!inner(id)")
         .limit(5000)
-      data?.forEach((v) => v.user_id && userIds.add(v.user_id as string))
+      if (error) throw error
+      ;((data ?? []) as VendorRow[]).forEach((vendor) => {
+        if (vendor.user_id) userIds.add(vendor.user_id)
+      })
     }
 
     if (audience === "all_vendors_without_products") {
-      const { data: vendors } = await supabase.from("vendors").select("user_id, id")
-      const ids = (vendors ?? []).map((v) => v.id).filter(Boolean) as string[]
-      const { data: withProducts } = await supabase
+      const { data: vendors, error: vendorsError } = await supabase
+        .from("vendors")
+        .select("user_id, id")
+      if (vendorsError) throw vendorsError
+      const vendorRows = (vendors ?? []) as VendorRow[]
+      const ids = vendorRows.map((vendor) => vendor.id).filter((id): id is string => Boolean(id))
+      const { data: withProducts, error: productsError } = await supabase
         .from("products")
         .select("vendor_id")
         .in("vendor_id", ids)
-      const has = new Set((withProducts ?? []).map((p) => p.vendor_id))
-      vendors?.forEach((v) => {
-        if (v.user_id && !has.has(v.id)) userIds.add(v.user_id as string)
+      if (productsError) throw productsError
+      const has = new Set(
+        ((withProducts ?? []) as VendorRow[])
+          .map((product) => product.vendor_id)
+          .filter((id): id is string => Boolean(id)),
+      )
+      vendorRows.forEach((vendor) => {
+        if (vendor.user_id && vendor.id && !has.has(vendor.id)) {
+          userIds.add(vendor.user_id)
+        }
       })
     }
   }
@@ -118,7 +206,7 @@ async function resolveUserIds(
 }
 
 async function filterByDedup(
-  supabase: ReturnType<typeof createAdminClient>,
+  supabase: AdminClient,
   userIds: string[],
   type: NotificationType,
   refId: string | undefined,
@@ -135,8 +223,11 @@ async function filterByDedup(
     .in("user_id", userIds)
   if (refId) q = q.eq("ref_id", refId)
 
-  const { data } = await q
-  const alreadySent = new Set((data ?? []).map((r) => r.user_id))
+  const { data, error } = await q
+  if (error) throw error
+  const alreadySent = new Set(
+    ((data ?? []) as Array<{ user_id: string }>).map((row) => row.user_id),
+  )
   return userIds.filter((id) => !alreadySent.has(id))
 }
 
@@ -146,7 +237,7 @@ export async function dispatchNotification(
   target: DispatchTarget,
   input: DispatchInput,
 ): Promise<{ pushed: number; persisted: number; pruned: number }> {
-  const supabase = createAdminClient()
+  const supabase = createAdminClient() as AdminClient
   const dedupeWindow = input.dedupeWindowHours ?? 24
 
   const vapidMsg: WebPushMessage = {
@@ -174,7 +265,11 @@ export async function dispatchNotification(
       if ((count ?? 0) > 0) return { pushed: 0, persisted: 0, pruned: 0 }
     }
 
-    const tokens = await getAllTokens(supabase)
+    const audience = target.audience
+    const tokens = await getTokensForAudience(
+      supabase,
+      audience === "all" ? "all" : "all_shoppers",
+    )
     const { successCount, invalidTokens } = await sendWebPushToSubscriptions(tokens, vapidMsg)
     await pruneInvalidTokens(supabase, invalidTokens)
 

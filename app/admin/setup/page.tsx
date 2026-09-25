@@ -76,7 +76,6 @@ CREATE TABLE IF NOT EXISTS notifications_log (
   target_audience TEXT DEFAULT 'all',
   notification_type TEXT DEFAULT 'admin_broadcast',
   recipients INTEGER DEFAULT 0,
-  onesignal_id TEXT,
   sent_by TEXT NOT NULL,
   url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()

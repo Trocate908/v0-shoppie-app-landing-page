@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isAdminEmail, logAuditAction } from "@/lib/admin"
+import { dispatchNotification, type DispatchTarget } from "@/lib/notifications/dispatch"
+import { getPushConfigStatus } from "@/lib/push/server"
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
@@ -20,93 +22,100 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ logs: data ?? [] })
+  return NextResponse.json({ logs: data ?? [], pushConfig: getPushConfigStatus() })
 }
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user: adminUser } } = await supabase.auth.getUser()
-  if (!adminUser || !isAdminEmail(adminUser.email)) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-
-  const { title, message, target, type, url } = await req.json()
-  if (!title || !message) return NextResponse.json({ error: "Title and message required" }, { status: 400 })
-
-  const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID
-  const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY
-
-  if (!ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) {
-    return NextResponse.json({ error: "OneSignal not configured — ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY must be set" }, { status: 500 })
+  if (!adminUser || !isAdminEmail(adminUser.email)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
-  // Build OneSignal payload
-  const payload: Record<string, unknown> = {
-    app_id: ONESIGNAL_APP_ID,
-    headings: { en: title },
-    contents: { en: message },
-    data: { type: type ?? "admin_broadcast", admin_broadcast: true },
+  const body = await req.json().catch(() => null) as {
+    title?: string
+    message?: string
+    target?: "all" | "vendors" | "buyers" | "verified_vendors"
+    type?: string
+    url?: string
+  } | null
+
+  if (!body?.title?.trim() || !body.message?.trim()) {
+    return NextResponse.json({ error: "Title and message required" }, { status: 400 })
   }
 
-  if (url) payload.url = url
-
-  // Target segments or filters
-  if (target === "all") {
-    payload.included_segments = ["All"]
-  } else if (target === "vendors") {
-    payload.filters = [{ field: "tag", key: "user_type", relation: "=", value: "vendor" }]
-  } else if (target === "buyers") {
-    payload.filters = [{ field: "tag", key: "user_type", relation: "=", value: "buyer" }]
-  } else if (target === "verified_vendors") {
-    payload.filters = [
-      { field: "tag", key: "user_type", relation: "=", value: "vendor" },
-      { operator: "AND" },
-      { field: "tag", key: "verified", relation: "=", value: "true" },
-    ]
-  } else {
-    payload.included_segments = ["All"]
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_SERVICE_KEY) {
+    return NextResponse.json(
+      { error: "Supabase service-role credentials are required for cross-user notification dispatch." },
+      { status: 500 },
+    )
   }
 
-  const onesignalRes = await fetch("https://onesignal.com/api/v1/notifications", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
+  const pushConfig = getPushConfigStatus()
+  if (!pushConfig.hasPublicKey || !pushConfig.hasPrivateKey) {
+    return NextResponse.json(
+      { error: "Web Push is not configured. VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are required." },
+      { status: 500 },
+    )
+  }
+
+  const allowedTargets = ["all", "vendors", "buyers", "verified_vendors"] as const
+  const target = body.target ?? "all"
+  if (!allowedTargets.includes(target)) {
+    return NextResponse.json({ error: "Invalid target audience" }, { status: 400 })
+  }
+
+  const dispatchTarget: DispatchTarget =
+    target === "vendors"
+      ? { audience: "all_vendors" }
+      : target === "buyers"
+        ? { audience: "all_shoppers" }
+        : target === "verified_vendors"
+          ? { audience: "all_vendors_verified" }
+          : { audience: "all" }
+
+  const title = body.title.trim()
+  const message = body.message.trim()
+  const url = body.url?.trim() || undefined
+  const result = await dispatchNotification(dispatchTarget, {
+    type: "custom",
+    title,
+    body: message,
+    link: url,
+    data: {
+      notification_type: body.type ?? "admin_broadcast",
+      admin_broadcast: "true",
     },
-    body: JSON.stringify(payload),
+    dedupeWindowHours: 0,
   })
 
-  const onesignalData = await onesignalRes.json()
-
-  if (!onesignalRes.ok) {
-    const errMsg = Array.isArray(onesignalData.errors)
-      ? onesignalData.errors.join(", ")
-      : onesignalData.errors ?? "OneSignal API error"
-    return NextResponse.json({ error: errMsg }, { status: 500 })
-  }
-
-  const recipients = onesignalData.recipients ?? 0
-
-  // Store in notifications log
   const db = createAdminClient()
-  await db.from("notifications_log").insert({
+  const logEntry = {
     title,
     message,
-    target_audience: target ?? "all",
-    notification_type: type ?? "admin_broadcast",
-    recipients,
-    onesignal_id: onesignalData.id ?? null,
-    sent_by: adminUser.email,
+    target_audience: target,
+    notification_type: body.type ?? "admin_broadcast",
+    recipients: result.pushed,
+    sent_by: adminUser.email!,
     url: url ?? null,
-  }).catch(() => {})
+  }
+  const { error: logError } = await db
+    .from("notifications_log")
+    .insert(logEntry as never)
+
+  if (logError) {
+    console.error("[admin notifications] failed to log dispatch", logError)
+  }
 
   await logAuditAction({
     adminId: adminUser.id,
     adminEmail: adminUser.email!,
     action: "send_notification",
     targetType: "audience",
-    targetId: target ?? "all",
-    details: { title, type, recipients, onesignal_id: onesignalData.id },
+    targetId: target,
+    details: { title, type: body.type ?? "admin_broadcast", ...result },
     ipAddress: req.headers.get("x-forwarded-for") ?? undefined,
   })
 
-  return NextResponse.json({ ok: true, recipients, onesignal_id: onesignalData.id })
+  return NextResponse.json({ ok: true, ...result })
 }

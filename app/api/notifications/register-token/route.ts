@@ -2,6 +2,10 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse, type NextRequest } from "next/server"
 
+type AdminClient = Omit<ReturnType<typeof createAdminClient>, "from"> & {
+  from: (table: string) => any
+}
+
 /**
  * POST /api/notifications/register-token
  * Body: { token, deviceId, userType, userAgent }
@@ -28,17 +32,32 @@ export async function POST(req: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser()
 
-    const allowedUserType = ["vendor", "shopper", "anonymous"].includes(userType)
+    const admin = createAdminClient() as AdminClient
+    const requestedUserType = ["vendor", "shopper", "anonymous"].includes(userType)
       ? userType
       : user
         ? "shopper"
         : "anonymous"
 
+    // The vendors table is authoritative. Older client versions labelled every
+    // authenticated account as a shopper, which caused vendor broadcasts and
+    // buyer-only broadcasts to overlap.
+    let resolvedUserType = requestedUserType
+    if (user?.id) {
+      const { data: vendor, error: vendorError } = await admin
+        .from("vendors")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle()
+      if (vendorError) throw vendorError
+      resolvedUserType = vendor ? "vendor" : "shopper"
+    }
+
     const payload = {
       token,
       device_id: deviceId ?? null,
       user_id: user?.id ?? null,
-      user_type: allowedUserType,
+      user_type: resolvedUserType,
       user_agent: userAgent ?? null,
       enabled: true,
       last_seen_at: new Date().toISOString(),
@@ -46,7 +65,6 @@ export async function POST(req: NextRequest) {
     }
 
     // Use admin client to bypass RLS (ownership is enforced by server logic above).
-    const admin = createAdminClient()
 
     // Step 1: drop any previous subscription rows for this device so we
     // don't accumulate stale entries when the browser rotates its push

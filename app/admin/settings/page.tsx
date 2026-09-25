@@ -10,6 +10,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 
 interface Setting { key: string; value: string; description: string }
+interface PushConfigStatus {
+  hasPublicKey: boolean
+  hasPrivateKey: boolean
+}
 
 const SETTING_META: Record<string, { label: string; description: string; type: "text" | "boolean" | "textarea"; danger?: boolean }> = {
   site_name: { label: "Site Name", description: "The name shown across the platform", type: "text" },
@@ -28,31 +32,33 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<string | null>(null)
-  const [onesignalOk, setOnesignalOk] = useState<boolean | null>(null)
+  const [pushConfigured, setPushConfigured] = useState<boolean | null>(null)
   const { toast } = useToast()
 
   async function load() {
     setLoading(true)
-    const r = await fetch("/api/admin/settings")
-    const d = await r.json()
-    if (d.settings) {
+    const [settingsResponse, pushResponse] = await Promise.all([
+      fetch("/api/admin/settings"),
+      fetch("/api/admin/notifications"),
+    ])
+    const data = await settingsResponse.json()
+    if (data.settings) {
       const map: Record<string, string> = {}
-      d.settings.forEach((s: Setting) => { map[s.key] = s.value })
+      data.settings.forEach((s: Setting) => { map[s.key] = s.value })
       setSettings(map)
+    }
+
+    if (pushResponse.ok) {
+      const pushData = await pushResponse.json() as { pushConfig?: PushConfigStatus }
+      const config = pushData.pushConfig
+      setPushConfigured(Boolean(config?.hasPublicKey && config.hasPrivateKey))
+    } else {
+      setPushConfigured(false)
     }
     setLoading(false)
   }
 
-  async function checkOnesignal() {
-    try {
-      const r = await fetch("/api/admin/notifications")
-      setOnesignalOk(r.ok)
-    } catch {
-      setOnesignalOk(false)
-    }
-  }
-
-  useEffect(() => { load(); checkOnesignal() }, [])
+  useEffect(() => { load() }, [])
 
   async function save(key: string, value: string, needsConfirm?: boolean) {
     if (needsConfirm) { setConfirm(key); return }
@@ -106,27 +112,18 @@ export default function AdminSettingsPage() {
         <h2 className="font-semibold text-sm">Integration Status</h2>
         <div className="flex items-center justify-between py-2 border-t border-border">
           <div>
-            <p className="text-sm font-medium">OneSignal Push Notifications</p>
-            <p className="text-xs text-muted-foreground">ONESIGNAL_APP_ID &amp; ONESIGNAL_REST_API_KEY</p>
+            <p className="text-sm font-medium">Web Push (VAPID)</p>
+            <p className="text-xs text-muted-foreground">VAPID_PUBLIC_KEY &amp; VAPID_PRIVATE_KEY</p>
           </div>
-          {onesignalOk === null ? (
+          {pushConfigured === null ? (
             <span className="text-xs text-muted-foreground">Checking…</span>
-          ) : onesignalOk ? (
+          ) : pushConfigured ? (
             <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-              <CheckCircle2 className="h-4 w-4" />Connected
+              <CheckCircle2 className="h-4 w-4" />Configured
             </span>
           ) : (
             <span className="text-xs text-amber-600 font-medium">Not configured</span>
           )}
-        </div>
-        <div className="flex items-center justify-between py-2 border-t border-border">
-          <div>
-            <p className="text-sm font-medium">Web Push (VAPID)</p>
-            <p className="text-xs text-muted-foreground">VAPID_PUBLIC_KEY &amp; VAPID_PRIVATE_KEY</p>
-          </div>
-          <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-            <CheckCircle2 className="h-4 w-4" />Configured
-          </span>
         </div>
         <div className="flex items-center justify-between py-2 border-t border-border">
           <div>
