@@ -108,6 +108,13 @@ interface Conversation {
 
 interface ChatWindowProps {
   conversation: Conversation
+  /**
+   * The signed-in user's id. May arrive as "" while the parent is still
+   * resolving its session, so this component also resolves the session itself
+   * and prefers whichever id is actually known. Rendering the thread with an
+   * empty id makes every message look received — the bug where sent and
+   * received share one side and one colour.
+   */
   currentUserId: string
   onBack: () => void
 }
@@ -118,6 +125,27 @@ export default function ChatWindow({
   onBack,
 }: ChatWindowProps) {
   const { toast } = useToast()
+  // Resolve the identity this window should trust. The prop wins once it is
+  // non-empty; until then fall back to the locally cached session rather than
+  // an empty string, which would misclassify every message as received.
+  const [selfId, setSelfId] = useState(() => currentUserId || null)
+  useEffect(() => {
+    if (currentUserId) {
+      setSelfId(currentUserId)
+      return
+    }
+    let cancelled = false
+    getChatClient()
+      .auth.getSession()
+      .then(({ data }) => {
+        if (!cancelled) setSelfId(data.session?.user?.id ?? null)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [currentUserId])
+
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState("")
@@ -201,13 +229,13 @@ export default function ChatWindow({
         .from("messages")
         .update({ delivered: true, read: true })
         .eq("conversation_id", conversation.id)
-        .neq("sender_id", currentUserId)
+        .neq("sender_id", selfId)
         .eq("read", false)
         .then(() => {})
     }
     document.addEventListener("visibilitychange", handleVisibility)
     return () => document.removeEventListener("visibilitychange", handleVisibility)
-  }, [conversation.id, currentUserId])
+  }, [conversation.id, selfId])
 
   // Watch scroll position to toggle "scroll to bottom" button
   useEffect(() => {
@@ -243,7 +271,7 @@ export default function ChatWindow({
             return [...prev, newMsg]
           })
 
-          if (newMsg.sender_id !== currentUserId) {
+          if (newMsg.sender_id !== selfId) {
             // Always mark as delivered — the receiver's client received it
             const markRead =
               typeof document !== "undefined" && !document.hidden
@@ -286,7 +314,7 @@ export default function ChatWindow({
       )
       .on("broadcast", { event: "typing" }, (payload) => {
         const from = (payload?.payload as { userId?: string } | undefined)?.userId
-        if (!from || from === currentUserId) return
+        if (!from || from === selfId) return
         setIsOtherTyping(true)
         if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current)
         // Self-healing: if the sender never signals that they stopped (closed
@@ -304,13 +332,13 @@ export default function ChatWindow({
       setIsOtherTyping(false)
       supabase.removeChannel(channel)
     }
-  }, [conversation.id, currentUserId, otherName])
+  }, [conversation.id, selfId, otherName])
 
   async function uploadImage(file: File): Promise<string | null> {
     try {
       const supabase = getChatClient()
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg"
-      const path = `${currentUserId}/${conversation.id}/${Date.now()}.${ext}`
+      const path = `${selfId}/${conversation.id}/${Date.now()}.${ext}`
       const { error } = await supabase.storage
         .from("chat-attachments")
         .upload(path, file, {
@@ -332,6 +360,8 @@ export default function ChatWindow({
 
   async function sendMessage() {
     if ((!input.trim() && !pendingImage) || sending) return
+    // Without an identity the optimistic message would misclassify as received.
+    if (!selfId) return
     setSending(true)
     const content = input.trim()
     const imageFile = pendingImage?.file ?? null
@@ -366,7 +396,7 @@ export default function ChatWindow({
     const optimistic: Message = {
       id: optimisticId,
       conversation_id: conversation.id,
-      sender_id: currentUserId,
+      sender_id: selfId,
       content: content || null,
       image_url: imageUrl,
       delivered: false,
@@ -544,7 +574,7 @@ export default function ChatWindow({
   }
 
   const groupedMessages = groupByDate(messages)
-  const canSend = !!(input.trim() || pendingImage) && !sending
+  const canSend = !!(input.trim() || pendingImage) && !sending && !!selfId
 
   // Throttled, so holding a key down doesn't flood the channel.
   function notifyTyping() {
@@ -554,7 +584,7 @@ export default function ChatWindow({
     if (now - lastTypingSentAtRef.current < 2000) return
     lastTypingSentAtRef.current = now
     channel
-      .send({ type: "broadcast", event: "typing", payload: { userId: currentUserId } })
+      .send({ type: "broadcast", event: "typing", payload: { userId: selfId } })
       .then(() => {})
       .catch(() => {})
   }
@@ -566,7 +596,7 @@ export default function ChatWindow({
       <div className="sticky top-0 z-20 shrink-0 border-b border-border/60 bg-background/85 backdrop-blur-xl">
         <ChatHeader
           conversation={conversation}
-          currentUserId={currentUserId}
+          currentUserId={selfId}
           otherName={otherName}
           isOtherTyping={isOtherTyping}
           onBack={onBack}
@@ -618,7 +648,9 @@ export default function ChatWindow({
         ref={scrollContainerRef}
         className="relative flex-1 overflow-y-auto px-4 py-3"
       >
-        {loading ? (
+        {/* Wait for identity as well as data: classifying messages before
+            selfId is known is what put sent and received on the same side. */}
+        {loading || !selfId ? (
           <ChatMessagesSkeleton />
         ) : messages.length === 0 ? (
           <ChatEmptyState
@@ -645,7 +677,7 @@ export default function ChatWindow({
                 </div>
 
                 {msgs.map((msg, i) => {
-                  const isOwn = msg.sender_id === currentUserId
+                  const isOwn = msg.sender_id === selfId
                   const prev = msgs[i - 1]
                   const next = msgs[i + 1]
                   return (
@@ -882,7 +914,8 @@ function ChatHeader({
   onDeleteConversation,
 }: {
   conversation: Conversation
-  currentUserId: string
+  /** Matches ChatWindow's selfId: null while the session is still resolving. */
+  currentUserId: string | null
   otherName: string
   isOtherTyping: boolean
   onBack: () => void
