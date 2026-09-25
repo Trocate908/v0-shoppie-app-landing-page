@@ -366,4 +366,67 @@
   .typing-dot:nth-child(3) {
     animation-delay: 0.3s;
   }
+
+  /* Photo messages fade up once they decode, so a slow attachment doesn't pop
+     into place after the bubble has already been read. */
+  @keyframes chat-image-in {
+    from {
+      opacity: 0;
+      transform: scale(1.02);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .chat-image-in {
+    animation: chat-image-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Expanding halo behind the online dot. */
+  @keyframes presence-ping {
+    0% {
+      transform: scale(0.75);
+      opacity: 0.5;
+    }
+    70%,
+    100% {
+      transform: scale(2.2);
+      opacity: 0;
+    }
+  }
+
+  .presence-ping {
+    animation: presence-ping 2.4s ease-out infinite;
+  }
+
+  /* Full-screen image viewer entrance. */
+  @keyframes viewer-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .viewer-in {
+    animation: viewer-in 0.18s ease-out both;
+  }
+
+  @keyframes viewer-image-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .viewer-image-in {
+    animation: viewer-image-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
 }
