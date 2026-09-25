@@ -5,7 +5,7 @@ import { useTheme } from "@/components/theme-provider"
 import {
   Moon, Sun, LogOut, Info, FileText, Phone, MapPin, Heart,
   ChevronRight, Store, Plus, RefreshCw, Check, Trash2,
-  Palette, ShieldCheck, Bell, Package,
+  Palette, ShieldCheck, Bell, Package, Flag, Lightbulb,
 } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
@@ -363,6 +363,27 @@ export default function SettingsTab() {
               label="All Products"
               sublabel="Browse the marketplace"
               href="/"
+            />
+          </MenuGroup>
+        </section>
+
+        {/* ── Support ── */}
+        <section>
+          <SectionLabel>Support</SectionLabel>
+          <MenuGroup>
+            <MenuItem
+              icon={<Flag className="h-4 w-4 text-white" />}
+              iconBg="bg-destructive"
+              label="Report an Issue"
+              sublabel="Tell us what is wrong"
+              href="/feedback"
+            />
+            <MenuItem
+              icon={<Lightbulb className="h-4 w-4 text-white" />}
+              iconBg="bg-amber-500"
+              label="Suggest a Feature"
+              sublabel="Tell us what to build next"
+              href="/feedback"
             />
           </MenuGroup>
         </section>

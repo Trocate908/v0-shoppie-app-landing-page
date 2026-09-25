@@ -36,8 +36,40 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
+CREATE INDEX IF NOT EXISTS idx_reports_reporter_id ON reports(reporter_id);
+CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at DESC);
+-- Lets anonymous reports be rate limited by IP
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS reporter_ip TEXT;
 
--- 3. Platform Settings
+-- 3. Suggestions (user ideas + public voting)
+CREATE TABLE IF NOT EXISTS suggestions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID,
+  author_name TEXT,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'feature',
+  status TEXT NOT NULL DEFAULT 'submitted',
+  admin_note TEXT,
+  votes INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_suggestions_status ON suggestions(status);
+CREATE INDEX IF NOT EXISTS idx_suggestions_votes ON suggestions(votes DESC);
+CREATE INDEX IF NOT EXISTS idx_suggestions_user_id ON suggestions(user_id);
+
+CREATE TABLE IF NOT EXISTS suggestion_votes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  suggestion_id UUID NOT NULL REFERENCES suggestions(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (suggestion_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_suggestion_votes_suggestion_id ON suggestion_votes(suggestion_id);
+CREATE INDEX IF NOT EXISTS idx_suggestion_votes_user_id ON suggestion_votes(user_id);
+
+-- 4. Platform Settings
 CREATE TABLE IF NOT EXISTS platform_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
@@ -56,7 +88,7 @@ INSERT INTO platform_settings (key, value, description) VALUES
   ('contact_email', 'contact@shoppieapp.co.zw', 'Public support email')
 ON CONFLICT (key) DO NOTHING;
 
--- 4. Announcements
+-- 5. Announcements
 CREATE TABLE IF NOT EXISTS announcements (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
@@ -68,7 +100,7 @@ CREATE TABLE IF NOT EXISTS announcements (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. Notifications Log
+-- 6. Notifications Log
 CREATE TABLE IF NOT EXISTS notifications_log (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
@@ -82,13 +114,15 @@ CREATE TABLE IF NOT EXISTS notifications_log (
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_log_created_at ON notifications_log(created_at DESC);
 
--- 6. Product admin columns
+-- 7. Product admin columns
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT false;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_featured BOOLEAN DEFAULT false;
 
--- 7. RLS: deny direct access; service role bypasses automatically
+-- 8. RLS: deny direct access; service role bypasses automatically
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE suggestions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE suggestion_votes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications_log ENABLE ROW LEVEL SECURITY;
@@ -127,6 +161,8 @@ export default function AdminSetupPage() {
   const tables = [
     { name: "audit_logs", description: "Records every admin action with IP and timestamp" },
     { name: "reports", description: "User-submitted abuse/spam reports" },
+    { name: "suggestions", description: "User feature ideas with status and vote count" },
+    { name: "suggestion_votes", description: "One vote per person per suggestion" },
     { name: "platform_settings", description: "Key-value store for platform config" },
     { name: "announcements", description: "Banners shown to users in the app" },
     { name: "notifications_log", description: "History of sent push notifications" },
@@ -146,7 +182,7 @@ export default function AdminSetupPage() {
       <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
         <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-1">⚠ One-time setup required</p>
         <p className="text-sm text-amber-700 dark:text-amber-400">
-          The admin control center needs 5 tables and 2 extra columns. Copy the SQL below and run it in your Supabase SQL Editor. You only need to do this once — all statements are idempotent.
+          The admin control center needs 7 tables and 2 extra columns. Copy the SQL below and run it in your Supabase SQL Editor. You only need to do this once — all statements are idempotent.
         </p>
       </div>
 
