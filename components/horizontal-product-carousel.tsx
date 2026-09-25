@@ -350,42 +350,51 @@ export default function HorizontalProductCarousel({
   useEffect(() => {
     if (!autoPlay || products.length < 2) return
     if (typeof window === "undefined") return
-    // Respect the OS reduce-motion setting: autoplay is motion the user
-    // never asked for, so it simply doesn't run.
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
     // Only run while the section is actually on screen.
     if (typeof IntersectionObserver === "undefined") return
 
     const el = scrollerRef.current
     if (!el) return
 
+    // Start once a useful part of the row is visible. Requiring half of the
+    // row to be visible can leave a short mobile carousel paused indefinitely.
     const observer = new IntersectionObserver(
       ([entry]) => setAutoPlayPaused(!entry.isIntersecting),
-      { threshold: 0.5 }
+      { threshold: 0.15 }
     )
     observer.observe(el)
     return () => observer.disconnect()
   }, [autoPlay, products.length])
 
   useEffect(() => {
-    if (!autoPlay || products.length < 2) return
+    if (!autoPlay || products.length < 2 || !isRevealed) return
     if (autoPlayStoppedRef.current || autoPlayPaused) return
     if (typeof window === "undefined") return
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+
+    // Still advance for reduced-motion users, but avoid a smooth animation.
+    // Completely disabling the timer made the Featured row appear broken in
+    // previews and on devices that request reduced motion.
+    const behavior: ScrollBehavior = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches
+      ? "auto"
+      : "smooth"
 
     const step = () => {
       const el = scrollerRef.current
       if (!el) return
+      // There is nothing to animate when all cards already fit on screen.
+      if (el.scrollWidth <= el.clientWidth + 4) return
       // Past the last card: wrap to the start so the loop never dead-ends.
       const atEnd = el.scrollLeft >= el.scrollWidth - el.clientWidth - 4
       if (atEnd) {
-        el.scrollTo({ left: 0, behavior: "smooth" })
+        el.scrollTo({ left: 0, behavior })
         return
       }
       // One card + gap, so the snap grid stays aligned after each step.
       const first = el.firstElementChild as HTMLElement | null
       const cardWidth = first ? first.offsetWidth : el.clientWidth * 0.4
-      el.scrollBy({ left: cardWidth + 12, behavior: "smooth" })
+      el.scrollBy({ left: cardWidth + 12, behavior })
     }
 
     autoScrollTimerRef.current = setInterval(step, 4000)
