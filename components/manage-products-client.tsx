@@ -18,7 +18,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { ArrowLeft, Edit, Trash2, Eye, Loader2 } from "lucide-react"
+import { ArrowLeft, Edit, Trash2, Eye, Loader2, Tag } from "lucide-react"
+import { ProductPrice } from "@/components/price-display"
 import Link from "next/link"
 import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
@@ -31,6 +32,9 @@ type Product = {
   image_url: string | null
   in_stock: boolean
   view_count: number
+  original_price?: number | null
+  promo_label?: string | null
+  promo_ends_at?: string | null
 }
 
 type ManageProductsClientProps = {
@@ -50,15 +54,40 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
     description: "",
     price: "",
     inStock: true,
+    onSale: false,
+    originalPrice: "",
+    promoLabel: "",
+    promoEndsAt: "",
   })
+
+  /** Mirror of the add-product form: a discount counts only when the "was"
+   *  price is above the price shoppers pay. */
+  const parsedPrice = Number.parseFloat(formData.price)
+  const parsedOriginal = Number.parseFloat(formData.originalPrice)
+  const hasValidDiscount =
+    formData.onSale &&
+    Number.isFinite(parsedPrice) &&
+    Number.isFinite(parsedOriginal) &&
+    parsedOriginal > 0 &&
+    parsedOriginal > parsedPrice
+
+  const promoEndsAtIso =
+    formData.promoEndsAt && formData.promoEndsAt.length > 0
+      ? new Date(`${formData.promoEndsAt}T23:59:59`).toISOString()
+      : null
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product)
+    const wasOnSale = product.original_price != null && product.original_price > product.price
     setFormData({
       name: product.name,
       description: product.description || "",
       price: product.price.toString(),
       inStock: product.in_stock,
+      onSale: wasOnSale,
+      originalPrice: product.original_price != null ? product.original_price.toString() : "",
+      promoLabel: product.promo_label || "",
+      promoEndsAt: product.promo_ends_at ? product.promo_ends_at.slice(0, 10) : "",
     })
   }
 
@@ -75,6 +104,11 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
         description: formData.description,
         price: Number.parseFloat(formData.price),
         in_stock: formData.inStock,
+        // Turning the toggle off clears the promotion instead of leaving a
+        // stale "was" price behind.
+        original_price: hasValidDiscount ? parsedOriginal : null,
+        promo_label: hasValidDiscount && formData.promoLabel.trim() ? formData.promoLabel.trim() : null,
+        promo_ends_at: hasValidDiscount ? promoEndsAtIso : null,
       })
       .eq("id", editingProduct.id)
 
@@ -95,6 +129,9 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
                 description: formData.description,
                 price: Number.parseFloat(formData.price),
                 in_stock: formData.inStock,
+                original_price: hasValidDiscount ? parsedOriginal : null,
+                promo_label: hasValidDiscount && formData.promoLabel.trim() ? formData.promoLabel.trim() : null,
+                promo_ends_at: hasValidDiscount ? promoEndsAtIso : null,
               }
             : p,
         ),
@@ -229,7 +266,7 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-foreground truncate">{product.name}</h3>
-                      <p className="text-lg font-bold text-primary">${product.price.toFixed(2)}</p>
+                      <ProductPrice product={product} size="sm" showPromoLabel />
                     </div>
                     <Badge variant={product.in_stock ? "default" : "secondary"} className="shrink-0">
                       {product.in_stock ? "In Stock" : "Out"}
@@ -308,6 +345,76 @@ export function ManageProductsClient({ products: initialProducts, shopName }: Ma
                 value={formData.price}
                 onChange={(e) => setFormData({ ...formData, price: e.target.value })}
               />
+            </div>
+
+            {/* Discount / promotion */}
+            <div className="space-y-4 rounded-lg border border-dashed border-border p-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="edit-on-sale" className="flex items-center gap-1.5 text-sm">
+                  <Tag className="h-3.5 w-3.5 text-primary" />
+                  On sale
+                </Label>
+                <Switch
+                  id="edit-on-sale"
+                  checked={formData.onSale}
+                  onCheckedChange={(checked) => {
+                    setFormData(
+                      checked
+                        ? formData
+                        : { ...formData, onSale: false, originalPrice: "", promoLabel: "", promoEndsAt: "" },
+                    )
+                  }}
+                />
+              </div>
+
+              {formData.onSale && (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-original-price" className="text-sm">
+                      Original price (was)
+                    </Label>
+                    <Input
+                      id="edit-original-price"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.originalPrice}
+                      onChange={(e) => setFormData({ ...formData, originalPrice: e.target.value })}
+                      placeholder="0.00"
+                    />
+                    {formData.originalPrice && !hasValidDiscount && (
+                      <p className="text-xs text-destructive">
+                        Must be higher than the current price.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-promo-label" className="text-sm">
+                      Promotion label <span className="text-muted-foreground font-normal">(optional)</span>
+                    </Label>
+                    <Input
+                      id="edit-promo-label"
+                      value={formData.promoLabel}
+                      onChange={(e) => setFormData({ ...formData, promoLabel: e.target.value })}
+                      placeholder="e.g. Flash Sale"
+                      maxLength={40}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-promo-ends" className="text-sm">
+                      Ends on <span className="text-muted-foreground font-normal">(optional)</span>
+                    </Label>
+                    <Input
+                      id="edit-promo-ends"
+                      type="date"
+                      value={formData.promoEndsAt}
+                      onChange={(e) => setFormData({ ...formData, promoEndsAt: e.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-between">
               <Label htmlFor="edit-stock">In Stock</Label>

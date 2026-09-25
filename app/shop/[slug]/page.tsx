@@ -150,9 +150,9 @@ export default async function ShopPage({ params }: Props) {
   ] = await Promise.all([
     admin
       .from("products")
-      .select(
-        "id, name, description, price, category, image_url, image_urls, in_stock, created_at"
-      )
+      // `*` so the optional discount columns flow through once
+      // supabase/migrations/add_product_discounts.sql has been applied.
+      .select("*")
       .eq("vendor_id", vendor.id)
       .order("created_at", { ascending: false }),
 

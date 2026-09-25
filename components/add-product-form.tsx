@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Upload, Loader2, X, Shield, Images, Camera, MessageCircle, Wand2 } from "lucide-react"
+import { ArrowLeft, Upload, Loader2, X, Shield, Images, Camera, MessageCircle, Wand2, Tag } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
@@ -47,9 +47,38 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
     category: "",
     price: "",
     inStock: true,
+    onSale: false,
+    originalPrice: "",
+    promoLabel: "",
+    promoEndsAt: "",
   })
 
   const maxImages = isVerified ? 3 : 1
+
+  /* ── Promotion helpers ──────────────────────────────────────────────
+   * A discount is only real when the "was" price is above the price
+   * shoppers pay, so that is the single condition everything below and in
+   * lib/pricing.ts is built on. */
+  const parsedPrice = Number.parseFloat(formData.price)
+  const parsedOriginal = Number.parseFloat(formData.originalPrice)
+  const hasValidDiscount =
+    formData.onSale &&
+    Number.isFinite(parsedPrice) &&
+    Number.isFinite(parsedOriginal) &&
+    parsedOriginal > 0 &&
+    parsedOriginal > parsedPrice
+  const discountPercent = hasValidDiscount
+    ? Math.round(((parsedOriginal - parsedPrice) / parsedOriginal) * 100)
+    : null
+
+  /** The end-of-day timestamp for the chosen date, so a promo runs through it. */
+  const promoEndsAtIso =
+    formData.promoEndsAt && formData.promoEndsAt.length > 0
+      ? new Date(`${formData.promoEndsAt}T23:59:59`).toISOString()
+      : null
+
+  const resetPromotion = () =>
+    setFormData((prev) => ({ ...prev, originalPrice: "", promoLabel: "", promoEndsAt: "" }))
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -259,6 +288,11 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
           image_url: imageUrls[0] || null,
           image_urls: imageUrls,
           in_stock: formData.inStock,
+          // Only persist a promotion that is actually cheaper, so the storefront
+          // never has to second-guess a stray "was" price.
+          original_price: hasValidDiscount ? parsedOriginal : null,
+          promo_label: hasValidDiscount && formData.promoLabel.trim() ? formData.promoLabel.trim() : null,
+          promo_ends_at: hasValidDiscount ? promoEndsAtIso : null,
         })
         .select("id")
         .single()
@@ -402,6 +436,102 @@ export function AddProductForm({ vendorId, shopName, isVerified, hasWhatsapp }: 
                   placeholder="0.00"
                   required
                 />
+                <p className="text-xs text-muted-foreground">
+                  What shoppers will pay for this product.
+                </p>
+              </div>
+
+              {/* ── Discount / promotion ── */}
+              <div className="space-y-4 rounded-xl border border-dashed border-border bg-muted/30 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="on-sale" className="flex items-center gap-1.5">
+                      <Tag className="h-3.5 w-3.5 text-primary" />
+                      On sale / promotion
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Show a struck-through price and a discount badge.
+                    </p>
+                  </div>
+                  <Switch
+                    id="on-sale"
+                    checked={formData.onSale}
+                    onCheckedChange={(checked) => {
+                      setFormData((prev) => ({ ...prev, onSale: checked }))
+                      if (!checked) resetPromotion()
+                    }}
+                  />
+                </div>
+
+                {formData.onSale && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="original-price">Original price (was) *</Label>
+                      <Input
+                        id="original-price"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={formData.originalPrice}
+                        onChange={(e) =>
+                          setFormData({ ...formData, originalPrice: e.target.value })
+                        }
+                        placeholder="0.00"
+                      />
+                      {formData.originalPrice && !hasValidDiscount && (
+                        <p className="text-xs text-destructive">
+                          The original price must be higher than the selling price
+                          {Number.isFinite(parsedPrice) ? ` ($${parsedPrice.toFixed(2)})` : ""}.
+                        </p>
+                      )}
+                    </div>
+
+                    {hasValidDiscount && (
+                      <div className="flex flex-wrap items-center gap-2 rounded-lg bg-primary/5 px-3 py-2 text-sm">
+                        <span className="font-semibold text-foreground">
+                          ${parsedPrice.toFixed(2)}
+                        </span>
+                        <span className="text-muted-foreground line-through">
+                          ${parsedOriginal.toFixed(2)}
+                        </span>
+                        <span className="rounded-full bg-destructive px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-destructive-foreground">
+                          {discountPercent}% off
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="promo-label">
+                        Promotion label{" "}
+                        <span className="text-muted-foreground font-normal">(optional)</span>
+                      </Label>
+                      <Input
+                        id="promo-label"
+                        value={formData.promoLabel}
+                        onChange={(e) => setFormData({ ...formData, promoLabel: e.target.value })}
+                        placeholder="e.g. Flash Sale, Weekend Special"
+                        maxLength={40}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="promo-ends">
+                        Ends on{" "}
+                        <span className="text-muted-foreground font-normal">(optional)</span>
+                      </Label>
+                      <Input
+                        id="promo-ends"
+                        type="date"
+                        value={formData.promoEndsAt}
+                        min={new Date().toISOString().slice(0, 10)}
+                        onChange={(e) => setFormData({ ...formData, promoEndsAt: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        When this date passes the price returns to the original automatically.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

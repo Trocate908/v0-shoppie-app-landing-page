@@ -26,13 +26,7 @@ export default async function WishlistPage() {
       id,
       created_at,
       product:products(
-        id,
-        name,
-        description,
-        price,
-        category,
-        image_url,
-        in_stock,
+        *,
         vendor:vendors(
           id,
           shop_name,

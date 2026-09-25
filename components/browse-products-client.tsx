@@ -62,6 +62,8 @@ import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { getCurrencyForCountry, convertPrice, formatPrice, CURRENCIES, type Currency } from "@/lib/currency"
+import { ProductPrice } from "@/components/price-display"
+import { effectiveFilterPrice } from "@/lib/pricing"
 import { ChevronDown, RefreshCw } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { VerificationBadge } from "@/components/verification-badge"
@@ -81,6 +83,9 @@ interface Product {
   name: string
   description: string | null
   price: number
+  original_price?: number | null
+  promo_label?: string | null
+  promo_ends_at?: string | null
   category: string | null
   image_url: string | null
   image_urls: string[] | null
@@ -286,8 +291,10 @@ export default function BrowseProductsClient({
     if (selectedLocation) {
       filtered = filtered.filter((p) => p.vendor.location.id === selectedLocation)
     }
-    if (minPrice) filtered = filtered.filter((p) => p.price >= Number.parseFloat(minPrice))
-    if (maxPrice) filtered = filtered.filter((p) => p.price <= Number.parseFloat(maxPrice))
+    // Price filters and sorting use the price the shopper actually pays, so a
+    // discounted product lands in the range it really belongs to.
+    if (minPrice) filtered = filtered.filter((p) => effectiveFilterPrice(p) >= Number.parseFloat(minPrice))
+    if (maxPrice) filtered = filtered.filter((p) => effectiveFilterPrice(p) <= Number.parseFloat(maxPrice))
 
     const sorted = [...filtered]
     switch (sortBy) {
@@ -297,8 +304,8 @@ export default function BrowseProductsClient({
           [sorted[i], sorted[j]] = [sorted[j], sorted[i]]
         }
         break
-      case "price-low":  sorted.sort((a, b) => a.price - b.price); break
-      case "price-high": sorted.sort((a, b) => b.price - a.price); break
+      case "price-low":  sorted.sort((a, b) => effectiveFilterPrice(a) - effectiveFilterPrice(b)); break
+      case "price-high": sorted.sort((a, b) => effectiveFilterPrice(b) - effectiveFilterPrice(a)); break
       case "name":       sorted.sort((a, b) => a.name.localeCompare(b.name)); break
       default:
         sorted.sort((a, b) => {
@@ -843,8 +850,8 @@ export default function BrowseProductsClient({
           ) : (
             <div className="grid grid-cols-2 gap-x-2 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {filteredProducts.map((product, index) => {
-                const convertedPrice = convertPrice(product.price, selectedCurrency.code, liveRates)
-                const formattedPrice = formatPrice(convertedPrice, selectedCurrency)
+                const formatMoney = (value: number) =>
+                  formatPrice(convertPrice(value, selectedCurrency.code, liveRates), selectedCurrency)
                 const isActivelyVerified =
                   !!product.vendor.is_verified &&
                   (!product.vendor.verification_expires_at ||
@@ -880,6 +887,11 @@ export default function BrowseProductsClient({
                             Sold Out
                           </span>
                         )}
+                        {product.original_price != null && product.original_price > product.price && product.in_stock && (
+                          <span className="rounded-sm bg-destructive px-1.5 py-0.5 text-[9px] font-bold text-white">
+                            On sale
+                          </span>
+                        )}
                         {isActivelyVerified && product.in_stock && (
                           <span className="flex items-center gap-0.5 rounded-sm bg-primary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
                             <BadgeCheck className="h-2.5 w-2.5" /> Verified
@@ -898,10 +910,8 @@ export default function BrowseProductsClient({
 
                     {/* ── Card body ── */}
                     <div className="flex flex-col gap-0.5 px-1 pt-2 pb-2.5">
-                      {/* Price — most prominent */}
-                      <p className="text-sm font-bold text-primary leading-tight">
-                        {formattedPrice}
-                      </p>
+                      {/* Price — most prominent, including any active discount */}
+                      <ProductPrice product={product} size="sm" showPromoLabel format={formatMoney} />
 
                       {/* Product name */}
                       <h3 className="line-clamp-2 text-[12px] leading-snug text-foreground/90 group-hover:text-primary transition-colors">

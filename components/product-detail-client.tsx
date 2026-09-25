@@ -16,6 +16,7 @@ import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
 import FollowShopButton from "@/components/follow-shop-button"
 import { VerificationBadge } from "@/components/verification-badge"
+import { ProductPrice } from "@/components/price-display"
 import ProductCarousel from "@/components/product-carousel"
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed"
 import MessageSellerButton from "@/components/message-seller-button"
@@ -44,6 +45,9 @@ interface Product {
   name: string
   description: string | null
   price: number
+  original_price?: number | null
+  promo_label?: string | null
+  promo_ends_at?: string | null
   category?: string | null
   image_url: string | null
   image_urls?: string[] | null
@@ -165,9 +169,7 @@ export default function ProductDetailClient({
               </div>
 
               <div>
-                <p className="text-3xl font-bold text-primary">
-                  ${product.price.toFixed(2)}
-                </p>
+                <ProductPrice product={product} size="lg" showPromoLabel />
               </div>
 
               {/* Favorite and Share Buttons */}
@@ -352,9 +354,7 @@ export default function ProductDetailClient({
                           {relatedProduct.name}
                         </h3>
 
-                        <p className="text-base font-bold text-primary">
-                          ${relatedProduct.price.toFixed(2)}
-                        </p>
+                        <ProductPrice product={relatedProduct} size="sm" showPromoLabel />
 
                         <Badge
                           variant={

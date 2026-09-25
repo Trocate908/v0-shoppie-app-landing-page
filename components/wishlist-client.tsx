@@ -13,6 +13,7 @@ import FavoriteButton from "@/components/favorite-button"
 import ShareButton from "@/components/share-button"
 import WhatsAppButton from "@/components/whatsapp-button"
 import { VerificationBadge } from "@/components/verification-badge"
+import { ProductPrice } from "@/components/price-display"
 
 interface Location {
   id: string
@@ -36,6 +37,9 @@ interface Product {
   name: string
   description: string | null
   price: number
+  original_price?: number | null
+  promo_label?: string | null
+  promo_ends_at?: string | null
   category: string | null
   image_url: string | null
   in_stock: boolean
@@ -148,7 +152,7 @@ export default function WishlistClient({ products }: WishlistClientProps) {
                         <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
                       )}
 
-                      <p className="mb-3 text-lg font-bold text-primary">${product.price.toFixed(2)}</p>
+                      <ProductPrice product={product} showPromoLabel className="mb-3 text-lg font-bold" />
 
                       {/* Vendor Info */}
                       <div className="space-y-2 border-t border-border pt-3">
