@@ -54,6 +54,9 @@ export interface HorizontalProductCarouselProps {
   /** "card" = standard product card. "banner" = wide image-first banner
    *  showing only the price (used for the Featured section). */
   variant?: "card" | "banner"
+  /** Auto-advance the row every few seconds until the user interacts with it.
+   *  Intended for the Featured banner; off by default everywhere else. */
+  autoPlay?: boolean
 }
 
 /** How many cards are visible per breakpoint (width of one card relative to
@@ -305,6 +308,7 @@ export default function HorizontalProductCarousel({
   emptyStateMessage,
   accentClassName = "bg-primary/10 text-primary",
   variant = "card",
+  autoPlay = false,
 }: HorizontalProductCarouselProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   // Fades the whole section up as it enters the viewport. The hook reveals
@@ -331,6 +335,69 @@ export default function HorizontalProductCarousel({
     const el = scrollerRef.current
     if (!el) return
     el.scrollBy({ left: direction * el.clientWidth * 0.8, behavior: "smooth" })
+  }
+
+  /* ── Autoplay (opt-in, Featured banner) ────────────────────────────────
+     Steps one card-width at a time so the snap point lands cleanly, and
+     wraps back to the start when it reaches the end. Pauses while the user
+     is hovering, focusing inside, or has interacted — a carousel that
+     fights the user for scroll position is worse than no autoplay. */
+  const autoScrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoPlayStoppedRef = useRef(false)
+  const [autoPlayPaused, setAutoPlayPaused] = useState(false)
+
+  useEffect(() => {
+    if (!autoPlay || products.length < 2) return
+    if (typeof window === "undefined") return
+    // Respect the OS reduce-motion setting: autoplay is motion the user
+    // never asked for, so it simply doesn't run.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+    // Only run while the section is actually on screen.
+    if (typeof IntersectionObserver === "undefined") return
+
+    const el = scrollerRef.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setAutoPlayPaused(!entry.isIntersecting),
+      { threshold: 0.5 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [autoPlay, products.length])
+
+  useEffect(() => {
+    if (!autoPlay || products.length < 2) return
+    if (autoPlayStoppedRef.current || autoPlayPaused) return
+    if (typeof window === "undefined") return
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+
+    const step = () => {
+      const el = scrollerRef.current
+      if (!el) return
+      // Past the last card: wrap to the start so the loop never dead-ends.
+      const atEnd = el.scrollLeft >= el.scrollWidth - el.clientWidth - 4
+      if (atEnd) {
+        el.scrollTo({ left: 0, behavior: "smooth" })
+        return
+      }
+      // One card + gap, so the snap grid stays aligned after each step.
+      const first = el.firstElementChild as HTMLElement | null
+      const cardWidth = first ? first.offsetWidth : el.clientWidth * 0.4
+      el.scrollBy({ left: cardWidth + 12, behavior: "smooth" })
+    }
+
+    autoScrollTimerRef.current = setInterval(step, 4000)
+    return () => {
+      if (autoScrollTimerRef.current) clearInterval(autoScrollTimerRef.current)
+      autoScrollTimerRef.current = null
+    }
+  }, [autoPlay, products.length, autoPlayPaused, isRevealed])
+
+  const stopAutoPlay = () => {
+    autoPlayStoppedRef.current = true
+    if (autoScrollTimerRef.current) clearInterval(autoScrollTimerRef.current)
+    autoScrollTimerRef.current = null
   }
 
   if (loading) {
@@ -407,7 +474,10 @@ export default function HorizontalProductCarousel({
         {/* Desktop nav — previous */}
         <button
           type="button"
-          onClick={() => scrollByCards(-1)}
+          onClick={() => {
+            stopAutoPlay()
+            scrollByCards(-1)
+          }}
           disabled={!canScrollLeft}
           aria-label={`Scroll ${title} backwards`}
           className={[
@@ -422,12 +492,22 @@ export default function HorizontalProductCarousel({
           <ChevronLeft className="h-4 w-4" aria-hidden />
         </button>
 
-        {/* Scroll container — hidden scrollbar, keyboard accessible */}
+        {/* Scroll container — hidden scrollbar, keyboard accessible. Hover
+            or focus suspends autoplay; any arrow-key scroll stops it for good,
+            since stepping the user backwards mid-read is disorienting. */}
         <div
           ref={scrollerRef}
           onScroll={updateScrollState}
           tabIndex={0}
           role="region"
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft" || e.key === "ArrowRight") stopAutoPlay()
+          }}
+          onPointerDown={stopAutoPlay}
+          onMouseEnter={() => setAutoPlayPaused(true)}
+          onMouseLeave={() => setAutoPlayPaused(false)}
+          onFocus={() => setAutoPlayPaused(true)}
+          onBlur={() => setAutoPlayPaused(false)}
           aria-label={`${title} — horizontally scrollable product list. Use left and right arrow keys to scroll.`}
           className={[
             "-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth px-4 pb-2 pt-1",
@@ -450,7 +530,10 @@ export default function HorizontalProductCarousel({
         {/* Desktop nav — next */}
         <button
           type="button"
-          onClick={() => scrollByCards(1)}
+          onClick={() => {
+            stopAutoPlay()
+            scrollByCards(1)
+          }}
           disabled={!canScrollRight}
           aria-label={`Scroll ${title} forwards`}
           className={[
