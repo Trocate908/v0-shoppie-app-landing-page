@@ -1,0 +1,42 @@
+/**
+ * Shared chat background, so the doodle pattern shows through behind bubbles
+ * in both the conversation list and the chat window.
+ *
+ * Light mode: the SVG (transparent, warm paper tones baked in) is used
+ * directly as the container's background image, so it always paints below
+ * every child — no layering rules needed.
+ *
+ * Dark mode: the same artwork is re-tinted through a CSS mask into faint
+ * light strokes on the near-black surface, via an absolutely positioned
+ * ::before at z-index 0. Direct children that must sit above it are marked
+ * `relative` in the components (positioned elements paint above a z-0/auto
+ * sibling that comes earlier in tree order). No `isolation` and no blanket
+ * `> *` positioning rule — either would break the fixed full-screen image
+ * viewer's stacking against the bottom nav.
+ */
+.chat-bg-pattern {
+  background-color: #faf7f2;
+  background-image: url("/images/chat-pattern.svg");
+  background-size: 440px 440px;
+  background-repeat: repeat;
+}
+
+.dark .chat-bg-pattern {
+  background-color: transparent;
+  background-image: none;
+}
+
+.dark .chat-bg-pattern::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: rgb(235 230 225 / 0.13);
+  -webkit-mask-image: url("/images/chat-pattern.svg");
+  mask-image: url("/images/chat-pattern.svg");
+  -webkit-mask-size: 440px 440px;
+  mask-size: 440px 440px;
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+}

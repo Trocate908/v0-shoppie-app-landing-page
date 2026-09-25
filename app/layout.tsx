@@ -9,6 +9,7 @@ import InstallBanner from "@/components/install-banner"
 import { NotificationProvider } from "@/components/notification-provider"
 import AnnouncementBanner from "@/components/announcement-banner"
 import "./globals.css"
+import "../styles/chat-bg.css"
 
 const _geist = Geist({ 
   subsets: ["latin"],
