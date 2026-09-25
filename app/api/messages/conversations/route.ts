@@ -1,5 +1,5 @@
 import { createServerClient } from "@/lib/supabase/server"
-import { NextResponse } from "next/server"
+import { NextResponse, after } from "next/server"
 
 // GET /api/messages/conversations — list all conversations for the current user
 export async function GET() {
@@ -126,15 +126,20 @@ export async function GET() {
     }
   })
 
-  // Batch update delivered status if needed (single query)
+  // Batch update delivered status if needed (single query).
+  // This is bookkeeping the list never reads back, so it must not sit in
+  // front of the response — awaiting it added a write round trip to every
+  // load. `after` runs it once the response has been sent.
   if (undeliveredIds.length > 0) {
-    await supabase
-      .from("messages")
-      .update({ delivered: true })
-      .in("id", undeliveredIds)
-      .then(({ error }) => {
-        if (error) console.error("[messages/conversations] Delivered update error:", error)
-      })
+    after(async () => {
+      const { error: updateError } = await supabase
+        .from("messages")
+        .update({ delivered: true })
+        .in("id", undeliveredIds)
+      if (updateError) {
+        console.error("[messages/conversations] Delivered update error:", updateError)
+      }
+    })
   }
 
   return NextResponse.json({ conversations: enriched })
