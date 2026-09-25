@@ -47,10 +47,13 @@ import {
   X,
   ImageIcon,
   ChevronRight,
+  Maximize2,
+  Download,
 } from "lucide-react"
 import Image from "next/image"
 import { format, isToday, isYesterday } from "date-fns"
 import { cn } from "@/lib/utils"
+import { avatarGradient } from "@/lib/avatar"
 import { usePresence, formatLastSeen } from "@/hooks/use-presence"
 import { VerificationBadge } from "@/components/verification-badge"
 import { EmojiPicker } from "@/components/emoji-picker"
@@ -129,6 +132,8 @@ export default function ChatWindow({
   const [confirmDeleteChat, setConfirmDeleteChat] = useState(false)
   // Typing indicator: true when the OTHER participant is currently typing
   const [isOtherTyping, setIsOtherTyping] = useState(false)
+  // Full-screen viewer for a tapped photo message.
+  const [viewerSrc, setViewerSrc] = useState<string | null>(null)
   // Captured once so bubbles that arrive later can be told apart from history.
   const [mountedAt] = useState(() => Date.now())
 
@@ -577,7 +582,7 @@ export default function ChatWindow({
             aria-label={`View ${conversation.products.name}`}
             className="flex items-center gap-2.5 border-t border-border/50 bg-muted/40 px-4 py-2 transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
           >
-            <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md bg-background">
+            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-background ring-1 ring-border/60">
               {conversation.products.image_url ? (
                 <Image
                   src={conversation.products.image_url}
@@ -593,13 +598,16 @@ export default function ChatWindow({
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium leading-tight text-foreground">
+              <p className="truncate text-xs font-semibold leading-tight text-foreground">
                 {conversation.products.name}
               </p>
-              <p className="text-[11px] font-semibold leading-tight text-primary">
+              <p className="text-[11px] font-bold leading-tight text-primary">
                 ${conversation.products.price.toFixed(2)}
               </p>
             </div>
+            <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
+              View
+            </span>
             <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
           </Link>
         )}
@@ -631,7 +639,7 @@ export default function ChatWindow({
               <div key={dateLabel}>
                 {/* Date divider */}
                 <div className="flex items-center justify-center py-4">
-                  <span className="rounded-full bg-muted/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground ring-1 ring-border/50">
+                  <span className="rounded-full bg-muted/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground shadow-sm ring-1 ring-border/50">
                     {dateLabel}
                   </span>
                 </div>
@@ -652,6 +660,7 @@ export default function ChatWindow({
                       onEdit={() => startEdit(msg)}
                       onDelete={() => deleteMessage(msg.id)}
                       onCopy={() => msg.content && copyMessage(msg.content)}
+                      onOpenImage={(src) => setViewerSrc(src)}
                     />
                   )
                 })}
@@ -855,6 +864,9 @@ export default function ChatWindow({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Full-screen photo viewer for tapped image messages */}
+      {viewerSrc && <ImageViewer src={viewerSrc} onClose={() => setViewerSrc(null)} />}
     </div>
   )
 }
@@ -890,41 +902,56 @@ function ChatHeader({
   const avatarUrl = conversation.is_buyer
     ? conversation.vendors?.profile_picture_url ?? null
     : null
+  // Same identity colour as the conversation list, so the person you opened
+  // still looks like the row you tapped.
+  const gradient = avatarGradient(otherName)
 
   return (
-    <header className="flex h-[60px] shrink-0 items-center gap-2.5 px-2">
+    <header className="flex h-16 shrink-0 items-center gap-2.5 px-2">
       <Button
         variant="ghost"
         size="icon"
         onClick={onBack}
         aria-label="Back"
-        className="tap-target h-9 w-9 shrink-0 rounded-full"
+        className="tap-target h-10 w-10 shrink-0 rounded-full"
       >
         <ArrowLeft className="h-5 w-5" />
       </Button>
 
       {/* Avatar with online dot */}
       <div className="relative shrink-0">
-        <div className="relative h-10 w-10 overflow-hidden rounded-full bg-muted ring-2 ring-border/60">
+        <div className="relative h-11 w-11 overflow-hidden rounded-full bg-muted ring-2 ring-border/60">
           {avatarUrl ? (
             <Image
               src={avatarUrl}
               alt={otherName}
               fill
               className="object-cover"
-              sizes="40px"
+              sizes="44px"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-primary/10 text-sm font-semibold uppercase text-primary">
-              {otherName.charAt(0)}
+            <div
+              className={cn(
+                "flex h-full w-full items-center justify-center bg-gradient-to-br text-base font-bold text-white",
+                gradient
+              )}
+            >
+              {otherName.charAt(0).toUpperCase()}
             </div>
           )}
         </div>
         {online && (
-          <span
-            aria-label="Online"
-            className="absolute -bottom-0.5 -right-0.5 block h-3.5 w-3.5 rounded-full border-2 border-background bg-emerald-500"
-          />
+          <>
+            {/* Halo pulses behind the dot to signal live presence at a glance */}
+            <span
+              aria-hidden
+              className="presence-ping pointer-events-none absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-emerald-500"
+            />
+            <span
+              aria-label="Online"
+              className="absolute bottom-0 right-0 block h-3 w-3 rounded-full border-2 border-background bg-emerald-500"
+            />
+          </>
         )}
       </div>
 
@@ -989,16 +1016,35 @@ function ChatHeader({
 interface MessageTickProps {
   delivered: boolean
   read: boolean
+  /** "overlay" draws light ticks for legibility on the dark scrim over a photo. */
+  tone?: "default" | "overlay"
 }
 
-function MessageTick({ delivered, read }: MessageTickProps) {
+function MessageTick({ delivered, read, tone = "default" }: MessageTickProps) {
+  const overlay = tone === "overlay"
+
   if (read) {
-    return <CheckCheck className="h-3.5 w-3.5 shrink-0 text-green-500 dark:text-green-400" />
+    return (
+      <CheckCheck
+        className={cn(
+          "h-3.5 w-3.5 shrink-0",
+          overlay ? "text-sky-400" : "text-green-500 dark:text-green-400"
+        )}
+      />
+    )
   }
   if (delivered) {
-    return <CheckCheck className="h-3.5 w-3.5 shrink-0 text-primary-foreground/55" />
+    return (
+      <CheckCheck
+        className={cn("h-3.5 w-3.5 shrink-0", overlay ? "text-white/75" : "text-primary-foreground/55")}
+      />
+    )
   }
-  return <Check className="h-3.5 w-3.5 shrink-0 text-primary-foreground/55" />
+  return (
+    <Check
+      className={cn("h-3.5 w-3.5 shrink-0", overlay ? "text-white/75" : "text-primary-foreground/55")}
+    />
+  )
 }
 
 // ─── MessageBubble ─────────────────────────────────────────────────────────────
@@ -1015,6 +1061,7 @@ interface MessageBubbleProps {
   onEdit: () => void
   onDelete: () => void
   onCopy: () => void
+  onOpenImage: (src: string) => void
 }
 
 function MessageBubble({
@@ -1026,8 +1073,10 @@ function MessageBubble({
   onEdit,
   onDelete,
   onCopy,
+  onOpenImage,
 }: MessageBubbleProps) {
   const timeStr = format(new Date(message.created_at), "HH:mm")
+  const imageUrl = message.image_url
 
   if (message.deleted) {
     return (
@@ -1052,10 +1101,12 @@ function MessageBubble({
           against the muted surface in both themes. */}
       <div
         className={cn(
-          "relative max-w-[75%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm",
+          "relative max-w-[75%] overflow-hidden rounded-2xl text-sm leading-relaxed shadow-sm",
           isOwn
             ? "bg-primary text-primary-foreground"
             : "bg-muted text-foreground ring-1 ring-border/60",
+          // A photo runs edge to edge; only a text bubble needs the padding.
+          imageUrl ? "p-0" : "px-3 py-2",
           // Corners that touch a neighbouring message from the same sender get
           // squared off, and the tail is kept only on the last one in a run.
           isOwn
@@ -1069,37 +1120,43 @@ function MessageBubble({
               )
         )}
       >
-        {message.image_url && (
-          <div className="relative mb-1 h-48 w-full overflow-hidden rounded-xl">
-            <Image
-              src={message.image_url}
-              alt="Image message"
-              fill
-              className="object-cover"
-              sizes="280px"
-            />
-          </div>
-        )}
-        {message.content && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
+        {imageUrl ? (
+          /* Photos carry their own caption, timestamp and receipt on a scrim,
+             so an image-only message needs no extra bubble chrome. */
+          <MessageImage
+            src={imageUrl}
+            caption={message.content}
+            timeStr={timeStr}
+            edited={!!message.edited_at}
+            isOwn={isOwn}
+            delivered={message.delivered}
+            read={message.read}
+            onOpen={() => onOpenImage(imageUrl)}
+          />
+        ) : (
+          <>
+            {message.content && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
 
-        {/* Timestamp + read receipt */}
-        <div
-          className={cn(
-            "mt-0.5 flex items-center gap-1",
-            isOwn ? "justify-end" : "justify-start"
-          )}
-        >
-          <span
-            className={cn(
-              "text-[10px]",
-              isOwn ? "text-primary-foreground/70" : "text-muted-foreground"
-            )}
-          >
-            {timeStr}
-            {message.edited_at && " (edited)"}
-          </span>
-          {isOwn && <MessageTick delivered={message.delivered} read={message.read} />}
-        </div>
+            {/* Timestamp + read receipt */}
+            <div
+              className={cn(
+                "mt-0.5 flex items-center gap-1",
+                isOwn ? "justify-end" : "justify-start"
+              )}
+            >
+              <span
+                className={cn(
+                  "text-[10px]",
+                  isOwn ? "text-primary-foreground/70" : "text-muted-foreground"
+                )}
+              >
+                {timeStr}
+                {message.edited_at && " (edited)"}
+              </span>
+              {isOwn && <MessageTick delivered={message.delivered} read={message.read} />}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Actions menu — available for every message. Kept visible where hover
@@ -1130,12 +1187,10 @@ function MessageBubble({
                 Copy
               </DropdownMenuItem>
             )}
-            {message.image_url && !message.content && (
-              <DropdownMenuItem
-                onClick={() => window.open(message.image_url!, "_blank", "noopener")}
-              >
+            {imageUrl && (
+              <DropdownMenuItem onClick={() => onOpenImage(imageUrl)}>
                 <ImageIcon className="mr-2 h-3.5 w-3.5" />
-                Open image
+                View image
               </DropdownMenuItem>
             )}
             {isOwn && (
@@ -1158,6 +1213,208 @@ function MessageBubble({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+      </div>
+    </div>
+  )
+}
+
+// ─── MessageImage ──────────────────────────────────────────────────────────────
+
+/** Ratios outside this range get clamped, so a panorama or a very tall portrait
+    can't take over the thread — the same compromise WhatsApp makes. */
+const MIN_IMAGE_RATIO = 0.72
+const MAX_IMAGE_RATIO = 1.9
+
+interface MessageImageProps {
+  src: string
+  caption: string | null
+  timeStr: string
+  edited: boolean
+  isOwn: boolean
+  delivered: boolean
+  read: boolean
+  onOpen: () => void
+}
+
+/**
+ * A photo message laid out the way messaging apps do it: the image sizes to its
+ * own aspect ratio (measured on load, so nothing is cropped to a fixed box),
+ * and the caption, timestamp and receipt sit on a dark scrim over the bottom
+ * edge. Tapping opens the full-screen viewer.
+ */
+function MessageImage({
+  src,
+  caption,
+  timeStr,
+  edited,
+  isOwn,
+  delivered,
+  read,
+  onOpen,
+}: MessageImageProps) {
+  const [ratio, setRatio] = useState<number | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  const displayRatio =
+    ratio === null
+      ? 4 / 3
+      : Math.min(Math.max(ratio, MIN_IMAGE_RATIO), MAX_IMAGE_RATIO)
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={caption ? `Open image: ${caption}` : "Open image"}
+      className="group/img relative block w-[240px] max-w-full text-left sm:w-[280px]"
+    >
+      <span className="relative block w-full" style={{ aspectRatio: String(displayRatio) }}>
+        {/* The shimmer sits *behind* the photo, so a cached image that paints
+            before React attaches its handler still covers it correctly. */}
+        {!loaded && <span aria-hidden className="skeleton-shimmer absolute inset-0 block" />}
+
+        {!failed && (
+          <Image
+            src={src}
+            alt={caption ?? "Shared image"}
+            fill
+            sizes="(max-width: 640px) 240px, 280px"
+            className="chat-image-in object-cover"
+            ref={(el) => {
+              // A cached image can finish before onLoad is attached, which
+              // would leave it cropped at the default ratio. Catch it here.
+              if (!el || loaded || failed) return
+              if (el.complete && el.naturalWidth > 0 && el.naturalHeight > 0) {
+                setRatio(el.naturalWidth / el.naturalHeight)
+                setLoaded(true)
+              }
+            }}
+            onLoad={(e) => {
+              const el = e.currentTarget
+              if (el.naturalWidth > 0 && el.naturalHeight > 0) {
+                setRatio(el.naturalWidth / el.naturalHeight)
+              }
+              setLoaded(true)
+            }}
+            onError={() => {
+              setFailed(true)
+              setLoaded(true)
+            }}
+          />
+        )}
+
+        {failed && (
+          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-muted text-muted-foreground">
+            <ImageIcon className="h-6 w-6" />
+            <span className="text-[10px] font-medium">Image unavailable</span>
+          </span>
+        )}
+
+        {/* Expand affordance — pointer devices only; on touch, tapping is obvious. */}
+        {!failed && (
+          <span className="pointer-events-none absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/img:opacity-100">
+            <Maximize2 className="h-3.5 w-3.5" />
+          </span>
+        )}
+
+        {/* Caption + meta scrim */}
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-2 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-2.5 pb-1.5 pt-8">
+          {caption && (
+            <span className="line-clamp-3 min-w-0 flex-1 text-[13px] leading-snug text-white/95">
+              {caption}
+            </span>
+          )}
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            <span className="text-[10px] text-white/85">
+              {timeStr}
+              {edited && " (edited)"}
+            </span>
+            {isOwn && <MessageTick delivered={delivered} read={read} tone="overlay" />}
+          </span>
+        </span>
+      </span>
+    </button>
+  )
+}
+
+// ─── ImageViewer ──────────────────────────────────────────────────────────────
+
+/**
+ * Full-screen photo viewer. Escape closes it, the page behind it is scroll
+ * locked, and "Save" downloads the file (falling back to opening the original
+ * when the storage host blocks a cross-origin blob read).
+ */
+function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", onKey)
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      window.removeEventListener("keydown", onKey)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [onClose])
+
+  async function handleSave() {
+    try {
+      const res = await fetch(src, { mode: "cors" })
+      if (!res.ok) throw new Error("fetch failed")
+      const blob = await res.blob()
+      const ext = (blob.type.split("/")[1] || "jpg").replace("jpeg", "jpg")
+      const objectUrl = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = objectUrl
+      a.download = `shoppie-${Date.now()}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(objectUrl)
+    } catch {
+      window.open(src, "_blank", "noopener")
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image viewer"
+      onClick={onClose}
+      className="viewer-in fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm"
+    >
+      <div
+        className="flex shrink-0 items-center justify-end gap-1.5 p-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={handleSave}
+          aria-label="Save image"
+          className="flex h-10 items-center gap-1.5 rounded-full bg-white/10 px-3.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
+        >
+          <Download className="h-4 w-4" />
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close image"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      <div className="relative min-h-0 flex-1 px-2 pb-4">
+        <Image
+          src={src}
+          alt="Shared image"
+          fill
+          sizes="100vw"
+          className="viewer-image-in object-contain"
+        />
       </div>
     </div>
   )
