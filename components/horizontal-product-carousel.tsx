@@ -339,9 +339,10 @@ export default function HorizontalProductCarousel({
 
   /* ── Autoplay (opt-in, Featured banner) ────────────────────────────────
      Steps one card-width at a time so the snap point lands cleanly, and
-     wraps back to the start when it reaches the end. Pauses while the user
-     is hovering, focusing inside, or has interacted — a carousel that
-     fights the user for scroll position is worse than no autoplay. */
+     wraps back to the start when it reaches the end. It pauses while the
+     carousel is off screen or focused, and stops permanently after a direct
+     interaction. Hovering alone does not pause it, since a stationary
+     pointer is common when previewing the Store tab. */
   const autoScrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const autoPlayStoppedRef = useRef(false)
   const [autoPlayPaused, setAutoPlayPaused] = useState(false)
@@ -504,8 +505,6 @@ export default function HorizontalProductCarousel({
             if (e.key === "ArrowLeft" || e.key === "ArrowRight") stopAutoPlay()
           }}
           onPointerDown={stopAutoPlay}
-          onMouseEnter={() => setAutoPlayPaused(true)}
-          onMouseLeave={() => setAutoPlayPaused(false)}
           onFocus={() => setAutoPlayPaused(true)}
           onBlur={() => setAutoPlayPaused(false)}
           aria-label={`${title} — horizontally scrollable product list. Use left and right arrow keys to scroll.`}
