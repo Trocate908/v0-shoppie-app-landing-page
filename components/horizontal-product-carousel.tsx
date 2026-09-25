@@ -397,7 +397,7 @@ export default function HorizontalProductCarousel({
       el.scrollBy({ left: cardWidth + 12, behavior })
     }
 
-    autoScrollTimerRef.current = setInterval(step, 4000)
+    autoScrollTimerRef.current = setInterval(step, 2700)
     return () => {
       if (autoScrollTimerRef.current) clearInterval(autoScrollTimerRef.current)
       autoScrollTimerRef.current = null
