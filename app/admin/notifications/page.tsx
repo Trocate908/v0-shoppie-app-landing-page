@@ -16,7 +16,6 @@ interface NotificationLog {
   target_audience: string
   notification_type: string
   recipients: number
-  onesignal_id: string | null
   sent_by: string
   url: string | null
   created_at: string
@@ -75,11 +74,13 @@ export default function AdminNotificationsPage() {
     const d = await r.json()
     setSending(false)
     if (!r.ok) {
-      toast({ title: "Failed to send", description: d.error ?? "OneSignal error", variant: "destructive" })
+      toast({ title: "Failed to send", description: d.error ?? "Notification dispatch error", variant: "destructive" })
     } else {
+      const pushed = d.pushed ?? 0
+      const persisted = d.persisted ?? 0
       toast({
-        title: "Notification sent!",
-        description: `Delivered to ${d.recipients ?? 0} subscriber${d.recipients !== 1 ? "s" : ""}`,
+        title: "Notification queued",
+        description: `${pushed} push subscription${pushed !== 1 ? "s" : ""} accepted${persisted > 0 ? `; ${persisted} in-app notification${persisted !== 1 ? "s" : ""} saved` : ""}.`,
       })
       setTitle("")
       setMessage("")
@@ -95,7 +96,7 @@ export default function AdminNotificationsPage() {
           <Bell className="h-6 w-6 text-violet-600" />
           Push Notification Center
         </h1>
-        <p className="text-muted-foreground text-sm mt-1">Send push notifications via OneSignal to platform users</p>
+        <p className="text-muted-foreground text-sm mt-1">Send push notifications through the active Web Push pipeline to platform users</p>
       </div>
 
       <div className="bg-card border border-border rounded-xl p-6 space-y-5">
@@ -199,7 +200,7 @@ export default function AdminNotificationsPage() {
                   <p className="text-sm text-muted-foreground line-clamp-1">{log.message}</p>
                   <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground flex-wrap">
                     <span className="flex items-center gap-1 text-green-600 font-medium">
-                      <CheckCircle2 className="h-3 w-3" />{log.recipients ?? 0} delivered
+                      <CheckCircle2 className="h-3 w-3" />{log.recipients ?? 0} push accepted
                     </span>
                     <span className="flex items-center gap-1">
                       <Users className="h-3 w-3" />{log.sent_by}
