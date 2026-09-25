@@ -744,7 +744,7 @@ export default function BrowseProductsClient({
                 title="Featured"
                 icon={Star}
                 products={featuredProducts}
-                seeAllUrl="/browse"
+                seeAllUrl="/?tab=store"
                 variant="banner"
                 accentClassName="bg-amber-500/15 text-amber-500"
                 autoPlay
@@ -753,14 +753,14 @@ export default function BrowseProductsClient({
                 title="Trending"
                 icon={Flame}
                 products={trendingProducts}
-                seeAllUrl="/browse"
+                seeAllUrl="/?tab=store"
                 accentClassName="bg-orange-500/15 text-orange-500"
               />
               <HorizontalProductCarousel
                 title="New Arrivals"
                 icon={Sparkles}
                 products={newArrivals}
-                seeAllUrl="/browse"
+                seeAllUrl="/?tab=store"
                 accentClassName="bg-emerald-500/15 text-emerald-500"
               />
             </div>
