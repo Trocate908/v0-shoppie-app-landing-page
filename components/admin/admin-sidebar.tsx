@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
-  LayoutDashboard, Users, Store, Package, Flag, Bell, Megaphone,
+  LayoutDashboard, Users, Store, Package, Flag, Lightbulb, Bell, Megaphone,
   BarChart2, Settings, ClipboardList, Shield, LogOut, Menu, X, Database,
 } from "lucide-react"
 import { useState, useEffect } from "react"
@@ -17,6 +17,7 @@ const nav = [
   { href: "/admin/vendors", label: "Vendors", icon: Store },
   { href: "/admin/products", label: "Products", icon: Package },
   { href: "/admin/reports", label: "Reports", icon: Flag, badge: "reports" },
+  { href: "/admin/suggestions", label: "Suggestions", icon: Lightbulb, badge: "suggestions" },
   { href: "/admin/notifications", label: "Notifications", icon: Bell },
   { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart2 },
@@ -30,11 +31,16 @@ export function AdminSidebar() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [pendingReports, setPendingReports] = useState(0)
+  const [pendingSuggestions, setPendingSuggestions] = useState(0)
 
   useEffect(() => {
     fetch("/api/admin/reports?status=pending")
       .then(r => r.json())
       .then(d => setPendingReports((d.reports ?? []).length))
+      .catch(() => {})
+    fetch("/api/admin/suggestions?counts=1")
+      .then(r => r.json())
+      .then(d => setPendingSuggestions((d.counts?.submitted ?? 0) + (d.counts?.reviewing ?? 0)))
       .catch(() => {})
   }, [])
 
@@ -55,7 +61,8 @@ export function AdminSidebar() {
       </div>
       <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto">
         {nav.map(({ href, label, icon: Icon, badge }) => {
-          const count = badge === "reports" ? pendingReports : 0
+          const count =
+            badge === "reports" ? pendingReports : badge === "suggestions" ? pendingSuggestions : 0
           return (
             <Link
               key={href}
