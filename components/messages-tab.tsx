@@ -173,13 +173,16 @@ export default function MessagesTab({
   }, [])
 
   useEffect(() => {
-    async function init() {
-      const supabase = getSharedSupabaseClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      setUserId(user?.id ?? null)
-      await fetchConversations()
-    }
-    init()
+    // Previously this awaited a network auth.getUser() and only then started
+    // the list fetch, so the skeleton waited on two chained round trips. The
+    // API route is the real auth authority; here we only need the user id for
+    // presence, which the locally cached session already has. So resolve it
+    // without a network hop and kick the fetch off immediately.
+    getSharedSupabaseClient()
+      .auth.getSession()
+      .then(({ data }) => setUserId(data.session?.user?.id ?? null))
+      .catch(() => setUserId(null))
+    void fetchConversations()
   }, [fetchConversations])
 
   // Realtime: refresh list on new messages
