@@ -16,11 +16,11 @@
 
         const { data: product } = await supabase
           .from("products")
+          // `*` (not an explicit column list) so the optional discount columns
+          // (original_price / promo_label / promo_ends_at) flow through without
+          // erroring on installs where the migration has not been applied.
           .select(`
-            name,
-            description,
-            price,
-            image_url,
+            *,
             vendor:vendors!inner(shop_name, location:locations!inner(city))
           `)
           .eq("id", id)
@@ -81,15 +81,9 @@
 
         const { data: product, error } = await supabase
           .from("products")
+          // `*` so optional discount columns are included where they exist.
           .select(`
-            id,
-            name,
-            description,
-            price,
-            image_url,
-            image_urls,
-            in_stock,
-            category,
+            *,
             vendor:vendors!inner(
               id,
               slug,
@@ -122,14 +116,7 @@
               ? supabase
                   .from("products")
                   .select(`
-                    id,
-                    name,
-                    description,
-                    price,
-                    image_url,
-                    image_urls,
-                    in_stock,
-                    category,
+                    *,
                     vendor:vendors!inner(
                       id,
                       slug,
@@ -148,14 +135,7 @@
             supabase
               .from("products")
               .select(`
-                id,
-                name,
-                description,
-                price,
-                image_url,
-                image_urls,
-                in_stock,
-                category,
+                *,
                 vendor:vendors!inner(
                   id,
                   slug,

@@ -27,7 +27,9 @@ export async function GET(_req: Request, { params }: Params) {
   const [productsResult, followersResult, followResult] = await Promise.all([
     adminSupabase
       .from("products")
-      .select("id, name, description, price, category, image_url, image_urls, in_stock, created_at")
+      // `*` so the optional discount columns flow through once
+      // supabase/migrations/add_product_discounts.sql has been applied.
+      .select("*")
       .eq("vendor_id", vendorId)
       .order("created_at", { ascending: false }),
 

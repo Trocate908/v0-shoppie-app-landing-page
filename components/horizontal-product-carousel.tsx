@@ -9,6 +9,8 @@ import { EmptyState } from "@/components/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import FavoriteButton from "@/components/favorite-button"
 import { VerificationBadge } from "@/components/verification-badge"
+import { ProductPrice } from "@/components/price-display"
+import { getDiscountInfo } from "@/lib/pricing"
 
 const FALLBACK_IMAGE = "/logo.png"
 
@@ -19,6 +21,8 @@ export interface CarouselProduct {
   name: string
   price: number
   original_price?: number | null
+  promo_label?: string | null
+  promo_ends_at?: string | null
   /** Set by the homepage query when the products.is_featured column exists. */
   is_featured?: boolean
   image_url: string | null
@@ -81,17 +85,6 @@ function resolveImage(product: CarouselProduct): string | null {
   return product.image_url || null
 }
 
-function discountPercent(product: CarouselProduct): number | null {
-  if (
-    typeof product.original_price === "number" &&
-    product.original_price > product.price &&
-    product.price > 0
-  ) {
-    return Math.round(((product.original_price - product.price) / product.original_price) * 100)
-  }
-  return null
-}
-
 function isActivelyVerified(product: CarouselProduct): boolean {
   return (
     !!product.vendor.is_verified &&
@@ -115,7 +108,8 @@ export function CarouselProductCard({
   animationDelayMs?: number
 }) {
   const img = resolveImage(product)
-  const discount = discountPercent(product)
+  // Single source of truth for "is this on sale" (see lib/pricing.ts).
+  const discount = getDiscountInfo(product)
   const location = product.vendor.location
   const locationLabel = location
     ? [location.market_name, location.city].filter(Boolean).join(", ") || null
@@ -171,7 +165,7 @@ export function CarouselProductCard({
             style={{ animationDelay: `${animationDelayMs + 220}ms` }}
             className="banner-price-pop absolute bottom-3 left-3 rounded-full bg-background/95 px-3 py-1 text-base font-extrabold text-primary shadow-md"
           >
-            ${product.price.toFixed(2)}
+            <ProductPrice product={product} size="sm" showPromoLabel />
           </span>
         </div>
       </Link>
@@ -222,9 +216,9 @@ export function CarouselProductCard({
               Sold Out
             </span>
           )}
-          {discount !== null && (
+          {discount.isOnSale && discount.discountPercent !== null && (
             <span className="rounded-sm bg-destructive px-1.5 py-0.5 text-[9px] font-bold text-white">
-              -{discount}%
+              -{discount.discountPercent}%
             </span>
           )}
         </div>
@@ -237,16 +231,7 @@ export function CarouselProductCard({
 
       {/* Body */}
       <div className="flex flex-col gap-0.5 px-2 pb-2.5 pt-2">
-        <div className="flex items-baseline gap-1.5">
-          <p className="text-sm font-bold leading-tight text-primary">
-            ${product.price.toFixed(2)}
-          </p>
-          {product.original_price && discount !== null && (
-            <span className="text-[11px] text-muted-foreground line-through">
-              ${product.original_price.toFixed(2)}
-            </span>
-          )}
-        </div>
+        <ProductPrice product={product} size="sm" showPromoLabel />
 
         <h3 className="line-clamp-2 text-[12px] leading-snug text-foreground/90 transition-colors group-hover/card:text-primary">
           {product.name}

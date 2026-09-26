@@ -17,6 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { VerificationBadge } from "@/components/verification-badge"
+import { ProductPrice } from "@/components/price-display"
 import FollowShopButton from "@/components/follow-shop-button"
 import ProductCarousel from "@/components/product-carousel"
 import FavoriteButton from "@/components/favorite-button"
@@ -50,6 +51,9 @@ interface Product {
   name: string
   description: string | null
   price: number
+  original_price?: number | null
+  promo_label?: string | null
+  promo_ends_at?: string | null
   category: string | null
   image_url: string | null
   image_urls: string[] | null
@@ -335,9 +339,7 @@ export default function ShopProfileClient({
 
                     {/* Card body */}
                     <div className="flex flex-col gap-0.5 px-1 pb-2.5 pt-2">
-                      <p className="text-sm font-bold leading-tight text-primary">
-                        ${product.price.toFixed(2)}
-                      </p>
+                      <ProductPrice product={product} size="sm" showPromoLabel />
 
                       <h3 className="line-clamp-2 text-[12px] leading-snug text-foreground/90 transition-colors group-hover:text-primary">
                         {product.name}

@@ -69,16 +69,14 @@ async function getProducts(locationId: string) {
 
   const { data, error } = await supabase
     .from("products")
+    // `*` rather than an explicit column list so the discount columns
+    // (original_price, promo_label, promo_ends_at) come through as soon as
+    // supabase/migrations/add_product_discounts.sql has been run, without
+    // breaking this page for anyone who has not run it yet. Naming an absent
+    // column makes PostgREST error, and the `return []` below would then blank
+    // the whole listing.
     .select(`
-      id,
-      name,
-      description,
-      price,
-      category,
-      image_url,
-      image_urls,
-      in_stock,
-      created_at,
+      *,
       vendor:vendors!inner(
         shop_name,
         is_open,

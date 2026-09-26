@@ -38,6 +38,8 @@ import { createBrowserClient } from "@/lib/supabase/client"
 import Link from "next/link"
 import { EmptyState } from "@/components/empty-state"
 import { VerificationBadge } from "@/components/verification-badge"
+import { ProductPrice } from "@/components/price-display"
+import { effectiveFilterPrice } from "@/lib/pricing"
 import { PRODUCT_CATEGORIES } from "@/lib/constants"
 
 interface Product {
@@ -45,6 +47,9 @@ interface Product {
   name: string
   description: string | null
   price: number
+  original_price?: number | null
+  promo_label?: string | null
+  promo_ends_at?: string | null
   category: string | null
   image_url: string | null
   image_urls: string[] | null
@@ -158,9 +163,10 @@ export default function ProductsClient({ products, trendingIds = [] }: ProductsC
     if (sortBy === "newest") {
       result.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
     } else if (sortBy === "price-asc") {
-      result.sort((a, b) => a.price - b.price)
+      // Sort by what the shopper actually pays, so discounts order correctly.
+      result.sort((a, b) => effectiveFilterPrice(a) - effectiveFilterPrice(b))
     } else if (sortBy === "price-desc") {
-      result.sort((a, b) => b.price - a.price)
+      result.sort((a, b) => effectiveFilterPrice(b) - effectiveFilterPrice(a))
     } else {
       result.sort((a, b) => {
         const ar = trendingRank.has(a.id) ? trendingRank.get(a.id)! : Infinity
@@ -373,7 +379,7 @@ export default function ProductsClient({ products, trendingIds = [] }: ProductsC
                     </div>
                     <div className="p-2.5">
                       <p className="line-clamp-1 text-xs font-semibold text-foreground">{product.name}</p>
-                      <p className="mt-1 text-sm font-bold text-primary">${product.price.toFixed(2)}</p>
+                      <ProductPrice product={product} size="sm" showPromoLabel className="mt-1" />
                     </div>
                   </div>
                 </Link>
@@ -522,9 +528,7 @@ export default function ProductsClient({ products, trendingIds = [] }: ProductsC
                     </div>
 
                     <div className="mt-auto flex items-end justify-between pt-2">
-                      <p className="text-base font-extrabold text-foreground">
-                        ${product.price.toFixed(2)}
-                      </p>
+                      <ProductPrice product={product} size="md" showPromoLabel />
                       <span className="rounded-xl bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                         View
                       </span>

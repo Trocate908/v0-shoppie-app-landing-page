@@ -51,6 +51,17 @@ export async function POST(req: NextRequest) {
       ('homepage_banner', '', 'Banner text shown on homepage'),
       ('vendor_approval_required', 'false', 'Require admin approval for new vendors')
     ON CONFLICT (key) DO NOTHING`,
+    // Vendor discounts and promotions. `price` remains what shoppers pay;
+    // `original_price` is the struck-through "was" price, so an active
+    // discount is simply original_price > price. All IF NOT EXISTS, so this
+    // is safe to re-run.
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2)`,
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS promo_label TEXT`,
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS promo_ends_at TIMESTAMPTZ`,
+    `CREATE INDEX IF NOT EXISTS idx_products_price ON products(price)`,
+    `CREATE INDEX IF NOT EXISTS idx_products_on_promotion
+      ON products(original_price, promo_ends_at)
+      WHERE original_price IS NOT NULL`,
   ]
 
   const errors: string[] = []

@@ -118,6 +118,17 @@ CREATE INDEX IF NOT EXISTS idx_notifications_log_created_at ON notifications_log
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT false;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_featured BOOLEAN DEFAULT false;
 
+-- 7b. Vendor discounts and promotions
+-- \`price\` stays the price shoppers pay; a promotion adds the "was" price on top.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS promo_label TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS promo_ends_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_products_price ON products(price);
+CREATE INDEX IF NOT EXISTS idx_products_on_promotion
+  ON products(original_price, promo_ends_at)
+  WHERE original_price IS NOT NULL;
+
 -- 8. RLS: deny direct access; service role bypasses automatically
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
@@ -166,6 +177,7 @@ export default function AdminSetupPage() {
     { name: "platform_settings", description: "Key-value store for platform config" },
     { name: "announcements", description: "Banners shown to users in the app" },
     { name: "notifications_log", description: "History of sent push notifications" },
+    { name: "products (discounts)", description: "original_price / promo_label / promo_ends_at columns for vendor promotions" },
   ]
 
   return (
