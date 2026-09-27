@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback, type ReactNode } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from "react"
 import { Input } from "@/components/ui/input"
 import { Search, X, Clock, TrendingUp, Mic } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { rankSuggestions, highlightParts } from "@/lib/search"
 
 const HISTORY_KEY = "shoppie_search_history"
 const MAX_HISTORY = 8
@@ -36,6 +37,8 @@ interface SearchBoxProps {
   className?: string
   /** Rendered at the right edge of the field — e.g. a filter button. */
   rightSlot?: ReactNode
+  /** Called when the shopper commits a search (Enter or a suggestion). */
+  onSubmit?: () => void
 }
 
 function getHistory(): string[] {
@@ -66,6 +69,7 @@ export default function SearchBox({
   placeholder = "Search products...",
   className,
   rightSlot,
+  onSubmit,
 }: SearchBoxProps) {
   const [open, setOpen] = useState(false)
   const [history, setHistory] = useState<string[]>([])
@@ -100,12 +104,11 @@ export default function SearchBox({
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  // Filter suggestions based on current input
-  const filteredSuggestions = value.trim().length > 0
-    ? suggestions
-        .filter((s) => s.toLowerCase().includes(value.toLowerCase()) && s.toLowerCase() !== value.toLowerCase())
-        .slice(0, 6)
-    : []
+  // Rank suggestions by relevance — prefix matches first, shorter names win.
+  const filteredSuggestions = useMemo(
+    () => rankSuggestions(suggestions, value, 6),
+    [suggestions, value],
+  )
 
   const showHistory = value.trim().length === 0 && history.length > 0
   const showSuggestions = filteredSuggestions.length > 0
@@ -117,15 +120,17 @@ export default function SearchBox({
     setHistory(getHistory())
     setOpen(false)
     inputRef.current?.blur()
-  }, [onChange])
+    onSubmit?.()
+  }, [onChange, onSubmit])
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     if (value.trim()) {
       saveToHistory(value.trim())
       setHistory(getHistory())
     }
     setOpen(false)
-  }
+    onSubmit?.()
+  }, [value, onSubmit])
 
   const handleRemoveHistory = (item: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -286,11 +291,13 @@ export default function SearchBox({
                 >
                   <TrendingUp className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="flex-1 truncate">
-                    {/* Bold matching part */}
-                    {item.split(new RegExp(`(${value})`, "gi")).map((part, i) =>
-                      part.toLowerCase() === value.toLowerCase()
-                        ? <strong key={i} className="text-foreground font-semibold">{part}</strong>
-                        : <span key={i}>{part}</span>
+                    {/* Bold matching parts. Escaped per token, so a query
+                        containing regex characters (e.g. "size 42 (new)")
+                        highlights literally instead of throwing. */}
+                    {highlightParts(item, value).map((part, i) =>
+                      part.match
+                        ? <strong key={i} className="text-foreground font-semibold">{part.text}</strong>
+                        : <span key={i}>{part.text}</span>
                     )}
                   </span>
                 </button>

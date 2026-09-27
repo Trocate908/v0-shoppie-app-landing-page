@@ -65,6 +65,7 @@ import { createBrowserClient } from "@/lib/supabase/client"
 import { getCurrencyForCountry, convertPrice, formatPrice, CURRENCIES, type Currency } from "@/lib/currency"
 import { ProductPrice } from "@/components/price-display"
 import { effectiveFilterPrice } from "@/lib/pricing"
+import { searchProducts } from "@/lib/search"
 import Image from "next/image"
 import { NotificationBell } from "@/components/notification-bell"
 import { cn } from "@/lib/utils"
@@ -422,15 +423,14 @@ export default function BrowseProductsClient({
           (!p.vendor.verification_expires_at || new Date(p.vendor.verification_expires_at).getTime() >= Date.now()),
       )
     }
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(
-        (p) =>
-          p.name.toLowerCase().includes(query) ||
-          p.description?.toLowerCase().includes(query) ||
-          p.category?.toLowerCase().includes(query),
-      )
-    }
+    const searching = searchQuery.trim().length > 0
+    // Search ranks by relevance, and the ranking is preserved through the
+    // category/price filters below so the best match stays at the top.
+    const ranked = searching
+      ? searchProducts(filtered, searchQuery)
+      : filtered.map((item) => ({ item, score: 0 }))
+    filtered = ranked.map((r) => r.item)
+
     if (selectedCategory && selectedCategory !== "all") {
       filtered = filtered.filter((p) => p.category === selectedCategory)
     }
@@ -442,24 +442,35 @@ export default function BrowseProductsClient({
     if (minPrice) filtered = filtered.filter((p) => effectiveFilterPrice(p) >= Number.parseFloat(minPrice))
     if (maxPrice) filtered = filtered.filter((p) => effectiveFilterPrice(p) <= Number.parseFloat(maxPrice))
 
-    const sorted = [...filtered]
-    switch (sortBy) {
-      case "random":
-        for (let i = sorted.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [sorted[i], sorted[j]] = [sorted[j], sorted[i]]
-        }
-        break
-      case "price-low":  sorted.sort((a, b) => effectiveFilterPrice(a) - effectiveFilterPrice(b)); break
-      case "price-high": sorted.sort((a, b) => effectiveFilterPrice(b) - effectiveFilterPrice(a)); break
-      case "name":       sorted.sort((a, b) => a.name.localeCompare(b.name)); break
-      default:
-        sorted.sort((a, b) => {
-          const da = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0
-          const db = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0
-          return db - da
-        })
-    }
+    // An explicit sort in the filter menu always wins over relevance — we
+    // don't override a deliberate choice. Otherwise, while searching, the
+    // order from lib/search is the order the shopper sees.
+    const useRelevance = searching && (sortBy === "random" || sortBy === "relevance")
+
+    const sorted = useRelevance
+      ? filtered
+      : (() => {
+          const list = [...filtered]
+          switch (sortBy) {
+            case "random":
+              for (let i = list.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1))
+                ;[list[i], list[j]] = [list[j], list[i]]
+              }
+              break
+            case "price-low":  list.sort((a, b) => effectiveFilterPrice(a) - effectiveFilterPrice(b)); break
+            case "price-high": list.sort((a, b) => effectiveFilterPrice(b) - effectiveFilterPrice(a)); break
+            case "name":       list.sort((a, b) => a.name.localeCompare(b.name)); break
+            default:
+              list.sort((a, b) => {
+                const da = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0
+                const db = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0
+                return db - da
+              })
+          }
+          return list
+        })()
+
     // Filtering and sorting always see every product, and the grid below
     // renders all of them.
     return sorted
@@ -507,6 +518,7 @@ export default function BrowseProductsClient({
      shopper lands on the products their tap just filtered. The short delay
      lets React paint the new results before we scroll. */
   useEffect(() => {
+    // Clearing the category (the "All" tile) shouldn't yank the viewport.
     if (!selectedCategory) return
     const target = resultsRef.current
     if (!target) return
@@ -515,6 +527,17 @@ export default function BrowseProductsClient({
     })
     return () => cancelAnimationFrame(frame)
   }, [selectedCategory])
+
+  /* Search scrolls only on commit (Enter or picking a suggestion), never
+     while typing — auto-scrolling on every keystroke would fight the user. */
+  const scrollToResults = useCallback(() => {
+    const target = resultsRef.current
+    if (!target) return
+    const frame = requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [])
 
   const clearCategory = useCallback(() => setSelectedCategory(""), [])
   const makeCategoryToggle = useCallback(
@@ -691,6 +714,7 @@ export default function BrowseProductsClient({
             onChange={setSearchQuery}
             suggestions={searchSuggestions}
             placeholder="Search products, stores, categories..."
+            onSubmit={scrollToResults}
             rightSlot={
               <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                 <DropdownMenuTrigger asChild>
@@ -1058,10 +1082,18 @@ export default function BrowseProductsClient({
             className="flex items-center justify-between scroll-mt-20"
           >
             <div className="flex items-baseline gap-2">
-              <h2 className="font-serif text-2xl italic leading-none text-primary">Explore</h2>
+              <h2 className="font-serif text-2xl italic leading-none text-primary">
+                {searchQuery.trim() ? "Results" : "Explore"}
+              </h2>
               {selectedCategory && selectedCategory !== "all" && (
                 <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
                   {selectedCategory}
+                </span>
+              )}
+              {searchQuery.trim() && (
+                <span className="text-xs text-muted-foreground">
+                  {filteredProducts.length} {filteredProducts.length === 1 ? "match" : "matches"}
+                  {searchQuery.trim() ? ` for “${searchQuery.trim()}”` : ""}
                 </span>
               )}
             </div>
