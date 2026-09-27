@@ -36,6 +36,7 @@ interface Product {
     is_verified?: boolean
     verification_expires_at?: string | null
     whatsapp_number?: string | null
+    profile_picture_url?: string | null
     location: Location
   }
 }

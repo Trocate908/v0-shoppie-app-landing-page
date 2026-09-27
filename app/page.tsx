@@ -32,6 +32,7 @@ interface Product {
     is_verified?: boolean
     verification_expires_at?: string | null
     whatsapp_number?: string | null
+    profile_picture_url?: string | null
     location: {
       id: string
       country: string
@@ -53,6 +54,7 @@ async function getAllProducts() {
       *,
       vendor:vendors!inner(
         id, shop_name, is_open, is_verified, verification_expires_at, whatsapp_number,
+        profile_picture_url,
         location:locations!inner(id, country, city, market_name)
       )
     `)
