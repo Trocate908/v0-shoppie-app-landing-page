@@ -36,7 +36,6 @@ import {
   PackageOpen,
   Sparkles,
   Search,
-  Flame,
   Layers,
   Shirt,
   Cpu,
@@ -52,6 +51,7 @@ import {
   Star,
   Store,
   Shuffle,
+  type LucideIcon,
 } from "lucide-react"
 import Link from "next/link"
 import HorizontalProductCarousel, {
@@ -112,7 +112,7 @@ interface BrowseProductsClientProps {
   visitorCountry: string | null
 }
 
-const CATEGORY_ICONS: Record<string, typeof Layers> = {
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
   All: Layers,
   Electronics: Cpu,
   Fashion: Shirt,
@@ -154,7 +154,7 @@ const POPULAR_SHOPS_LIMIT = 10
 
 interface CategoryCircleProps {
   label: string
-  icon: typeof Flame
+  icon: LucideIcon
   gradient: string
   active: boolean
   onClick: () => void
