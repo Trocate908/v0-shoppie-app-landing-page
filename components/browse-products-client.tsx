@@ -300,6 +300,10 @@ export default function BrowseProductsClient({
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
 
   const [selectedCategory, setSelectedCategory] = useState<string>("")
+  /* The results section sits well below the categories row, so a tap there
+     would otherwise look like nothing happened. We scroll it into view on
+     every category change. */
+  const resultsRef = useRef<HTMLDivElement>(null)
   const [sortBy, setSortBy] = useState<string>("random")
   const [minPrice, setMinPrice] = useState<string>("")
   const [maxPrice, setMaxPrice] = useState<string>("")
@@ -499,6 +503,19 @@ export default function BrowseProductsClient({
 
   /* Stable tile handlers — fresh closures every render would defeat the
      memoized CategoryCircle below. */
+  /* Bring the results into view after the filter has been applied, so the
+     shopper lands on the products their tap just filtered. The short delay
+     lets React paint the new results before we scroll. */
+  useEffect(() => {
+    if (!selectedCategory) return
+    const target = resultsRef.current
+    if (!target) return
+    const frame = requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [selectedCategory])
+
   const clearCategory = useCallback(() => setSelectedCategory(""), [])
   const makeCategoryToggle = useCallback(
     (cat: string) => () => setSelectedCategory((prev) => (prev === cat ? "" : cat)),
@@ -1036,9 +1053,17 @@ export default function BrowseProductsClient({
           )}
 
           {/* ── Results header ── */}
-          <div className="flex items-center justify-between">
+          <div
+            ref={resultsRef}
+            className="flex items-center justify-between scroll-mt-20"
+          >
             <div className="flex items-baseline gap-2">
               <h2 className="font-serif text-2xl italic leading-none text-primary">Explore</h2>
+              {selectedCategory && selectedCategory !== "all" && (
+                <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                  {selectedCategory}
+                </span>
+              )}
             </div>
             <div className="hidden h-px flex-1 bg-border sm:block ml-4" />
           </div>
