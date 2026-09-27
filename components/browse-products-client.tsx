@@ -102,6 +102,7 @@ interface Product {
     is_verified?: boolean
     verification_expires_at?: string | null
     whatsapp_number?: string | null
+    profile_picture_url?: string | null
     location: Location
   }
 }
@@ -205,6 +206,8 @@ interface ShopSummary {
   isVerified: boolean
   productCount: number
   category: string | null
+  /** Null for shops that never uploaded a logo — those fall back to initials. */
+  profilePictureUrl: string | null
 }
 
 /* The products feed carries no shop logo, so each shop gets a colour derived
@@ -235,11 +238,21 @@ function ShopCard({ shop }: { shop: ShopSummary }) {
     >
       <span
         className={cn(
-          "flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br text-xl font-bold text-white shadow-sm",
-          shopGradient(shop.id),
+          "relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br text-xl font-bold text-white shadow-sm",
+          !shop.profilePictureUrl && shopGradient(shop.id),
         )}
       >
-        {shop.name.trim().charAt(0).toUpperCase() || "?"}
+        {shop.profilePictureUrl ? (
+          <Image
+            src={shop.profilePictureUrl}
+            alt=""
+            fill
+            sizes="56px"
+            className="object-cover"
+          />
+        ) : (
+          shop.name.trim().charAt(0).toUpperCase() || "?"
+        )}
       </span>
       <span className="flex w-full items-center justify-center gap-1">
         <span className="line-clamp-1 text-[13px] font-semibold text-foreground transition-colors group-hover:text-primary">
@@ -554,6 +567,7 @@ export default function BrowseProductsClient({
           isVerified: !!vendor.is_verified,
           productCount: 0,
           category: null,
+          profilePictureUrl: vendor.profile_picture_url ?? null,
         }
         byVendorId.set(vendor.id, shop)
       }
