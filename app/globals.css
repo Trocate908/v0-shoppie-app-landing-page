@@ -210,3 +210,18 @@
     -webkit-tap-highlight-color: transparent;
   }
 }
+
+/* The search field's custom clear ✕ replaces the native one. */
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+@layer utilities {
+  /* Skip layout/paint for far-offscreen content (discovery carousels, the
+     lower part of the product grid) — a big win on low-end phones. */
+  .content-visibility-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 360px;
+  }
+}

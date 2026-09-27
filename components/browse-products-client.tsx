@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback, memo, useRef } from "react"
 import { PRODUCT_CATEGORIES } from "@/lib/constants"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -25,18 +25,17 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   MapPin,
+  ChevronRight,
   Filter,
   X,
   DollarSign,
   BadgeCheck,
   Locate,
   Loader2,
-  Menu,
   Heart,
   PackageOpen,
   Sparkles,
   Search,
-  ArrowUpDown,
   Flame,
   Layers,
   Shirt,
@@ -51,6 +50,8 @@ import {
   Wrench,
   Package,
   Star,
+  Store,
+  Shuffle,
 } from "lucide-react"
 import Link from "next/link"
 import HorizontalProductCarousel, {
@@ -64,7 +65,9 @@ import { createBrowserClient } from "@/lib/supabase/client"
 import { getCurrencyForCountry, convertPrice, formatPrice, CURRENCIES, type Currency } from "@/lib/currency"
 import { ProductPrice } from "@/components/price-display"
 import { effectiveFilterPrice } from "@/lib/pricing"
-import { ChevronDown, RefreshCw } from "lucide-react"
+import Image from "next/image"
+import { NotificationBell } from "@/components/notification-bell"
+import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { VerificationBadge } from "@/components/verification-badge"
 import ProductCarousel from "./product-carousel"
@@ -107,8 +110,6 @@ interface BrowseProductsClientProps {
   products: Product[]
   locations: Location[]
   visitorCountry: string | null
-  /** Product ids ranked by 7-day views (from the get_trending_products RPC). */
-  trendingIds?: string[]
 }
 
 const CATEGORY_ICONS: Record<string, typeof Layers> = {
@@ -126,20 +127,150 @@ const CATEGORY_ICONS: Record<string, typeof Layers> = {
   Other: Package,
 }
 
-const CATEGORY_COLORS: Record<string, { bg: string; icon: string; border: string }> = {
-  All:               { bg: "bg-slate-100 dark:bg-slate-800",       icon: "text-slate-600 dark:text-slate-300",  border: "border-slate-200 dark:border-slate-700" },
-  Electronics:       { bg: "bg-blue-50 dark:bg-blue-950/40",      icon: "text-blue-500",                       border: "border-blue-200 dark:border-blue-800" },
-  Fashion:           { bg: "bg-pink-50 dark:bg-pink-950/40",      icon: "text-pink-500",                       border: "border-pink-200 dark:border-pink-800" },
-  "Food & Beverages":{ bg: "bg-amber-50 dark:bg-amber-950/40",    icon: "text-amber-500",                      border: "border-amber-200 dark:border-amber-800" },
-  "Home & Garden":   { bg: "bg-lime-50 dark:bg-lime-950/40",      icon: "text-lime-600",                       border: "border-lime-200 dark:border-lime-800" },
-  "Health & Beauty": { bg: "bg-rose-50 dark:bg-rose-950/40",      icon: "text-rose-500",                       border: "border-rose-200 dark:border-rose-800" },
-  "Sports & Outdoors":{ bg: "bg-cyan-50 dark:bg-cyan-950/40",     icon: "text-cyan-500",                       border: "border-cyan-200 dark:border-cyan-800" },
-  "Toys & Games":    { bg: "bg-purple-50 dark:bg-purple-950/40",  icon: "text-purple-500",                     border: "border-purple-200 dark:border-purple-800" },
-  "Books & Media":   { bg: "bg-indigo-50 dark:bg-indigo-950/40",  icon: "text-indigo-500",                     border: "border-indigo-200 dark:border-indigo-800" },
-  Automotive:        { bg: "bg-zinc-100 dark:bg-zinc-800",        icon: "text-zinc-600 dark:text-zinc-300",    border: "border-zinc-200 dark:border-zinc-700" },
-  Services:          { bg: "bg-teal-50 dark:bg-teal-950/40",      icon: "text-teal-500",                       border: "border-teal-200 dark:border-teal-800" },
-  Other:             { bg: "bg-slate-100 dark:bg-slate-800",      icon: "text-slate-500",                      border: "border-slate-200 dark:border-slate-700" },
+/* Category tiles: one hue per category, taken from the store mockup (orange
+   groceries, blue electronics, pink fashion, teal home, purple beauty, green
+   pharmacy). Categories come from lib/constants, so anything without a hue here
+   falls back to a neutral slate tile. */
+const CATEGORY_GRADIENTS: Record<string, string> = {
+  All:                 "from-slate-500 to-slate-700",
+  Electronics:         "from-sky-400 to-blue-600",
+  Fashion:             "from-pink-400 to-rose-600",
+  "Food & Beverages":  "from-amber-400 to-orange-600",
+  "Home & Garden":     "from-teal-400 to-emerald-600",
+  "Health & Beauty":   "from-fuchsia-400 to-purple-600",
+  "Sports & Outdoors": "from-emerald-400 to-teal-600",
+  "Toys & Games":      "from-violet-400 to-purple-600",
+  "Books & Media":     "from-indigo-400 to-indigo-600",
+  Automotive:          "from-zinc-500 to-zinc-700",
+  Services:            "from-teal-400 to-cyan-600",
+  Other:               "from-slate-400 to-slate-600",
 }
+
+/* How many category tiles the row shows before "See all" expands it. */
+const CATEGORY_PREVIEW_COUNT = 6
+
+/* How many shop tiles the Popular shops carousel shows. */
+const POPULAR_SHOPS_LIMIT = 10
+
+interface CategoryCircleProps {
+  label: string
+  icon: typeof Flame
+  gradient: string
+  active: boolean
+  onClick: () => void
+}
+
+/* Stable gradient lookup for the memoized tiles. */
+const ALL_GRADIENT = CATEGORY_GRADIENTS.All
+
+/** Circular category tile — gradient icon over a label, as in the store mockup.
+    Memoized so grid re-renders (search keystrokes, filter changes) don't redo
+    work for tiles whose props never changed. */
+const CategoryCircle = memo(function CategoryCircle({ label, icon: Icon, gradient, active, onClick }: CategoryCircleProps) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className="group flex w-[70px] shrink-0 flex-col items-center gap-2 sm:w-20"
+    >
+      <span
+        className={cn(
+          "flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br text-white shadow-sm transition-transform duration-200 sm:h-[72px] sm:w-[72px]",
+          gradient,
+          active
+            ? "scale-105 ring-2 ring-primary ring-offset-2 ring-offset-background"
+            : "group-hover:scale-105 group-hover:shadow-md",
+        )}
+      >
+        <Icon className="h-7 w-7" strokeWidth={1.75} />
+      </span>
+      <span
+        className={cn(
+          "line-clamp-2 text-center text-[11px] leading-tight sm:text-xs",
+          active ? "font-bold text-foreground" : "font-medium text-muted-foreground",
+        )}
+      >
+        {label}
+      </span>
+    </button>
+  )
+})
+
+interface ShopSummary {
+  id: string
+  name: string
+  city: string
+  market: string
+  isVerified: boolean
+  productCount: number
+  category: string | null
+}
+
+/* The products feed carries no shop logo, so each shop gets a colour derived
+   from its id — stable per shop, and never a broken image. */
+const SHOP_GRADIENTS = [
+  "from-sky-400 to-blue-600",
+  "from-amber-400 to-orange-600",
+  "from-pink-400 to-rose-600",
+  "from-teal-400 to-emerald-600",
+  "from-fuchsia-400 to-purple-600",
+  "from-emerald-400 to-teal-600",
+  "from-indigo-400 to-indigo-600",
+  "from-violet-400 to-purple-600",
+]
+
+function shopGradient(id: string) {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+  return SHOP_GRADIENTS[hash % SHOP_GRADIENTS.length]
+}
+
+/** One shop tile in the Popular shops carousel. */
+function ShopCard({ shop }: { shop: ShopSummary }) {
+  return (
+    <Link
+      href={`/shop/${shop.id}`}
+      className="group flex w-[128px] shrink-0 snap-start flex-col items-center gap-1.5 rounded-2xl border border-border/60 bg-card p-3 transition-colors hover:border-primary/40 sm:w-[148px]"
+    >
+      <span
+        className={cn(
+          "flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br text-xl font-bold text-white shadow-sm",
+          shopGradient(shop.id),
+        )}
+      >
+        {shop.name.trim().charAt(0).toUpperCase() || "?"}
+      </span>
+      <span className="flex w-full items-center justify-center gap-1">
+        <span className="line-clamp-1 text-[13px] font-semibold text-foreground transition-colors group-hover:text-primary">
+          {shop.name}
+        </span>
+        {shop.isVerified && <BadgeCheck className="h-3 w-3 shrink-0 text-primary" />}
+      </span>
+      <span className="line-clamp-1 w-full text-center text-[11px] text-muted-foreground">
+        {shop.category ? `${shop.category} • ${shop.city}` : shop.city || shop.market}
+      </span>
+    </Link>
+  )
+}
+
+/* Header currency toggle. Zimbabwean shoppers read prices in USD or ZiG, so the
+   pill offers exactly those two; the conversion itself still goes through
+   lib/currency, which is where the rates and the other currencies live. */
+const CURRENCY_PILL: { code: string; label: string }[] = [
+  { code: "USD", label: "USD" },
+  { code: "ZWG", label: "ZiG" },
+]
+
+/* Sorting used to have its own <Select> next to the search bar. It now lives
+   inside the filter menu so the search row stays a single control. */
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: "random", label: "Random" },
+  { value: "newest", label: "Newest" },
+  { value: "name", label: "Name A–Z" },
+  { value: "price-low", label: "Price ↑" },
+  { value: "price-high", label: "Price ↓" },
+]
 
 let _sharedBrowserClient: ReturnType<typeof createBrowserClient> | null = null
 
@@ -147,7 +278,6 @@ export default function BrowseProductsClient({
   products: initialProducts,
   locations,
   visitorCountry: initialVisitorCountry,
-  trendingIds = [],
 }: BrowseProductsClientProps) {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
@@ -155,7 +285,6 @@ export default function BrowseProductsClient({
   const [selectedCity, setSelectedCity] = useState<string>("")
   const [selectedLocation, setSelectedLocation] = useState<string>("")
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
-  const [trackedViews, setTrackedViews] = useState<Set<string>>(new Set())
 
   const [selectedCategory, setSelectedCategory] = useState<string>("")
   const [sortBy, setSortBy] = useState<string>("random")
@@ -163,6 +292,8 @@ export default function BrowseProductsClient({
   const [maxPrice, setMaxPrice] = useState<string>("")
   const [filterDialogOpen, setFilterDialogOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showAllCategories, setShowAllCategories] = useState(false)
+  const [shopsRotation, setShopsRotation] = useState(0)
 
   const [detectedCountry, setDetectedCountry] = useState<string | null>(initialVisitorCountry)
   const [geoStatus, setGeoStatus] = useState<"idle" | "detecting" | "success" | "error">("idle")
@@ -173,8 +304,6 @@ export default function BrowseProductsClient({
   const [liveRates, setLiveRates] = useState<Record<string, number>>({})
   const [ratesDate, setRatesDate] = useState<string>("")
   const [ratesSource, setRatesSource] = useState<"live" | "fallback" | "">("")
-  const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false)
-  const [currencySearch, setCurrencySearch] = useState("")
 
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false)
 
@@ -314,6 +443,8 @@ export default function BrowseProductsClient({
           return db - da
         })
     }
+    // Filtering and sorting always see every product, and the grid below
+    // renders all of them.
     return sorted
   }, [sortedProducts, searchQuery, selectedCategory, selectedLocation, minPrice, maxPrice, sortBy, showVerifiedOnly])
 
@@ -329,16 +460,20 @@ export default function BrowseProductsClient({
       .sort((a, b) => a.market_name.localeCompare(b.market_name))
   }, [locations, selectedCountry, selectedCity])
 
-  const trackProductView = async (productId: string) => {
-    if (trackedViews.has(productId)) return
+  /* Recording a view used to add to a state Set, which re-rendered every
+     product card on each tap. The tracked ids now live in a ref — no
+     re-render, and an id is still never recorded twice. */
+  const trackedViewsRef = useRef<Set<string>>(new Set())
+  const trackProductView = useCallback(async (productId: string) => {
+    if (trackedViewsRef.current.has(productId)) return
     try {
       const supabase = _sharedBrowserClient ?? (_sharedBrowserClient = createBrowserClient())
       const { error } = await supabase.from("product_views").insert({ product_id: productId })
-      if (!error) setTrackedViews((prev) => new Set(prev).add(productId))
+      if (!error) trackedViewsRef.current.add(productId)
     } catch (error) {
       console.error("[v0] Error tracking product view:", error)
     }
-  }
+  }, [])
 
   const handleLocationSelect = () => { if (selectedLocation) setLocationDialogOpen(false) }
   const clearLocationFilter = () => { setSelectedCountry(""); setSelectedCity(""); setSelectedLocation("") }
@@ -348,6 +483,14 @@ export default function BrowseProductsClient({
 
   const selectedLocationData = locations.find((l) => l.id === selectedLocation)
   const activeFiltersCount = [selectedCategory && selectedCategory !== "all", selectedLocation, minPrice, maxPrice, showVerifiedOnly].filter(Boolean).length
+
+  /* Stable tile handlers — fresh closures every render would defeat the
+     memoized CategoryCircle below. */
+  const clearCategory = useCallback(() => setSelectedCategory(""), [])
+  const makeCategoryToggle = useCallback(
+    (cat: string) => () => setSelectedCategory((prev) => (prev === cat ? "" : cat)),
+    [],
+  )
 
   const searchSuggestions = useMemo(() => {
     const names = initialProducts.map((p) => p.name)
@@ -362,6 +505,17 @@ export default function BrowseProductsClient({
     return PRODUCT_CATEGORIES.filter((c) => set.has(c))
   }, [initialProducts])
 
+  // Collapsed, the row mirrors the design's six tiles; it never hides the
+  // shopper's current pick, which they can set from the filter menu too.
+  const visibleCategories = useMemo(() => {
+    if (showAllCategories) return availableCategories
+    const preview = availableCategories.slice(0, CATEGORY_PREVIEW_COUNT)
+    if (selectedCategory && !preview.includes(selectedCategory)) {
+      return [...preview.slice(0, CATEGORY_PREVIEW_COUNT - 1), selectedCategory]
+    }
+    return preview
+  }, [availableCategories, showAllCategories, selectedCategory])
+
   /* ── Homepage discovery carousels ──────────────────────────────────── */
 
   const carouselProducts = useMemo((): CarouselProduct[] => initialProducts, [initialProducts])
@@ -372,14 +526,6 @@ export default function BrowseProductsClient({
     return source.slice(0, 10)
   }, [carouselProducts])
 
-  const trendingProducts = useMemo(() => {
-    const rank = new Map(trendingIds.map((id, i) => [id, i] as const))
-    return carouselProducts
-      .filter((p) => rank.has(p.id))
-      .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
-      .slice(0, 10)
-  }, [carouselProducts, trendingIds])
-
   const newArrivals = useMemo(() => {
     const byDate = [...carouselProducts].sort((a, b) => {
       const da = a.created_at ? new Date(a.created_at).getTime() : 0
@@ -389,88 +535,116 @@ export default function BrowseProductsClient({
     return byDate.slice(0, 10)
   }, [carouselProducts])
 
+  /* ── Popular shops ── */
+
+  /* Shops come from the vendors already joined onto the products feed, so
+     this needs no extra query — one entry per vendor, with the catalogue
+     size and main category we can actually prove from the data. */
+  const shops = useMemo(() => {
+    const byVendorId = new Map<string, ShopSummary>()
+    for (const product of initialProducts) {
+      const vendor = product.vendor
+      let shop = byVendorId.get(vendor.id)
+      if (!shop) {
+        shop = {
+          id: vendor.id,
+          name: vendor.shop_name,
+          city: vendor.location.city,
+          market: vendor.location.market_name,
+          isVerified: !!vendor.is_verified,
+          productCount: 0,
+          category: null,
+        }
+        byVendorId.set(vendor.id, shop)
+      }
+      shop.productCount += 1
+      if (!shop.category && product.category) shop.category = product.category
+    }
+    return Array.from(byVendorId.values())
+  }, [initialProducts])
+
+  /* "Popular" here means the biggest catalogues, then rotated by a random
+     offset. The offset is picked after mount rather than during render, so
+     the server-rendered order still matches on hydration while every reload
+     lands on a different starting shop. */
+  const popularShops = useMemo(() => {
+    if (shops.length === 0) return []
+    const ranked = [...shops].sort((a, b) => b.productCount - a.productCount)
+    const offset = shopsRotation % ranked.length
+    return [...ranked.slice(offset), ...ranked.slice(0, offset)].slice(0, POPULAR_SHOPS_LIMIT)
+  }, [shops, shopsRotation])
+
+  // Rotate to a new random offset after mount — runs once per page load, and
+  // again on every reload, so the same shops aren't always in front.
+  useEffect(() => {
+    if (shops.length === 0) return
+    setShopsRotation(Math.floor(Math.random() * shops.length))
+  }, [shops.length])
+
+  // The "Shuffle" button: jump to a different offset on demand.
+  const reshuffleShops = useCallback(() => {
+    if (shops.length === 0) return
+    setShopsRotation((prev) => {
+      const span = Math.max(1, shops.length - 1)
+      return (prev + 1 + Math.floor(Math.random() * span)) % shops.length
+    })
+  }, [shops.length])
+
   return (
     <>
       {/* ── Store Header ── */}
       <header className="sticky top-0 z-10 border-b border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h1 className="text-base font-extrabold leading-tight text-foreground sm:text-lg">Store</h1>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {/* ── Currency picker ── */}
-              <Dialog open={currencyPickerOpen} onOpenChange={(o) => { setCurrencyPickerOpen(o); if (!o) setCurrencySearch("") }}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-9 gap-1 rounded-xl px-2.5 text-xs border-border font-semibold">
-                    <span>{selectedCurrency.flag}</span>
-                    <span>{selectedCurrency.code}</span>
-                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-sm p-0 gap-0">
-                  <DialogHeader className="px-4 pt-4 pb-2">
-                    <DialogTitle className="text-base">Select Currency</DialogTitle>
-                    {ratesDate && (
-                      <DialogDescription className="flex items-center gap-1 text-xs">
-                        <RefreshCw className="h-3 w-3" />
-                        {ratesSource === "live" ? `Live rates · ${ratesDate}` : "Approximate rates"}
-                      </DialogDescription>
-                    )}
-                  </DialogHeader>
-                  {/* Search bar */}
-                  <div className="px-4 pb-2">
-                    <Input
-                      autoFocus
-                      placeholder="Search currency…"
-                      value={currencySearch}
-                      onChange={(e) => setCurrencySearch(e.target.value)}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                  {/* Currency list */}
-                  <div className="overflow-y-auto max-h-72 px-2 pb-4">
-                    {Object.values(CURRENCIES)
-                      .filter((c) => {
-                        const q = currencySearch.toLowerCase()
-                        return !q || c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
-                      })
-                      .map((currency) => (
-                        <button
-                          key={currency.code}
-                          onClick={() => { setSelectedCurrency(currency); setCurrencyPickerOpen(false); setCurrencySearch("") }}
-                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-muted ${selectedCurrency.code === currency.code ? "bg-primary/10 text-primary font-semibold" : "text-foreground"}`}
-                        >
-                          <span className="text-base">{currency.flag}</span>
-                          <span className="font-mono text-xs w-10 shrink-0">{currency.code}</span>
-                          <span className="truncate text-muted-foreground text-xs">{currency.name}</span>
-                          {liveRates[currency.code] && (
-                            <span className="ml-auto text-xs text-muted-foreground shrink-0">
-                              {liveRates[currency.code] >= 100
-                                ? Math.round(liveRates[currency.code]).toLocaleString()
-                                : liveRates[currency.code].toFixed(2)}
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    {Object.values(CURRENCIES).filter((c) => {
-                      const q = currencySearch.toLowerCase()
-                      return !q || c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
-                    }).length === 0 && (
-                      <p className="py-6 text-center text-sm text-muted-foreground">No currencies found</p>
-                    )}
-                  </div>
-                </DialogContent>
-              </Dialog>
+            <Link href="/" className="flex min-w-0 items-center gap-2">
+              <Image
+                src="/logo.png"
+                alt="ShoppieApp"
+                width={32}
+                height={32}
+                priority
+                className="h-8 w-8 shrink-0 rounded-xl ring-1 ring-border"
+              />
+              <span className="truncate text-lg font-extrabold tracking-tight text-foreground">
+                ShoppieApp
+              </span>
+            </Link>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {/* ── Display currency: USD / ZiG ── */}
+              <div
+                role="group"
+                aria-label="Display currency"
+                className="flex items-center rounded-full border border-border bg-muted/60 p-0.5"
+              >
+                {CURRENCY_PILL.map((option) => {
+                  const isActive = selectedCurrency.code === option.code
+                  return (
+                    <button
+                      key={option.code}
+                      type="button"
+                      aria-pressed={isActive}
+                      onClick={() => setSelectedCurrency(CURRENCIES[option.code])}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-xs font-bold transition-colors",
+                        isActive
+                          ? "bg-orange-500 text-white shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <NotificationBell />
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-9 gap-1.5 rounded-xl px-2.5"
+                size="icon"
+                className="h-9 w-9 rounded-full"
                 onClick={() => router.push("/wishlist")}
                 aria-label="Open wishlist"
               >
-                <Heart className="h-4 w-4" />
-                <span className="hidden text-xs font-semibold sm:inline">Wishlist</span>
+                <Heart className="h-5 w-5" />
               </Button>
             </div>
           </div>
@@ -480,43 +654,46 @@ export default function BrowseProductsClient({
       <main className="flex-1 px-4 py-4 sm:px-6 lg:px-8 pb-24">
         <div className="mx-auto max-w-7xl space-y-4">
 
-          {/* ── Search + Sort + Menu ── */}
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <SearchBox
-                value={searchQuery}
-                onChange={setSearchQuery}
-                suggestions={searchSuggestions}
-                placeholder="Search products, shops, categories..."
-              />
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="h-10 w-[130px] rounded-2xl text-xs border-border bg-card">
-                  <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <SelectValue placeholder="Sort" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="random">Random</SelectItem>
-                  <SelectItem value="newest">Newest</SelectItem>
-                  <SelectItem value="name">Name A–Z</SelectItem>
-                  <SelectItem value="price-low">Price ↑</SelectItem>
-                  <SelectItem value="price-high">Price ↓</SelectItem>
-                </SelectContent>
-              </Select>
-
+          {/* ── Search bar — filters and sorting live inside it ── */}
+          <SearchBox
+            value={searchQuery}
+            onChange={setSearchQuery}
+            suggestions={searchSuggestions}
+            placeholder="Search products, stores, categories..."
+            rightSlot={
               <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="h-10 w-10 relative shrink-0 rounded-2xl">
-                    <Menu className="h-4 w-4" />
+                  <button
+                    type="button"
+                    aria-label="Filters and sorting"
+                    className="relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-500 text-white transition-colors hover:bg-blue-600"
+                  >
+                    <Filter className="h-4 w-4" />
                     {activeFiltersCount > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-white font-bold">
+                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
                         {activeFiltersCount}
                       </span>
                     )}
-                  </Button>
+                  </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-64 rounded-2xl p-3 space-y-3">
+                  <DropdownMenuLabel className="px-0 pb-1 text-sm">Sort by</DropdownMenuLabel>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {SORT_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => setSortBy(option.value)}
+                        className={`rounded-xl px-2 py-2 text-xs font-semibold transition-colors ${
+                          sortBy === option.value
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-border hover:bg-muted"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <DropdownMenuSeparator className="-mx-1" />
                   <DropdownMenuLabel className="px-0 pb-1 text-sm">Filter Options</DropdownMenuLabel>
                   <DropdownMenuSeparator className="-mx-1" />
 
@@ -679,8 +856,60 @@ export default function BrowseProductsClient({
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
+            }
+          />
+
+          {/* ── Categories ── */}
+          <section>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <h2 className="text-base font-bold tracking-tight text-foreground">Categories</h2>
+              {availableCategories.length > CATEGORY_PREVIEW_COUNT && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllCategories((prev) => !prev)}
+                  aria-expanded={showAllCategories}
+                  className="flex items-center gap-0.5 text-xs font-semibold text-primary hover:underline"
+                >
+                  {showAllCategories ? "Show less" : "See all"}
+                  <ChevronRight
+                    className={cn(
+                      "h-3.5 w-3.5 transition-transform duration-200",
+                      showAllCategories && "rotate-90",
+                    )}
+                  />
+                </button>
+              )}
             </div>
-          </div>
+            <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
+              {/* The scroller pads itself so the active ring — which paints
+                  outside the circle and would otherwise be clipped by
+                  overflow-y — has room; from sm up the -mx/px pair also keeps
+                  the first tile flush with the page edge. */}
+              <div
+                role="group"
+                aria-label="Product categories"
+                className="flex gap-3 overflow-x-auto py-1.5 sm:-mx-1.5 sm:gap-5 sm:px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                <CategoryCircle
+                  label="All"
+                  icon={Layers}
+                  gradient={ALL_GRADIENT}
+                  active={!selectedCategory || selectedCategory === "all"}
+                  onClick={clearCategory}
+                />
+                {visibleCategories.map((cat) => (
+                  <CategoryCircle
+                    key={cat}
+                    label={cat}
+                    icon={CATEGORY_ICONS[cat] ?? Package}
+                    gradient={CATEGORY_GRADIENTS[cat] ?? CATEGORY_GRADIENTS.Other}
+                    active={selectedCategory === cat}
+                    onClick={makeCategoryToggle(cat)}
+                  />
+                ))}
+              </div>
+            </div>
+          </section>
 
           {/* ── Status Row (Shop Updates) ── */}
           <div>
@@ -696,57 +925,11 @@ export default function BrowseProductsClient({
             />
           </div>
 
-          {/* ── Category chips ── */}
-          <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
-            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {/* All chip */}
-              {(() => {
-                const isActive = !selectedCategory || selectedCategory === "all"
-                const colors = CATEGORY_COLORS["All"]
-                return (
-                  <button
-                    key="All"
-                    onClick={() => setSelectedCategory("")}
-                    className={[
-                      "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all duration-150 whitespace-nowrap",
-                      isActive
-                        ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25 scale-[1.02]"
-                        : `${colors.bg} ${colors.border} text-foreground hover:opacity-80`,
-                    ].join(" ")}
-                  >
-                    <Layers className={["h-4 w-4 shrink-0", isActive ? "text-primary-foreground" : colors.icon].join(" ")} />
-                    All
-                  </button>
-                )
-              })()}
-              {availableCategories.map((cat) => {
-                const Icon = CATEGORY_ICONS[cat] ?? Package
-                const colors = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS["Other"]
-                const isActive = selectedCategory === cat
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(isActive ? "" : cat)}
-                    className={[
-                      "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all duration-150 whitespace-nowrap",
-                      isActive
-                        ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25 scale-[1.02]"
-                        : `${colors.bg} ${colors.border} text-foreground hover:opacity-80`,
-                    ].join(" ")}
-                  >
-                    <Icon className={["h-4 w-4 shrink-0", isActive ? "text-primary-foreground" : colors.icon].join(" ")} />
-                    {cat}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
           {/* ── Discovery carousels (Featured / Trending / New Arrivals) ── */}
           {(featuredProducts.length > 0 ||
-            trendingProducts.length > 0 ||
+            popularShops.length > 0 ||
             newArrivals.length > 0) && (
-            <div className="space-y-6">
+            <div className="content-visibility-auto space-y-6">
               <HorizontalProductCarousel
                 title="Featured"
                 icon={Star}
@@ -756,13 +939,36 @@ export default function BrowseProductsClient({
                 accentClassName="bg-amber-500/15 text-amber-500"
                 autoPlay
               />
-              <HorizontalProductCarousel
-                title="Trending"
-                icon={Flame}
-                products={trendingProducts}
-                seeAllUrl="/?tab=store"
-                accentClassName="bg-orange-500/15 text-orange-500"
-              />
+              {/* Popular Shops — ranked by catalogue size, rotated at random
+                  after mount so a reload shows a different set. */}
+              {popularShops.length > 0 && (
+                <section aria-labelledby="popular-shops-heading">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h2
+                      id="popular-shops-heading"
+                      className="flex items-center gap-1.5 text-base font-bold tracking-tight text-foreground"
+                    >
+                      <Store className="h-4 w-4 text-primary" />
+                      Popular Shops
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={reshuffleShops}
+                      className="flex items-center gap-1 text-xs font-semibold text-primary transition-colors hover:text-primary/80"
+                    >
+                      <Shuffle className="h-3.5 w-3.5" />
+                      Shuffle
+                    </button>
+                  </div>
+                  <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
+                    <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:gap-4">
+                      {popularShops.map((shop) => (
+                        <ShopCard key={shop.id} shop={shop} />
+                      ))}
+                    </div>
+                  </div>
+                </section>
+              )}
               <HorizontalProductCarousel
                 title="New Arrivals"
                 icon={Sparkles}
@@ -848,7 +1054,7 @@ export default function BrowseProductsClient({
               minHeightClassName="min-h-[360px]"
             />
           ) : (
-            <div className="grid grid-cols-2 gap-x-2 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            <div className="content-visibility-auto grid grid-cols-2 gap-x-2 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {filteredProducts.map((product, index) => {
                 const formatMoney = (value: number) =>
                   formatPrice(convertPrice(value, selectedCurrency.code, liveRates), selectedCurrency)

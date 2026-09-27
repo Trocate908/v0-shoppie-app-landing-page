@@ -43,8 +43,6 @@ interface Product {
 interface AppShellProps {
   products: Product[]
   locations: Location[]
-  /** Product ids ranked by 7-day views, used by the Trending carousel. */
-  trendingIds?: string[]
 }
 
 const VALID_TABS: NavTab[] = ["store", "home", "messages", "settings"]
@@ -57,7 +55,7 @@ function getSupabaseClient() {
   return sharedSupabaseClient
 }
 
-export default function AppShell({ products, locations, trendingIds = [] }: AppShellProps) {
+export default function AppShell({ products, locations }: AppShellProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -237,7 +235,6 @@ export default function AppShell({ products, locations, trendingIds = [] }: AppS
             products={products}
             locations={locations}
             visitorCountry={null}
-            trendingIds={trendingIds}
           />
         </div>
 
