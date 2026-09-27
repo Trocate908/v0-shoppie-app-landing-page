@@ -1,12 +1,32 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, type ReactNode } from "react"
 import { Input } from "@/components/ui/input"
-import { Search, X, Clock, TrendingUp } from "lucide-react"
+import { Search, X, Clock, TrendingUp, Mic } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const HISTORY_KEY = "shoppie_search_history"
 const MAX_HISTORY = 8
+
+/* Voice search uses the Web Speech API. It is not part of lib.dom, so the
+   minimal shape we actually call is declared here. The mic only renders when
+   the browser provides the API (Chrome/Edge/Android; Safari and Firefox vary). */
+type SpeechResultEvent = { results: ArrayLike<ArrayLike<{ transcript: string }>> }
+type SpeechRecognitionInstance = {
+  lang: string
+  continuous: boolean
+  interimResults: boolean
+  start: () => void
+  stop: () => void
+  onresult: ((event: SpeechResultEvent) => void) | null
+  onend: (() => void) | null
+  onerror: (() => void) | null
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionInstance
+type SpeechWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionCtor
+  webkitSpeechRecognition?: SpeechRecognitionCtor
+}
 
 interface SearchBoxProps {
   value: string
@@ -14,6 +34,8 @@ interface SearchBoxProps {
   suggestions: string[]
   placeholder?: string
   className?: string
+  /** Rendered at the right edge of the field — e.g. a filter button. */
+  rightSlot?: ReactNode
 }
 
 function getHistory(): string[] {
@@ -43,16 +65,29 @@ export default function SearchBox({
   suggestions,
   placeholder = "Search products...",
   className,
+  rightSlot,
 }: SearchBoxProps) {
   const [open, setOpen] = useState(false)
   const [history, setHistory] = useState<string[]>([])
+  const [voiceSupported, setVoiceSupported] = useState(false)
+  const [listening, setListening] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
 
   // Load history on mount
   useEffect(() => {
     setHistory(getHistory())
   }, [open])
+
+  // Detect voice support after mount so the server and client markup agree.
+  useEffect(() => {
+    const w = window as SpeechWindow
+    setVoiceSupported(Boolean(w.SpeechRecognition || w.webkitSpeechRecognition))
+  }, [])
+
+  // Stop the recogniser if the field unmounts mid-listen.
+  useEffect(() => () => recognitionRef.current?.stop(), [])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -98,14 +133,50 @@ export default function SearchBox({
     setHistory(getHistory())
   }
 
+  const toggleVoice = useCallback(() => {
+    if (listening) {
+      recognitionRef.current?.stop()
+      return
+    }
+    const w = window as SpeechWindow
+    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition
+    if (!Ctor) return
+    try {
+      const recognition = new Ctor()
+      recognition.lang = navigator.language || "en-ZW"
+      recognition.continuous = false
+      recognition.interimResults = false
+      recognition.onresult = (event) => {
+        const transcript = event.results?.[0]?.[0]?.transcript?.trim()
+        if (!transcript) return
+        onChange(transcript)
+        saveToHistory(transcript)
+        setHistory(getHistory())
+      }
+      recognition.onend = () => setListening(false)
+      recognition.onerror = () => setListening(false)
+      recognitionRef.current = recognition
+      setListening(true)
+      recognition.start()
+    } catch {
+      setListening(false)
+    }
+  }, [listening, onChange])
+
   const clearSearch = () => {
     onChange("")
     inputRef.current?.focus()
   }
 
+  // Reserve room for whatever the trailing cluster actually shows.
+  const trailingPadding = rightSlot ? "pr-[6.75rem]" : voiceSupported ? "pr-16" : "pr-9"
+
   return (
     <div ref={containerRef} className={cn("relative flex-1", className)}>
-      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none z-10" />
+      <Search
+        className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-blue-500"
+        strokeWidth={2.25}
+      />
       <Input
         ref={inputRef}
         type="search"
@@ -121,21 +192,46 @@ export default function SearchBox({
           if (e.key === "Enter") handleSubmit()
           if (e.key === "Escape") setOpen(false)
         }}
-        className="pl-10 pr-8 font-medium text-foreground placeholder:text-muted-foreground/70 border-2"
+        className={cn(
+          "h-12 rounded-full border-0 bg-muted pl-11 font-medium text-foreground shadow-none",
+          "placeholder:font-normal placeholder:text-muted-foreground/70",
+          "focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-blue-500/30",
+          trailingPadding,
+        )}
       />
-      {value && (
-        <button
-          onClick={clearSearch}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Clear search"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      )}
+      <div className="absolute right-1.5 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5">
+        {value && (
+          <button
+            type="button"
+            onClick={clearSearch}
+            className="rounded-full bg-background/80 p-1 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            aria-label="Clear search"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+        {voiceSupported && (
+          <button
+            type="button"
+            onClick={toggleVoice}
+            aria-pressed={listening}
+            className={cn(
+              "rounded-full p-1.5 text-blue-500 transition-colors",
+              listening
+                ? "bg-blue-500/15 text-blue-600 animate-pulse"
+                : "hover:text-blue-600",
+            )}
+            aria-label={listening ? "Stop voice search" : "Search by voice"}
+          >
+            <Mic className="h-4 w-4" />
+          </button>
+        )}
+        {rightSlot}
+      </div>
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-border bg-background shadow-lg">
+        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-xl">
 
           {/* Search history */}
           {showHistory && (

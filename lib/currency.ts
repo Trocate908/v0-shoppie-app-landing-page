@@ -53,6 +53,7 @@ export const CURRENCIES: Record<string, Currency> = {
   BWP: { code: "BWP", symbol: "P",    name: "Botswana Pula",        flag: "🇧🇼" },
   RWF: { code: "RWF", symbol: "RF",   name: "Rwandan Franc",        flag: "🇷🇼" },
   ZWL: { code: "ZWL", symbol: "Z$",   name: "Zimbabwe Dollar",      flag: "🇿🇼" },
+  ZWG: { code: "ZWG", symbol: "ZiG",  name: "Zimbabwe Gold",        flag: "🇿🇼" },
   XOF: { code: "XOF", symbol: "CFA",  name: "West African CFA",     flag: "🌍" },
   XAF: { code: "XAF", symbol: "FCFA", name: "Central African CFA",  flag: "🌍" },
 }
@@ -112,6 +113,9 @@ export const STATIC_FALLBACK_RATES: Record<string, number> = {
   BWP: 13.6,
   RWF: 1350,
   ZWL: 360,
+  // Zimbabwe Gold. Not published by Frankfurter/ECB, so this is a static
+  // snapshot (~26.6 ZiG per USD, Sept 2026) — update it as the rate moves.
+  ZWG: 26.6,
   XOF: 607,
   XAF: 607,
 }

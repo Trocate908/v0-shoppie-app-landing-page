@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import Image from "next/image"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -24,8 +24,13 @@ export default function ProductCarousel({ images, productName, autoSlide = false
   const touchStartX = useRef(0)
   const touchEndX = useRef(0)
 
-  const rawImages = images.length > 0 ? images.slice(0, 3) : []
-  const displayImages = rawImages.length > 0 ? rawImages : [FALLBACK]
+  // Stable image list: without memoization every parent re-render (search
+  // keystrokes, filter changes) rebuilt this array and re-ran the auto-slide
+  // effect for every visible card.
+  const displayImages = useMemo(() => {
+    const rawImages = images.length > 0 ? images.slice(0, 3) : []
+    return rawImages.length > 0 ? rawImages : [FALLBACK]
+  }, [images])
 
   const getDisplaySrc = (src: string) => (failedSrcs.has(src) ? FALLBACK : src)
 
