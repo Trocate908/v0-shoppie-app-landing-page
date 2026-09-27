@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { MessageCircle } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface WhatsAppButtonProps {
   phoneNumber: string
@@ -35,7 +36,21 @@ export default function WhatsAppButton({
   }
 
   return (
-    <Button variant={variant} size={size} className={`gap-2 ${className}`} onClick={handleWhatsAppClick}>
+    <Button
+      variant={variant}
+      size={size}
+      // WhatsApp's own brand green, so the button reads as "WhatsApp" at a
+      // glance rather than as another generic primary action. Tinted back for
+      // the non-solid variants, which have no fill to colour.
+      className={cn(
+        "gap-2",
+        variant === "default"
+          ? "bg-[#25D366] text-white hover:bg-[#1eb455] focus-visible:ring-[#25D366]/40"
+          : "text-[#128C3E] hover:bg-[#25D366]/10 hover:text-[#0f7032]",
+        className,
+      )}
+      onClick={handleWhatsAppClick}
+    >
       <MessageCircle className="h-4 w-4" />
       {label}
     </Button>
