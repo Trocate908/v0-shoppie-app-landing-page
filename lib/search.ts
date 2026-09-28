@@ -44,6 +44,12 @@ function dropNoiseTokens(tokens: string[]): string[] {
 const FUZZY_MIN_LENGTH = 4
 
 /**
+ * Minimum length for the forgiving prefix rescue. Three characters are far too
+ * short — most short strings are a "prefix" of something in a long field.
+ */
+const LOOSE_MIN_LENGTH = 4
+
+/**
  * Levenshtein distance, capped for speed (both inputs are short).
  * Returns `max` when the strings are further apart than `max`.
  */
@@ -79,17 +85,18 @@ function isFuzzyMatch(token: string, field: string): boolean {
 }
 
 /**
- * True when `query` is a character-by-character match of `text` prefix.
- * Lets "snk" find "sneakers" — a forgiving fallback for mistyped searches.
+ * True when `token` is the beginning of some word in `field` — "watch" matching
+ * "watches", "watch" matching "Watch Ultra Band".
+ *
+ * This is deliberately a **word-prefix** test and never a scattered subsequence.
+ * The previous version accepted the token's characters appearing anywhere in
+ * order, which made almost any long field a match by chance: "smart" was found
+ * inside a sentence about herbal supplements and "watch" inside "…helps men stay
+ * …", so a "smart watch" search returned dozens of unrelated products.
  */
-function isSubsequenceMatch(token: string, text: string): boolean {
-  if (token.length < 3) return false
-  let i = 0
-  for (const char of text) {
-    if (char === token[i]) i++
-    if (i === token.length) return true
-  }
-  return false
+function isWordPrefixMatch(token: string, field: string): boolean {
+  if (token.length < LOOSE_MIN_LENGTH) return false
+  return field.split(/[^a-z0-9]+/).some((word) => word.startsWith(token))
 }
 
 /** Score a single token against one field. Higher is a stronger match. */
@@ -142,11 +149,9 @@ export function searchProducts<T extends SearchableProduct>(
     const location = normalize(`${item.vendor.location.city} ${item.vendor.location.market_name}`)
     const description = normalize(item.description ?? "")
 
-    const allFields = [name, shop, category, location, description]
-
     let score = 0
     // True only when some token had no contiguous match anywhere — that's the
-    // sole case where a loose subsequence rescue is worth trying.
+    // sole case where the forgiving prefix/typo rescue is worth trying.
     let needsLooseMatch = false
 
     for (const token of tokens) {
@@ -166,23 +171,25 @@ export function searchProducts<T extends SearchableProduct>(
       score += best
     }
 
-    // A token matched nothing contiguously, so require every token to line up
-    // as a character subsequence of the name or shop name. Tokens that DID
-    // match are already counted in the score above.
+    // At least one token had no contiguous match anywhere, so try the forgiving
+    // rescue. It is deliberately narrow:
+    //   * single-token queries only — "smart watch" has to match BOTH words,
+    //     otherwise the results fill with unrelated products;
+    //   * name, shop and category only — long free-text descriptions are where
+    //     accidental matches live;
+    //   * a word prefix rather than a scattered subsequence;
+    //   * one-typo tolerance on the name only, so "samsng" still finds
+    //     "Samsung" without prose producing "batch" ≈ "watch".
     if (needsLooseMatch) {
-      const loose = tokens.every(
-        (t) =>
-          isSubsequenceMatch(t, name) ||
-          isSubsequenceMatch(t, shop) ||
-          isSubsequenceMatch(t, category) ||
-          isSubsequenceMatch(t, location) ||
-          isSubsequenceMatch(t, description) ||
-          // One-typo tolerance, so "samsng" still finds "Samsung".
-          allFields.some((f) => isFuzzyMatch(t, f)),
-      )
-      // A token had no contiguous match and no loose match either, so this
-      // product isn't a result at all.
-      if (!loose) continue
+      if (tokens.length > 1) continue
+
+      const token = tokens[0]
+      const rescued =
+        isWordPrefixMatch(token, name) ||
+        isWordPrefixMatch(token, shop) ||
+        isWordPrefixMatch(token, category) ||
+        isFuzzyMatch(token, name)
+      if (!rescued) continue
       score += 5
     }
 
