@@ -6,6 +6,7 @@ import Image from "next/image"
 import Link from "next/link"
 import type { NavTab } from "@/components/bottom-nav"
 import { NotificationBell } from "@/components/notification-bell"
+import CartButton from "@/components/cart-button"
 
 interface HomeTabProps {
   onNavigate: (tab: NavTab) => void
@@ -22,6 +23,7 @@ export default function HomeTab({ onNavigate }: HomeTabProps) {
             <span className="text-lg font-bold text-foreground">ShoppieApp</span>
           </div>
           <div className="flex items-center gap-2">
+            <CartButton />
             <NotificationBell />
             <Link
               href="/vendor/login"

@@ -1,19 +1,24 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { Home, Store, Settings, MessageCircle } from "lucide-react"
+import { Home, Store, Settings, MessageCircle, ShoppingCart } from "lucide-react"
+import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { useCart } from "@/components/cart-provider"
 
 const tabs = [
   { id: "home",     label: "Home",     icon: Home,          href: "/" },
   { id: "store",    label: "Store",    icon: Store,         href: "/browse" },
   { id: "messages", label: "Messages", icon: MessageCircle, href: "/?tab=messages" },
+  { id: "cart",     label: "Cart",     icon: ShoppingCart,  href: "/cart" },
   { id: "settings", label: "Settings", icon: Settings,      href: "/?tab=settings" },
 ]
 
 export default function BrowseNavBar() {
   const router = useRouter()
-  const activeTab = "store"
+  const pathname = usePathname()
+  const { count } = useCart()
+  const activeTab = pathname === "/cart" ? "cart" : "store"
 
   return (
     <nav
@@ -40,10 +45,17 @@ export default function BrowseNavBar() {
               {isActive && (
                 <span className="absolute top-0 left-1/2 h-0.5 w-10 -translate-x-1/2 rounded-b-full bg-primary" />
               )}
-              <Icon
-                className={cn("h-5 w-5 transition-all", isActive && "scale-110")}
-                strokeWidth={isActive ? 2.5 : 1.75}
-              />
+              <span className="relative">
+                <Icon
+                  className={cn("h-5 w-5 transition-all", isActive && "scale-110")}
+                  strokeWidth={isActive ? 2.5 : 1.75}
+                />
+                {tab.id === "cart" && count > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground">
+                    {count > 99 ? "99+" : count}
+                  </span>
+                )}
+              </span>
               <span className={cn("text-[11px] font-medium tracking-wide", isActive ? "text-primary" : "text-muted-foreground")}>
                 {tab.label}
               </span>

@@ -20,6 +20,8 @@ import { ProductPrice } from "@/components/price-display"
 import ProductCarousel from "@/components/product-carousel"
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed"
 import MessageSellerButton from "@/components/message-seller-button"
+import CartButton from "@/components/cart-button"
+import AddToCartButton from "@/components/add-to-cart-button"
 
 interface Location {
   id: string
@@ -121,7 +123,10 @@ export default function ProductDetailClient({
               </Link>
             </div>
 
-            <ProfileButton />
+            <div className="flex items-center gap-2">
+              <CartButton />
+              <ProfileButton />
+            </div>
           </div>
         </div>
       </header>
@@ -171,6 +176,22 @@ export default function ProductDetailClient({
               <div>
                 <ProductPrice product={product} size="lg" showPromoLabel />
               </div>
+
+              {/* Add to cart — primary purchase entry */}
+              <AddToCartButton
+                product={{
+                  id: product.id,
+                  name: product.name,
+                  price: product.price,
+                  image_url: product.image_url,
+                  in_stock: product.in_stock,
+                  vendor_id: product.vendor.id,
+                  shop_name: product.vendor.shop_name,
+                }}
+                showLabel
+                size="lg"
+                className="w-full justify-center"
+              />
 
               {/* Favorite and Share Buttons */}
               <div className="flex gap-3">

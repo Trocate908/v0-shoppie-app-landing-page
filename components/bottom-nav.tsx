@@ -1,7 +1,9 @@
 "use client"
 
-import { Home, Store, Settings, MessageCircle } from "lucide-react"
+import { Home, Store, Settings, MessageCircle, ShoppingCart } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { useCart } from "@/components/cart-provider"
 
 export type NavTab = "store" | "home" | "messages" | "settings"
 
@@ -16,24 +18,44 @@ const tabs = [
   { id: "store" as NavTab, label: "Store", icon: Store },
   { id: "messages" as NavTab, label: "Messages", icon: MessageCircle },
   { id: "settings" as NavTab, label: "Settings", icon: Settings },
-]
+] as const
+
+const cartTab = { id: "cart" as const, label: "Cart", icon: ShoppingCart }
+
+/** Home, Store, Messages, Cart, Settings — cart sits between Messages and Settings. */
+const navItems = [tabs[0], tabs[1], tabs[2], cartTab, tabs[3]]
 
 export default function BottomNav({ activeTab, onTabChange, unreadMessages }: BottomNavProps) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const { count } = useCart()
+  const unread = unreadMessages ?? 0
+  const cartIsActive = pathname === "/cart"
+
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
       aria-label="Main navigation"
     >
       <div className="flex h-16 w-full items-stretch">
-        {tabs.map((tab) => {
+        {navItems.map((tab) => {
           const Icon = tab.icon
-          const isActive = activeTab === tab.id
-          const showBadge = tab.id === "messages" && (unreadMessages ?? 0) > 0
+          const isCart = tab.id === "cart"
+          const isActive = isCart ? cartIsActive : activeTab === tab.id
+          const showBadge = isCart ? count > 0 : tab.id === "messages" && unread > 0
           return (
             <button
               key={tab.id}
-              onClick={() => onTabChange(tab.id)}
-              aria-label={tab.label + (showBadge ? ` (${unreadMessages} unread)` : "")}
+              onClick={() => {
+                if (isCart) router.push("/cart")
+                else onTabChange(tab.id as NavTab)
+              }}
+              aria-label={
+                tab.label +
+                (isCart && count > 0
+                  ? `, ${count} item${count === 1 ? "" : "s"}`
+                  : showBadge ? ` (${unread} unread)` : "")
+              }
               aria-current={isActive ? "page" : undefined}
               className={cn(
                 "relative flex flex-1 flex-col items-center justify-center gap-1 transition-colors",
@@ -52,7 +74,7 @@ export default function BottomNav({ activeTab, onTabChange, unreadMessages }: Bo
                 />
                 {showBadge && (
                   <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground">
-                    {unreadMessages > 99 ? "99+" : unreadMessages}
+                    {isCart ? (count > 99 ? "99+" : count) : unread > 99 ? "99+" : unread}
                   </span>
                 )}
               </span>

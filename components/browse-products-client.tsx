@@ -68,6 +68,8 @@ import { effectiveFilterPrice } from "@/lib/pricing"
 import { searchProducts } from "@/lib/search"
 import Image from "next/image"
 import { NotificationBell } from "@/components/notification-bell"
+import CartButton from "@/components/cart-button"
+import AddToCartButton from "@/components/add-to-cart-button"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { VerificationBadge } from "@/components/verification-badge"
@@ -691,6 +693,7 @@ export default function BrowseProductsClient({
                 })}
               </div>
               <NotificationBell />
+              <CartButton />
               <Button
                 variant="ghost"
                 size="icon"
@@ -1182,6 +1185,25 @@ export default function BrowseProductsClient({
                         onClick={(e) => e.stopPropagation()}
                       >
                         <FavoriteButton productId={product.id} variant="ghost" />
+                      </div>
+
+                      {/* Bottom-right: quick add to cart */}
+                      <div
+                        className="absolute bottom-1.5 right-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <AddToCartButton
+                          product={{
+                            id: product.id,
+                            name: product.name,
+                            price: product.price,
+                            image_url: product.image_url,
+                            in_stock: product.in_stock,
+                            vendor_id: product.vendor.id,
+                            shop_name: product.vendor.shop_name,
+                          }}
+                          variant="secondary"
+                        />
                       </div>
                     </div>
 

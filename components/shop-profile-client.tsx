@@ -24,6 +24,8 @@ import FavoriteButton from "@/components/favorite-button"
 import MessageSellerButton from "@/components/message-seller-button"
 import ShopQRModal from "@/components/shop-qr-modal"
 import ShareShopModal from "@/components/share-shop-modal"
+import CartButton from "@/components/cart-button"
+import AddToCartButton from "@/components/add-to-cart-button"
 
 interface Location {
   id: string
@@ -119,6 +121,8 @@ export default function ShopProfileClient({
           </Link>
 
           <div className="flex items-center gap-1">
+            <CartButton />
+
             <Button
               variant="ghost"
               size="icon"
@@ -333,6 +337,25 @@ export default function ShopProfileClient({
                         <FavoriteButton
                           productId={product.id}
                           variant="ghost"
+                        />
+                      </div>
+
+                      {/* Quick add to cart */}
+                      <div
+                        className="absolute bottom-1.5 right-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <AddToCartButton
+                          product={{
+                            id: product.id,
+                            name: product.name,
+                            price: product.price,
+                            image_url: product.image_url,
+                            in_stock: product.in_stock,
+                            vendor_id: vendor.id,
+                            shop_name: vendor.shop_name,
+                          }}
+                          variant="secondary"
                         />
                       </div>
                     </div>

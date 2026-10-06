@@ -41,6 +41,7 @@ import { VerificationBadge } from "@/components/verification-badge"
 import { ProductPrice } from "@/components/price-display"
 import { effectiveFilterPrice } from "@/lib/pricing"
 import { PRODUCT_CATEGORIES } from "@/lib/constants"
+import AddToCartButton from "@/components/add-to-cart-button"
 
 interface Product {
   id: string
@@ -55,6 +56,8 @@ interface Product {
   image_urls: string[] | null
   in_stock: boolean
   created_at: string
+  /** Selected via `*` in the products query. */
+  vendor_id: string
   vendor: {
     shop_name: string
     is_open: boolean
@@ -495,6 +498,22 @@ export default function ProductsClient({ products, trendingIds = [] }: ProductsC
                         <span className={["h-1.5 w-1.5 rounded-full", product.vendor.is_open ? "bg-white" : "bg-background"].join(" ")} />
                         {product.vendor.is_open ? "Open" : "Closed"}
                       </span>
+                    </div>
+
+                    {/* Quick add to cart */}
+                    <div className="absolute bottom-2 left-2" onClick={(e) => e.stopPropagation()}>
+                      <AddToCartButton
+                        product={{
+                          id: product.id,
+                          name: product.name,
+                          price: product.price,
+                          image_url: product.image_url,
+                          in_stock: product.in_stock,
+                          vendor_id: product.vendor_id,
+                          shop_name: product.vendor.shop_name,
+                        }}
+                        variant="secondary"
+                      />
                     </div>
                   </div>
 

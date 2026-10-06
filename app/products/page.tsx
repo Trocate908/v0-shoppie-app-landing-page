@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ArrowLeft, MapPin, Store, ShoppingBag, Tag, Users } from "lucide-react"
 import Link from "next/link"
 import ProfileButton from "@/components/profile-button"
+import CartButton from "@/components/cart-button"
 import Image from "next/image"
 import { AppFooter } from "@/components/app-footer"
 
@@ -47,6 +48,8 @@ interface Product {
   image_urls: string[] | null
   in_stock: boolean
   created_at: string
+  /** Selected via `*` — kept in sync with ProductsClient's Product shape. */
+  vendor_id: string
   vendor: {
     shop_name: string
     is_open: boolean
@@ -205,6 +208,7 @@ export default async function ProductsPage({
               <span className="hidden sm:inline">Change location</span>
               <span className="sm:hidden">Change</span>
             </Link>
+            <CartButton />
             <ProfileButton />
           </div>
         </div>

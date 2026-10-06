@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, MapPin, Package } from "lucide-react"
 import { EmptyState } from "@/components/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import FavoriteButton from "@/components/favorite-button"
+import AddToCartButton from "@/components/add-to-cart-button"
 import { VerificationBadge } from "@/components/verification-badge"
 import { ProductPrice } from "@/components/price-display"
 import { getDiscountInfo } from "@/lib/pricing"
@@ -227,6 +228,24 @@ export function CarouselProductCard({
         <div className="absolute right-1.5 top-1.5" onClick={(e) => e.stopPropagation()}>
           <FavoriteButton productId={product.id} variant="ghost" />
         </div>
+
+        {/* Quick add — always visible so it works on touch devices */}
+        {product.vendor.id && (
+          <div className="absolute bottom-1.5 right-1.5" onClick={(e) => e.stopPropagation()}>
+            <AddToCartButton
+              product={{
+                id: product.id,
+                name: product.name,
+                price: product.price,
+                image_url: product.image_url,
+                in_stock: product.in_stock,
+                vendor_id: product.vendor.id,
+                shop_name: product.vendor.shop_name,
+              }}
+              variant="secondary"
+            />
+          </div>
+        )}
       </div>
 
       {/* Body */}
