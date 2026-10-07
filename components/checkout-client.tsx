@@ -54,11 +54,24 @@ export default function CheckoutClient() {
         expected_price: Number(line.price.toFixed(2)),
       }))
 
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, note: note.trim() || null }),
-      })
+      let res: Response
+      try {
+        res = await fetch("/api/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items, note: note.trim() || null }),
+        })
+      } catch (error) {
+        // The request never completed, so the server saw nothing — a retry is
+        // safe and this is a genuine connection problem.
+        console.error("[checkout] place-order request failed:", error)
+        toast({
+          title: "Something went wrong",
+          description: "Please check your connection and try again.",
+          variant: "destructive",
+        })
+        return
+      }
 
       const payload = await res.json().catch(() => ({}))
 
@@ -86,6 +99,9 @@ export default function CheckoutClient() {
       }
 
       const orders = (payload.orders ?? []) as { reference: string }[]
+      // The order exists server-side from here on. refresh() never rejects,
+      // and even if it did, failing the whole flow now would show the shopper
+      // an error for an order that was actually placed — inviting a duplicate.
       await refresh()
       toast({
         title: orders.length > 1 ? `${orders.length} orders placed` : "Order placed",
@@ -97,7 +113,11 @@ export default function CheckoutClient() {
               : "You can track it in My Orders.",
       })
       router.push("/orders?placed=1")
-    } catch {
+    } catch (error) {
+      // Every step handles its own errors now, so reaching this means an
+      // unexpected bug. Log it — the old empty catch made this toast
+      // impossible to diagnose from the field.
+      console.error("[checkout] place order failed:", error)
       toast({
         title: "Something went wrong",
         description: "Please check your connection and try again.",

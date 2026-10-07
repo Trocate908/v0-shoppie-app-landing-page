@@ -197,14 +197,23 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_buyer      UUID := auth.uid();
-  v_txn_start  TIMESTAMP WITH TIME ZONE := now();
   v_note       TEXT := NULLIF(btrim(coalesce(p_note, '')), '');
-  v_lines      INTEGER;
-  v_unresolved INTEGER;
-  v_expected   NUMERIC;
+  -- Merged cart lines: product_id -> {"quantity": int, "expected_price": num|null}
+  v_lines      JSONB := '{}'::JSONB;
+  v_item       JSONB;
+  v_pid        UUID;
+  v_key        TEXT;
   v_qty        INTEGER;
+  v_num        NUMERIC;
+  v_expected   NUMERIC;
+  v_existing   JSONB;
+  v_wanted     INTEGER;
+  v_resolved   INTEGER := 0;
   v_product    RECORD;
-  v_orders     JSONB;
+  v_group      RECORD;
+  v_reference  TEXT;
+  v_order_id   UUID;
+  v_orders     JSONB := '[]'::JSONB;
 BEGIN
   IF v_buyer IS NULL THEN
     RAISE EXCEPTION 'ORDER_FAILED:not_authenticated' USING ERRCODE = '42501';
@@ -219,9 +228,165 @@ BEGIN
   END IF;
 
   IF v_note IS NOT NULL AND char_length(v_note) > 500 THEN
-    RAISE EXCEPTION 'ORDER_FAILED:note_too_long';  END IF;
+    RAISE EXCEPTION 'ORDER_FAILED:note_too_long';
+  END IF;
+
+  -- ── 1. Validate every line's shape and merge duplicate product rows ──
+  -- Prices from the client are never trusted here: expected_price is only a
+  -- change-detection guard compared against products.price below.
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
+    IF jsonb_typeof(v_item) IS DISTINCT FROM 'object'
+       OR jsonb_typeof(v_item->'product_id') IS DISTINCT FROM 'string'
+       OR jsonb_typeof(v_item->'quantity') IS DISTINCT FROM 'number' THEN
+      RAISE EXCEPTION 'ORDER_FAILED:invalid_item';
+    END IF;
+
+    IF lower(v_item->>'product_id')
+         !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+      RAISE EXCEPTION 'ORDER_FAILED:invalid_item';
+    END IF;
+
+    v_num := (v_item->>'quantity')::numeric;
+    IF v_num < 1 OR v_num > 999 OR v_num <> trunc(v_num) THEN
+      RAISE EXCEPTION 'ORDER_FAILED:invalid_item';
+    END IF;
+    v_qty := v_num::integer;
+
+    v_expected := NULL;
+    IF v_item ? 'expected_price'
+       AND jsonb_typeof(v_item->'expected_price') IS DISTINCT FROM 'null' THEN
+      IF jsonb_typeof(v_item->'expected_price') IS DISTINCT FROM 'number' THEN
+        RAISE EXCEPTION 'ORDER_FAILED:invalid_item';
+      END IF;
+      v_expected := (v_item->>'expected_price')::numeric;
+      IF v_expected < 0 THEN
+        RAISE EXCEPTION 'ORDER_FAILED:invalid_item';
+      END IF;
+    END IF;
+
+    v_pid := lower(v_item->>'product_id')::uuid;
+    v_key := v_pid::text;
+    v_existing := coalesce(v_lines->v_key, '{}'::jsonb);
+    -- Quantities add up across duplicate rows (capped by the 999 CHECK on the
+    -- cart; here the per-line cap above keeps each addition in range and the
+    -- merged total is still bounded by 100 lines * 999).
+    v_lines := jsonb_set(
+      v_lines,
+      ARRAY[v_key],
+      jsonb_build_object(
+        'quantity', coalesce((v_existing->>'quantity')::integer, 0) + v_qty,
+        'expected_price',
+          CASE WHEN v_existing->>'expected_price' IS NOT NULL
+               THEN v_existing->'expected_price'
+               ELSE to_jsonb(v_expected)
+          END
+      ),
+      true
+    );
+  END LOOP;
+
+  -- ── 2. Lock and validate the products this order touches ──────────────
+  SELECT count(*) INTO v_wanted FROM jsonb_object_keys(v_lines);
+
+  FOR v_product IN
+    SELECT p.id, p.vendor_id, p.name, p.image_url, p.price, p.in_stock, p.stock_qty
+      FROM public.products p
+     WHERE p.id IN (SELECT k::uuid FROM jsonb_object_keys(v_lines) AS k)
+     ORDER BY p.id
+       FOR UPDATE
+  LOOP
+    v_resolved := v_resolved + 1;
+    v_expected := (v_lines->(v_product.id::text))->>'expected_price';
+
+    IF NOT v_product.in_stock THEN
+      RAISE EXCEPTION 'ORDER_FAILED:out_of_stock:%', v_product.name;
+    END IF;
+
+    IF v_expected IS NOT NULL AND v_expected IS DISTINCT FROM v_product.price THEN
+      RAISE EXCEPTION 'ORDER_FAILED:price_changed:%', v_product.name;
+    END IF;
+
+    IF v_product.stock_qty IS NOT NULL
+       AND ((v_lines->(v_product.id::text))->>'quantity')::integer > v_product.stock_qty THEN
+      RAISE EXCEPTION 'ORDER_FAILED:insufficient_stock:%', v_product.name;
+    END IF;
+  END LOOP;
+
+  IF v_resolved <> v_wanted THEN
+    RAISE EXCEPTION 'ORDER_FAILED:unavailable_product';
+  END IF;
+
+  -- ── 3. One order per vendor, snapshotting name/price at this moment ───
+  FOR v_group IN
+    SELECT p.vendor_id,
+           sum(p.price * ((v_lines -> (p.id::text)) ->> 'quantity')::integer)::numeric(14,2)
+             AS subtotal
+      FROM public.products p
+     WHERE p.id IN (SELECT k::uuid FROM jsonb_object_keys(v_lines) AS k)
+     GROUP BY p.vendor_id
+     ORDER BY p.vendor_id
+  LOOP
+    LOOP
+      v_reference := 'SHP-' || upper(substr(md5(random()::text || clock_timestamp()::text), 1, 8));
+      EXIT WHEN NOT EXISTS (
+        SELECT 1 FROM public.orders o WHERE o.reference = v_reference
+      );
+    END LOOP;
+
+    INSERT INTO public.orders
+      (reference, buyer_id, vendor_id, source, fulfillment_type, status, subtotal, customer_note)
+    VALUES
+      (v_reference, v_buyer, v_group.vendor_id, 'store', 'pickup', 'pending',
+       v_group.subtotal, v_note)
+    RETURNING id INTO v_order_id;
+
+    INSERT INTO public.order_items
+      (order_id, product_id, product_name, product_image, unit_price, quantity, line_total)
+    SELECT v_order_id,
+           p.id,
+           p.name,
+           p.image_url,
+           p.price,
+           ((v_lines -> (p.id::text)) ->> 'quantity')::integer,
+           round(p.price * ((v_lines -> (p.id::text)) ->> 'quantity')::integer, 2)
+      FROM public.products p
+     WHERE p.vendor_id = v_group.vendor_id
+       AND p.id IN (SELECT k::uuid FROM jsonb_object_keys(v_lines) AS k)
+     ORDER BY p.id;
+
+    -- Tracked stock only: decrement under the row locks taken above; a product
+    -- drops off the shelf when it reaches zero. Untracked products (NULL) keep
+    -- behaving exactly as they always have — the boolean gate alone.
+    UPDATE public.products p
+       SET stock_qty = p.stock_qty - ((v_lines -> (p.id::text)) ->> 'quantity')::integer,
+           in_stock  = (p.stock_qty - ((v_lines -> (p.id::text)) ->> 'quantity')::integer) > 0
+     WHERE p.vendor_id = v_group.vendor_id
+       AND p.stock_qty IS NOT NULL
+       AND p.id IN (SELECT k::uuid FROM jsonb_object_keys(v_lines) AS k);
+
+    v_orders := v_orders || jsonb_build_array(jsonb_build_object(
+      'id',               v_order_id,
+      'reference',        v_reference,
+      'vendor_id',        v_group.vendor_id,
+      'subtotal',         v_group.subtotal,
+      'status',           'pending',
+      'fulfillment_type', 'pickup',
+      'fulfillment',      'pickup'
+    ));
+  END LOOP;
+
+  -- ── 4. Everything was purchased — the shopper starts from an empty cart ─
+  DELETE FROM public.cart_items
+   WHERE user_id = v_buyer
+     AND product_id IN (SELECT k::uuid FROM jsonb_object_keys(v_lines) AS k);
+
+  RETURN v_orders;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.create_order(JSONB, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_order(JSONB, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_order(JSONB, TEXT) TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 7. update_order_status()
