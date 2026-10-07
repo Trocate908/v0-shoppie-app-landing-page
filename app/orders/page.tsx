@@ -31,6 +31,7 @@ export default async function OrdersPage({
       id,
       reference,
       status,
+      fulfillment_type,
       subtotal,
       customer_note,
       source,

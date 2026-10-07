@@ -17,6 +17,7 @@ export type NotificationType =
   | "product_loved"
   | "start_posting"
   | "new_product"
+  | "order"
   | "custom"
 
 export type DispatchTarget =

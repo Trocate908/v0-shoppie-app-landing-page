@@ -139,7 +139,15 @@ export type CheckoutItem = {
  *  update_order_status() in supabase/migrations/add_cart_and_orders.sql. */
 export function describeOrderError(raw: string | undefined | null): string {
   const message = raw ?? ""
-  const [code, ...rest] = message.replace(/^.*ORDER_FAILED:/, "ORDER_FAILED:").split(":")
+  // Shape: ORDER_FAILED:<reason>[:<detail>]. Strip everything before the
+  // prefix, then split on the FIRST colon only — splitting the whole string
+  // on ":" would shred the prefix ("ORDER_FAILED") and silently defeat every
+  // case below, leaking raw codes like ORDER_FAILED:not_found to shoppers.
+  const body = message
+    .replace(/^.*ORDER_FAILED:/, "ORDER_FAILED:")
+    .slice("ORDER_FAILED:".length)
+  const [reason, ...rest] = body.split(":")
+  const code = `ORDER_FAILED:${reason}`
   const detail = rest.join(":")
   switch (code) {
     case "ORDER_FAILED:not_authenticated":
@@ -164,6 +172,20 @@ export function describeOrderError(raw: string | undefined | null): string {
         : "A price changed while you were checking out. Please review your order."
     case "ORDER_FAILED:unavailable_product":
       return "An item in your cart is no longer available and was removed."
+    case "ORDER_FAILED:invalid_fulfillment":
+      return "Choose pickup or delivery for your order."
+    case "ORDER_FAILED:address_required":
+      return "Add a delivery address so the shop can reach you."
+    case "ORDER_FAILED:address_too_long":
+      return "That delivery address is too long (max 500 characters)."
+    case "ORDER_FAILED:invalid_payment_method":
+      return "Choose how you'd like to pay."
+    case "ORDER_FAILED:not_allowed":
+      return "You can't change this order — as a buyer you can only cancel it while it's pending or confirmed."
+    case "ORDER_FAILED:too_late_to_cancel":
+      return "This order can no longer be cancelled. Contact the shop if you need help."
+    case "ORDER_FAILED:wrong_fulfillment_flow":
+      return "That action doesn't apply to this order's pickup/delivery type."
     case "ORDER_FAILED:invalid_status":
       return "That order status isn't valid."
     case "ORDER_FAILED:not_found":

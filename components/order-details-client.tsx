@@ -1,9 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Check, Package, Store } from "lucide-react"
+import { ArrowLeft, Check, Loader2, Package, Store } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { AppFooter } from "@/components/app-footer"
 import ProfileButton from "@/components/profile-button"
@@ -11,10 +13,13 @@ import OrderStatusBadge from "@/components/order-status-badge"
 import MessageSellerButton from "@/components/message-seller-button"
 import WhatsAppButton from "@/components/whatsapp-button"
 import { VerificationBadge } from "@/components/verification-badge"
+import { describeOrderError } from "@/lib/cart"
+import { useToast } from "@/hooks/use-toast"
 import {
   OrderStatus,
   STATUS_LABEL,
   STATUS_DESCRIPTION,
+  paymentLabel,
 } from "@/lib/orders"
 import { CURRENCIES, formatPrice } from "@/lib/currency"
 
@@ -25,6 +30,9 @@ export type OrderDetails = {
   reference: string
   status: string
   fulfillment_type: string
+  delivery_address?: string | null
+  payment_method?: string | null
+  cancelled_by?: string | null
   subtotal: number | string
   customer_note: string | null
   source: string
@@ -66,8 +74,60 @@ function formatDateTime(iso: string | null | undefined): string | null {
 
 export default function OrderDetailsClient({ order }: { order: OrderDetails }) {
   const router = useRouter()
+  const { toast } = useToast()
+  const [cancelling, setCancelling] = useState(false)
   const isCancelled = order.status === "cancelled"
   const shopSlug = order.vendor?.slug ?? order.vendor?.id
+
+  // Buyers may cancel their own order while the shop hasn't started
+  // fulfilling it — the server enforces the same window.
+  const canCancel =
+    !isCancelled &&
+    (order.status === "pending" || order.status === "confirmed")
+
+  async function handleCancel() {
+    if (cancelling) return
+    if (
+      !window.confirm(
+        "Cancel this order? The shop will be notified right away.",
+      )
+    ) {
+      return
+    }
+    setCancelling(true)
+    try {
+      const res = await fetch("/api/orders/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: order.id, status: "cancelled" }),
+      })
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast({
+          title: "Couldn't cancel order",
+          description:
+            typeof payload.error === "string" && payload.error
+              ? describeOrderError(payload.error)
+              : "Please try again in a moment.",
+          variant: "destructive",
+        })
+        return
+      }
+      toast({
+        title: `Order ${order.reference} cancelled`,
+        description: "The shop has been notified.",
+      })
+      router.refresh()
+    } catch {
+      toast({
+        title: "Something went wrong",
+        description: "Please check your connection and try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   // Pickup orders are a distinct flow: pending → confirmed (pickup-ready) →
   // delivered, with cancel from pending/confirmed. The `ready` step is
@@ -89,7 +149,9 @@ export default function OrderDetailsClient({ order }: { order: OrderDetails }) {
               order.status === "delivered" ||
               order.status === "pickup_ready"
             : status === "pickup_ready"
-              ? order.status === "pickup_ready" || order.status === "delivered"
+              ? order.status === "pickup_ready" ||
+                order.status === "ready" ||
+                order.status === "delivered"
               : order.status === "delivered"
     return { status, done }
   })
@@ -143,9 +205,31 @@ export default function OrderDetailsClient({ order }: { order: OrderDetails }) {
 
           {isCancelled && (
             <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-              This order was cancelled
-              {formatDateTime(order.cancelled_at) ? ` on ${formatDateTime(order.cancelled_at)}` : ""}.
+              {order.cancelled_by === "buyer"
+                ? "You cancelled this order"
+                : "The shop cancelled this order"}
+              {formatDateTime(order.cancelled_at)
+                ? ` on ${formatDateTime(order.cancelled_at)}`
+                : ""}
+              .
             </p>
+          )}
+
+          {canCancel && (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={cancelling}
+                onClick={handleCancel}
+                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                {cancelling && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Cancel order
+              </Button>
+            </div>
           )}
 
           {/* Status timeline */}
@@ -298,6 +382,25 @@ export default function OrderDetailsClient({ order }: { order: OrderDetails }) {
               </h3>
               <p className="mt-1.5 whitespace-pre-wrap text-sm text-foreground">
                 Collect your order from {order.vendor?.shop_name ?? "the shop"}.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Payment: {paymentLabel(order.payment_method)}
+              </p>
+            </Card>
+          )}
+
+          {/* Delivery details */}
+          {order.fulfillment_type === "delivery" && (
+            <Card className="p-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                Delivery details
+              </h3>
+              <p className="mt-1.5 whitespace-pre-wrap text-sm text-foreground">
+                {order.delivery_address ??
+                  "No delivery address was provided."}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Payment: {paymentLabel(order.payment_method)}
               </p>
             </Card>
           )}

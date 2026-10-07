@@ -1,4 +1,7 @@
 import { createServerClient } from "@/lib/supabase/server"
+import { dispatchNotification } from "@/lib/notifications/dispatch"
+import { describeOrderError } from "@/lib/cart"
+import { orderStatusBody, orderStatusNotification } from "@/lib/orders"
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 
@@ -6,6 +9,7 @@ const statusWord = z.enum([
   "pending",
   "confirmed",
   "ready",
+  "pickup_ready",
   "delivered",
   "cancelled",
 ])
@@ -53,16 +57,70 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       const message = error.message ?? ""
+      const code = message.includes("ORDER_FAILED:") ? message : ""
+      if (message) {
+        console.error("[orders/status] update_order_status failed:", message)
+      }
       return NextResponse.json(
         {
-          error: message || "Couldn't update this order.",
-          code: message.includes("ORDER_FAILED:") ? message : "",
+          error: code ? describeOrderError(code) : "Couldn't update this order.",
+          code,
         },
         { status: 400 },
       )
     }
 
     const row = (order ?? {}) as Record<string, unknown>
+
+    // Fire-and-forget: a notification failure must never fail the status
+    // update itself. Shop-driven changes tell the buyer; when the *buyer* acts
+    // (their only write is cancelling) the shop is told instead.
+    const buyerId = typeof row.buyer_id === "string" ? row.buyer_id : null
+    const vendorId = typeof row.vendor_id === "string" ? row.vendor_id : null
+    const reference = typeof row.reference === "string" ? row.reference : ""
+    const actorIsBuyer = buyerId !== null && buyerId === user.id
+
+    if (actorIsBuyer) {
+      if (vendorId) {
+        const { data: vendor } = await supabase
+          .from("vendors")
+          .select("user_id")
+          .eq("id", vendorId)
+          .maybeSingle()
+        const vendorUserId =
+          vendor && typeof vendor.user_id === "string" ? vendor.user_id : null
+        if (vendorUserId) {
+          void dispatchNotification(
+            { userId: vendorUserId },
+            {
+              type: "order",
+              refId: `order-status-${parsed.data.order_id}-cancelled-by-buyer`,
+              dedupeWindowHours: 0,
+              title: `Order ${reference} cancelled`,
+              body: "The customer cancelled this order — no action needed.",
+              link: "/vendor/orders",
+            },
+          ).catch((err) =>
+            console.error("[orders/status] vendor notify failed:", err),
+          )
+        }
+      }
+    } else if (buyerId) {
+      void dispatchNotification(
+        { userId: buyerId },
+        {
+          type: "order",
+          refId: `order-status-${parsed.data.order_id}-${parsed.data.status}`,
+          dedupeWindowHours: 0,
+          title: orderStatusNotification(parsed.data.status, reference),
+          body: orderStatusBody(parsed.data.status),
+          link: `/orders/${parsed.data.order_id}`,
+        },
+      ).catch((err) =>
+        console.error("[orders/status] buyer notify failed:", err),
+      )
+    }
+
     return NextResponse.json({ order: row, status: parsed.data.status })
   } catch (err) {
     console.error("[orders/status] unhandled error:", err)

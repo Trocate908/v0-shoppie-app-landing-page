@@ -93,12 +93,15 @@ CREATE TABLE IF NOT EXISTS public.orders (
     CHECK (status IN ('pending', 'confirmed', 'ready', 'delivered', 'cancelled')),
   subtotal NUMERIC(14,2) NOT NULL CHECK (subtotal >= 0),
   customer_note TEXT CHECK (customer_note IS NULL OR char_length(customer_note) <= 500),
+  delivery_address TEXT,
+  payment_method TEXT NOT NULL DEFAULT 'cash',
   conversation_id UUID,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   confirmed_at TIMESTAMP WITH TIME ZONE,
   delivered_at TIMESTAMP WITH TIME ZONE,
-  cancelled_at TIMESTAMP WITH TIME ZONE
+  cancelled_at TIMESTAMP WITH TIME ZONE,
+  cancelled_by TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS orders_reference_key ON public.orders(reference);
@@ -106,6 +109,62 @@ CREATE INDEX IF NOT EXISTS orders_buyer_id_idx ON public.orders(buyer_id, create
 CREATE INDEX IF NOT EXISTS orders_vendor_id_idx ON public.orders(vendor_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS orders_vendor_status_idx ON public.orders(vendor_id, status);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON public.orders(status);
+
+-- Checkout details + cancellation audit. ADD COLUMN IF NOT EXISTS keeps this
+-- idempotent: fresh databases already got the columns from CREATE TABLE above,
+-- live databases (created by earlier versions of this file) pick them up here.
+ALTER TABLE public.orders
+  ADD COLUMN IF NOT EXISTS delivery_address TEXT,
+  ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'cash',
+  ADD COLUMN IF NOT EXISTS cancelled_by TEXT;
+
+DO $$
+DECLARE c RECORD;
+BEGIN
+  FOR c IN
+    SELECT conname
+      FROM pg_constraint
+     WHERE conrelid = 'public.orders'::regclass
+       AND contype = 'c'
+       AND (pg_get_constraintdef(oid) LIKE '%payment_method%'
+            OR pg_get_constraintdef(oid) LIKE '%cancelled_by%'
+            OR pg_get_constraintdef(oid) LIKE '%delivery_address%')
+  LOOP
+    EXECUTE format('ALTER TABLE public.orders DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+END $$;
+
+ALTER TABLE public.orders
+  ADD CONSTRAINT orders_payment_method_check
+  CHECK (payment_method IN ('cash', 'ecocash', 'zipit'));
+ALTER TABLE public.orders
+  ADD CONSTRAINT orders_cancelled_by_check
+  CHECK (cancelled_by IS NULL OR cancelled_by IN ('buyer', 'vendor'));
+ALTER TABLE public.orders
+  ADD CONSTRAINT orders_delivery_address_check
+  CHECK (delivery_address IS NULL OR char_length(delivery_address) <= 500);
+
+-- pickup_ready is a first-class status: the buyer's pickup timeline and the
+-- vendor's "Mark Pickup Ready" action depend on it. Widen the status check
+-- whether the table was just created above or predates this release, so the
+-- migration is idempotent on both fresh and live databases.
+DO $$
+DECLARE c RECORD;
+BEGIN
+  FOR c IN
+    SELECT conname
+      FROM pg_constraint
+     WHERE conrelid = 'public.orders'::regclass
+       AND contype = 'c'
+       AND pg_get_constraintdef(oid) LIKE '%status%'
+  LOOP
+    EXECUTE format('ALTER TABLE public.orders DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+END $$;
+
+ALTER TABLE public.orders
+  ADD CONSTRAINT orders_status_check
+  CHECK (status IN ('pending', 'confirmed', 'ready', 'pickup_ready', 'delivered', 'cancelled'));
 
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 
@@ -188,7 +247,10 @@ CREATE TRIGGER set_orders_updated_at
 
 CREATE OR REPLACE FUNCTION public.create_order(
   p_items JSONB,
-  p_note TEXT DEFAULT NULL
+  p_note TEXT DEFAULT NULL,
+  p_fulfillment TEXT DEFAULT 'pickup',
+  p_delivery_address TEXT DEFAULT NULL,
+  p_payment_method TEXT DEFAULT 'cash'
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -198,6 +260,9 @@ AS $$
 DECLARE
   v_buyer      UUID := auth.uid();
   v_note       TEXT := NULLIF(btrim(coalesce(p_note, '')), '');
+  v_fulfillment TEXT;
+  v_address    TEXT;
+  v_payment    TEXT;
   -- Merged cart lines: product_id -> {"quantity": int, "expected_price": num|null}
   v_lines      JSONB := '{}'::JSONB;
   v_item       JSONB;
@@ -229,6 +294,31 @@ BEGIN
 
   IF v_note IS NOT NULL AND char_length(v_note) > 500 THEN
     RAISE EXCEPTION 'ORDER_FAILED:note_too_long';
+  END IF;
+
+  -- ── Checkout details: how the buyer takes delivery of this order ───────
+  v_fulfillment := coalesce(p_fulfillment, 'pickup');
+  IF v_fulfillment NOT IN ('pickup', 'delivery') THEN
+    RAISE EXCEPTION 'ORDER_FAILED:invalid_fulfillment';
+  END IF;
+
+  v_payment := coalesce(p_payment_method, 'cash');
+  IF v_payment NOT IN ('cash', 'ecocash', 'zipit') THEN
+    RAISE EXCEPTION 'ORDER_FAILED:invalid_payment_method';
+  END IF;
+
+  v_address := NULLIF(btrim(coalesce(p_delivery_address, '')), '');
+  IF v_address IS NOT NULL AND char_length(v_address) > 500 THEN
+    RAISE EXCEPTION 'ORDER_FAILED:address_too_long';
+  END IF;
+
+  IF v_fulfillment = 'delivery' THEN
+    IF v_address IS NULL OR char_length(v_address) < 10 THEN
+      RAISE EXCEPTION 'ORDER_FAILED:address_required';
+    END IF;
+  ELSE
+    -- Pickup orders never carry an address.
+    v_address := NULL;
   END IF;
 
   -- ── 1. Validate every line's shape and merge duplicate product rows ──
@@ -334,10 +424,11 @@ BEGIN
     END LOOP;
 
     INSERT INTO public.orders
-      (reference, buyer_id, vendor_id, source, fulfillment_type, status, subtotal, customer_note)
+      (reference, buyer_id, vendor_id, source, fulfillment_type, status, subtotal, customer_note,
+       delivery_address, payment_method)
     VALUES
-      (v_reference, v_buyer, v_group.vendor_id, 'store', 'pickup', 'pending',
-       v_group.subtotal, v_note)
+      (v_reference, v_buyer, v_group.vendor_id, 'store', v_fulfillment, 'pending',
+       v_group.subtotal, v_note, v_address, v_payment)
     RETURNING id INTO v_order_id;
 
     INSERT INTO public.order_items
@@ -370,8 +461,10 @@ BEGIN
       'vendor_id',        v_group.vendor_id,
       'subtotal',         v_group.subtotal,
       'status',           'pending',
-      'fulfillment_type', 'pickup',
-      'fulfillment',      'pickup'
+      'fulfillment_type', v_fulfillment,
+      'fulfillment',      v_fulfillment,
+      'delivery_address', v_address,
+      'payment_method',   v_payment
     ));
   END LOOP;
 
@@ -384,17 +477,23 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.create_order(JSONB, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_order(JSONB, TEXT) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.create_order(JSONB, TEXT) TO service_role;
+-- Retire the old 2-argument signature: leaving both would make PostgREST's
+-- named-argument lookup ambiguous. Both statements are idempotent (CREATE
+-- OR REPLACE above, DROP ... IF EXISTS here).
+DROP FUNCTION IF EXISTS public.create_order(JSONB, TEXT);
+
+REVOKE ALL ON FUNCTION public.create_order(JSONB, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_order(JSONB, TEXT, TEXT, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_order(JSONB, TEXT, TEXT, TEXT, TEXT) TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 7. update_order_status()
 -- ---------------------------------------------------------------------------
 --
--- Only the vendor who owns the order may transition it, and only along the
--- legal path. The buyer has no write access at all — their view of an order is
--- read-only, which is why orders carries no UPDATE policy.
+-- The vendor who owns the order drives fulfilment along the legal path; the
+-- buyer's single write is cancelling their own order, and only while it is
+-- still pending/confirmed. Neither side touches the table directly — orders
+-- carries no UPDATE policy, so every transition flows through here.
 
 CREATE OR REPLACE FUNCTION public.update_order_status(
   p_order_id UUID,
@@ -409,12 +508,15 @@ DECLARE
   v_caller  UUID := auth.uid();
   v_order   public.orders%ROWTYPE;
   v_allowed TEXT[];
+  v_is_vendor BOOLEAN;
+  v_is_buyer  BOOLEAN;
+  v_cancelled_by TEXT;
 BEGIN
   IF v_caller IS NULL THEN
     RAISE EXCEPTION 'ORDER_FAILED:not_authenticated' USING ERRCODE = '42501';
   END IF;
 
-  IF p_status NOT IN ('pending', 'confirmed', 'ready', 'delivered', 'cancelled') THEN
+  IF p_status NOT IN ('pending', 'confirmed', 'ready', 'pickup_ready', 'delivered', 'cancelled') THEN
     RAISE EXCEPTION 'ORDER_FAILED:invalid_status';
   END IF;
 
@@ -427,15 +529,40 @@ BEGIN
     RAISE EXCEPTION 'ORDER_FAILED:not_found';
   END IF;
 
-  IF NOT EXISTS (
+  v_is_vendor := EXISTS (
     SELECT 1 FROM public.vendors v
     WHERE v.id = v_order.vendor_id AND v.user_id = v_caller
-  ) THEN
+  );
+  v_is_buyer := v_order.buyer_id IS NOT NULL AND v_order.buyer_id = v_caller;
+
+  IF NOT v_is_vendor AND NOT v_is_buyer THEN
     RAISE EXCEPTION 'ORDER_FAILED:not_owner' USING ERRCODE = '42501';
   END IF;
 
   IF v_order.status = p_status THEN
     RETURN to_jsonb(v_order);
+  END IF;
+
+  IF v_is_buyer AND NOT v_is_vendor THEN
+    -- Buyers get exactly one write: cancelling their own order, and only
+    -- while the shop hasn't started fulfilling it.
+    IF p_status <> 'cancelled' THEN
+      RAISE EXCEPTION 'ORDER_FAILED:not_allowed' USING ERRCODE = '42501';
+    END IF;
+    IF v_order.status NOT IN ('pending', 'confirmed') THEN
+      RAISE EXCEPTION 'ORDER_FAILED:too_late_to_cancel';
+    END IF;
+    v_cancelled_by := 'buyer';
+  ELSE
+    -- The action must match how the order is fulfilled: pickup orders walk
+    -- the pickup_ready path, delivery orders the ready path.
+    IF p_status = 'pickup_ready' AND v_order.fulfillment_type <> 'pickup' THEN
+      RAISE EXCEPTION 'ORDER_FAILED:wrong_fulfillment_flow';
+    END IF;
+    IF p_status = 'ready' AND v_order.fulfillment_type <> 'delivery' THEN
+      RAISE EXCEPTION 'ORDER_FAILED:wrong_fulfillment_flow';
+    END IF;
+    v_cancelled_by := 'vendor';
   END IF;
 
   v_allowed := CASE v_order.status
@@ -454,9 +581,24 @@ BEGIN
   SET status = p_status,
       confirmed_at = CASE WHEN p_status = 'confirmed' THEN now() ELSE confirmed_at END,
       delivered_at = CASE WHEN p_status = 'delivered' THEN now() ELSE delivered_at END,
-      cancelled_at = CASE WHEN p_status = 'cancelled' THEN now() ELSE cancelled_at END
+      cancelled_at = CASE WHEN p_status = 'cancelled' THEN now() ELSE cancelled_at END,
+      cancelled_by = CASE WHEN p_status = 'cancelled' THEN v_cancelled_by ELSE cancelled_by END
   WHERE id = p_order_id
   RETURNING * INTO v_order;
+
+  -- A cancelled order puts its units back on the shelf: order_items carry the
+  -- quantities create_order() decremented. Untracked products (stock_qty IS
+  -- NULL) stay untouched, and cancelled is terminal — so this can only ever
+  -- run once per order, no matter which side cancelled.
+  IF p_status = 'cancelled' THEN
+    UPDATE public.products p
+       SET stock_qty = p.stock_qty + oi.quantity,
+           in_stock  = TRUE
+      FROM public.order_items oi
+     WHERE oi.order_id = v_order.id
+       AND oi.product_id = p.id
+       AND p.stock_qty IS NOT NULL;
+  END IF;
 
   RETURN to_jsonb(v_order);
 END;

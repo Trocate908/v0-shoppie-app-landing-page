@@ -3,11 +3,17 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { ArrowLeft, Loader2, Package, Store, Check } from "lucide-react"
+import { ArrowLeft, Loader2, Package, Store, Check, Truck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import OrderStatusBadge from "@/components/order-status-badge"
-import { isOrderStatus, VENDOR_ACTIONS, type OrderStatus } from "@/lib/orders"
+import {
+  isOrderStatus,
+  orderStatusLabel,
+  paymentLabel,
+  vendorActionsFor,
+  type OrderStatus,
+} from "@/lib/orders"
 import { CURRENCIES, formatPrice } from "@/lib/currency"
 import { describeOrderError } from "@/lib/cart"
 import { useToast } from "@/hooks/use-toast"
@@ -19,6 +25,9 @@ export type VendorOrder = {
   reference: string
   status: string
   fulfillment_type: string
+  delivery_address?: string | null
+  payment_method?: string | null
+  cancelled_by?: string | null
   subtotal: number | string
   customer_note: string | null
   source: string
@@ -121,7 +130,7 @@ export function VendorOrdersClient({
       )
       toast({
         title: `Order ${order.reference}`,
-        description: `Status updated to ${next}. The customer has been notified.`,
+        description: `Status updated to ${orderStatusLabel(next)}. The customer has been notified.`,
       })
     } catch {
       toast({
@@ -206,7 +215,7 @@ export function VendorOrdersClient({
           <div className="space-y-3">
             {visibleOrders.map((order) => {
               const actions = isOrderStatus(order.status)
-                ? VENDOR_ACTIONS[order.status]
+                ? vendorActionsFor(order.status, order.fulfillment_type)
                 : []
               const busy = updatingId === order.id
               const units = order.order_items.reduce(
@@ -220,7 +229,12 @@ export function VendorOrdersClient({
                     <span className="font-mono text-sm font-bold text-foreground">
                       {order.reference}
                     </span>
-                    {order.fulfillment_type === "pickup" && (
+                    {order.fulfillment_type === "delivery" ? (
+                      <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+                        <Truck className="h-3 w-3" />
+                        Delivery
+                      </span>
+                    ) : (
                       <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                         <Check className="h-3 w-3" />
                         Pickup
@@ -271,6 +285,28 @@ export function VendorOrdersClient({
                       <p className="mt-2 rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                         <span className="font-bold text-foreground">Customer note:</span>{" "}
                         {order.customer_note}
+                      </p>
+                    )}
+
+                    {order.fulfillment_type === "delivery" &&
+                      order.delivery_address && (
+                        <p className="mt-2 rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                          <span className="font-bold text-foreground">
+                            Deliver to:
+                          </span>{" "}
+                          {order.delivery_address}
+                        </p>
+                      )}
+
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      <span className="font-bold text-foreground">Payment:</span>{" "}
+                      {paymentLabel(order.payment_method)}
+                    </p>
+
+                    {order.status === "cancelled" && order.cancelled_by && (
+                      <p className="mt-2 text-xs font-semibold text-destructive">
+                        Cancelled by the{" "}
+                        {order.cancelled_by === "buyer" ? "customer" : "shop"}.
                       </p>
                     )}
 

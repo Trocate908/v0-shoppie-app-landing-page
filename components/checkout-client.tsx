@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyState } from "@/components/empty-state"
 import { useCart } from "@/components/cart-provider"
 import { describeOrderError, grandTotal, groupLinesByVendor, type CheckoutItem } from "@/lib/cart"
+import { PAYMENT_LABEL, PAYMENT_METHODS, type PaymentMethod } from "@/lib/orders"
 import { CURRENCIES, formatPrice } from "@/lib/currency"
 import { useToast } from "@/hooks/use-toast"
 
@@ -21,6 +22,9 @@ export default function CheckoutClient() {
   const router = useRouter()
   const { lines, mode, count, ensureSession, refresh } = useCart()
   const [note, setNote] = useState("")
+  const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">("pickup")
+  const [address, setAddress] = useState("")
+  const [payment, setPayment] = useState<PaymentMethod>("cash")
   const [placing, setPlacing] = useState(false)
   const { toast } = useToast()
 
@@ -30,6 +34,15 @@ export default function CheckoutClient() {
 
   async function handlePlaceOrder() {
     if (placing || lines.length === 0) return
+    if (fulfillment === "delivery" && address.trim().length < 10) {
+      toast({
+        title: "Add a delivery address",
+        description:
+          "Include the street, suburb and city so the shop can reach you.",
+        variant: "destructive",
+      })
+      return
+    }
     setPlacing(true)
     try {
       // Guests get a session first (anonymous sign-in — same pattern as
@@ -59,7 +72,14 @@ export default function CheckoutClient() {
         res = await fetch("/api/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items, note: note.trim() || null }),
+          body: JSON.stringify({
+            items,
+            note: note.trim() || null,
+            fulfillment,
+            delivery_address:
+              fulfillment === "delivery" ? address.trim() : undefined,
+            payment_method: payment,
+          }),
         })
       } catch (error) {
         // The request never completed, so the server saw nothing — a retry is
@@ -79,8 +99,8 @@ export default function CheckoutClient() {
         toast({
           title: "Couldn't place order",
           description:
-            typeof payload.error === "string"
-              ? payload.error
+            typeof payload.error === "string" && payload.error
+              ? describeOrderError(payload.error)
               : describeOrderError(""),
           variant: "destructive",
         })
@@ -115,12 +135,12 @@ export default function CheckoutClient() {
       router.push("/orders?placed=1")
     } catch (error) {
       // Every step handles its own errors now, so reaching this means an
-      // unexpected bug. Log it — the old empty catch made this toast
-      // impossible to diagnose from the field.
+      // unexpected bug — not a connection problem, so don't claim one.
       console.error("[checkout] place order failed:", error)
       toast({
-        title: "Something went wrong",
-        description: "Please check your connection and try again.",
+        title: "Couldn't place order",
+        description:
+          "Something unexpected happened on our side. Your cart is safe — please try again.",
         variant: "destructive",
       })
     } finally {
@@ -226,6 +246,98 @@ export default function CheckoutClient() {
                   </div>
                 </Card>
               ))}
+
+              {/* Fulfillment + payment */}
+              <Card className="p-4">
+                <h3 className="mb-3 text-sm font-bold text-foreground">
+                  Fulfillment & payment
+                </h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFulfillment("pickup")}
+                    className={
+                      "rounded-xl border px-3 py-2.5 text-left transition-colors " +
+                      (fulfillment === "pickup"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-muted/40")
+                    }
+                  >
+                    <span className="block text-sm font-bold text-foreground">
+                      Pickup
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      Collect from the shop
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFulfillment("delivery")}
+                    className={
+                      "rounded-xl border px-3 py-2.5 text-left transition-colors " +
+                      (fulfillment === "delivery"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-muted/40")
+                    }
+                  >
+                    <span className="block text-sm font-bold text-foreground">
+                      Delivery
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      Brought to your address
+                    </span>
+                  </button>
+                </div>
+
+                {fulfillment === "delivery" && (
+                  <div className="mt-3 space-y-2">
+                    <Label
+                      htmlFor="delivery-address"
+                      className="text-sm font-semibold text-foreground"
+                    >
+                      Delivery address
+                    </Label>
+                    <Textarea
+                      id="delivery-address"
+                      placeholder="e.g. 12 Samora Marget Avenue, Avondale, Harare"
+                      value={address}
+                      maxLength={500}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="min-h-[72px] rounded-xl"
+                    />
+                    <p className="text-right text-xs text-muted-foreground">
+                      {address.trim().length}/500 · at least 10 characters
+                    </p>
+                  </div>
+                )}
+
+                <div className="mt-3 space-y-2">
+                  <p className="text-sm font-semibold text-foreground">
+                    Payment
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {PAYMENT_METHODS.map((method) => (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => setPayment(method)}
+                        className={
+                          "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors " +
+                          (payment === method
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground hover:bg-muted/40")
+                        }
+                      >
+                        {PAYMENT_LABEL[method]}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Pay when your order is collected or delivered — the shop
+                    sees your payment choice with the order.
+                  </p>
+                </div>
+              </Card>
 
               {/* Order note */}
               <div className="space-y-2">
