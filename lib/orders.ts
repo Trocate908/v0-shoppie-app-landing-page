@@ -93,5 +93,83 @@ export function statusTimestampsFor(status: OrderStatus, order: {
     delivered: order.delivered_at ?? null,
     cancelled: order.cancelled_at ?? null,
     ready: null,
+    pickup_ready: null,
   }
+}
+
+/** Push / in-app copy for a status change, shared by the orders API routes. */
+export function orderStatusNotification(
+  status: OrderStatus,
+  reference: string,
+): string {
+  switch (status) {
+    case "confirmed":
+      return `Order ${reference} confirmed`
+    case "ready":
+      return `Order ${reference} is ready`
+    case "pickup_ready":
+      return `Order ${reference} is ready for pickup`
+    case "delivered":
+      return `Order ${reference} delivered`
+    case "cancelled":
+      return `Order ${reference} cancelled`
+    default:
+      return `Order ${reference} updated`
+  }
+}
+
+export function orderStatusBody(status: OrderStatus): string {
+  switch (status) {
+    case "confirmed":
+      return "The shop confirmed your order. We'll let you know when it's ready."
+    case "ready":
+      return "Your order is ready — collect it from the shop."
+    case "pickup_ready":
+      return "Your order is ready for pickup at the shop."
+    case "delivered":
+      return "Thanks for shopping on ShoppieApp."
+    case "cancelled":
+      return "This order was cancelled. Contact the shop if you have questions."
+    default:
+      return "Open the order for details."
+  }
+}
+
+export type VendorAction = {
+  status: OrderStatus
+  label: string
+  variant: "default" | "outline" | "destructive"
+}
+
+/** Actions for the vendor screen, filtered by how the order is fulfilled:
+ *  pickup orders advance through "Pickup Ready", delivery orders through
+ *  "Ready" — vendors should never be offered both (and the server only
+ *  accepts the one that matches the flow). */
+export function vendorActionsFor(
+  status: OrderStatus,
+  fulfillmentType: string,
+): VendorAction[] {
+  const actions = VENDOR_ACTIONS[status] ?? []
+  if (fulfillmentType === "pickup") {
+    return actions.filter((action) => action.status !== "ready")
+  }
+  return actions.filter((action) => action.status !== "pickup_ready")
+}
+
+/** How the buyer will pay — declared at checkout, shown to the vendor.
+ *  There is no gateway yet: this is the agreed collection method. */
+export const PAYMENT_METHODS = ["cash", "ecocash", "zipit"] as const
+
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
+
+export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
+  cash: "Cash on delivery",
+  ecocash: "EcoCash",
+  zipit: "ZIPIT / bank transfer",
+}
+
+export function paymentLabel(value: string | null | undefined): string {
+  return value && value in PAYMENT_LABEL
+    ? PAYMENT_LABEL[value as PaymentMethod]
+    : PAYMENT_LABEL.cash
 }

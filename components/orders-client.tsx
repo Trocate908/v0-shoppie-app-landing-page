@@ -158,7 +158,11 @@ export default function OrdersClient({
                           <OrderStatusBadge status={order.status} className="ml-auto shrink-0" />
                         </div>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          {order.reference} · {units(order)}{" "}
+                          {order.reference} ·{" "}
+                          {order.fulfillment_type === "delivery"
+                            ? "Delivery"
+                            : "Pickup"}{" "}
+                          · {units(order)}{" "}
                           {units(order) === 1 ? "item" : "items"} · {formatDate(order.created_at)}
                         </p>
                         <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
