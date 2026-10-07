@@ -5,7 +5,7 @@
 // renames all three caches below, so "activate" purges the previous generation
 // and "install" re-precaches the shell — the only lever that forces an already
 // installed client off a stale bundle.
-const CACHE_VERSION = "v5"
+const CACHE_VERSION = "v6"
 const STATIC_CACHE  = `shoppie-static-${CACHE_VERSION}`
 const DYNAMIC_CACHE = `shoppie-dynamic-${CACHE_VERSION}`
 const IMAGE_CACHE   = `shoppie-images-${CACHE_VERSION}`
