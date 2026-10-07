@@ -107,15 +107,23 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }
 
   const refresh = useCallback(async () => {
-    const supabase = createBrowserClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    uidRef.current = user?.id ?? null
-    if (user) {
-      await loadServerCart(user.id)
-    } else {
-      await loadGuestCart()
+    // Never rejects: supabase-js throws on network errors instead of
+    // returning an error object, and an unhandled rejection here used to
+    // bubble into checkout's generic "Something went wrong" toast — even
+    // after an order had already succeeded.
+    try {
+      const supabase = createBrowserClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      uidRef.current = user?.id ?? null
+      if (user) {
+        await loadServerCart(user.id)
+      } else {
+        await loadGuestCart()
+      }
+    } catch (error) {
+      console.error("[cart] refresh failed:", error)
     }
   }, [])
 
@@ -405,28 +413,48 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   removeLineRef.current = removeLine
 
   const ensureSession = useCallback(async () => {
-    const supabase = createBrowserClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    let uid = user?.id ?? null
-    if (!uid) {
-      const { data, error } = await supabase.auth.signInAnonymously()
-      if (error || !data.user) {
-        console.error("[cart] anonymous sign-in failed:", error?.message)
-        return false
+    // Never rejects: no session is `false`, and a failed cart sync after the
+    // session exists is logged but non-fatal (the server re-validates the
+    // whole order anyway). supabase-js throws on network errors, which used
+    // to escape into checkout's generic failure toast.
+    try {
+      const supabase = createBrowserClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      let uid = user?.id ?? null
+      if (!uid) {
+        const { data, error } = await supabase.auth.signInAnonymously()
+        if (error || !data?.user) {
+          console.error("[cart] anonymous sign-in failed:", error?.message)
+          return false
+        }
+        uid = data.user.id
       }
-      uid = data.user.id
+      uidRef.current = uid
+      // Await the merge + reload so a guest cart is fully in the account before
+      // checkout runs (the auth listener may be mid-merge; the guard makes this
+      // call and the listener cooperate instead of merging twice).
+      if (mergedForRef.current !== uid) {
+        mergedForRef.current = uid
+        try {
+          await mergeGuestIntoServer(uid)
+        } catch (error) {
+          // Guest lines stay in localStorage (clearGuestCart only runs at the
+          // end of a successful merge), so a later refresh can finish the job.
+          console.error("[cart] guest-cart merge failed:", error)
+        }
+      }
+      try {
+        await loadServerCart(uid)
+      } catch (error) {
+        console.error("[cart] cart reload failed:", error)
+      }
+      return true
+    } catch (error) {
+      console.error("[cart] ensureSession failed:", error)
+      return false
     }
-    // Await the merge + reload so a guest cart is fully in the account before
-    // checkout runs (the auth listener may be mid-merge; the guard makes this
-    // call and the listener cooperate instead of merging twice).
-    if (mergedForRef.current !== uid) {
-      mergedForRef.current = uid
-      await mergeGuestIntoServer(uid)
-    }
-    await loadServerCart(uid)
-    return true
   }, [loadServerCart, mergeGuestIntoServer])
 
   const qtyOf = useCallback(
