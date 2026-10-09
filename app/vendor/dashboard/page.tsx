@@ -138,6 +138,19 @@ export default async function VendorDashboardPage() {
     favoritesCount = count ?? 0
   }
 
+  // ── Orders still waiting on the shop ───────────────────────────────────────
+  // Counted here (not on the client) so the dashboard can surface the work
+  // queue without an extra round trip. RLS already scopes this to the shop.
+  let pendingOrders = 0
+  {
+    const { count } = await supabase
+      .from("orders")
+      .select("*", { count: "exact", head: true })
+      .eq("vendor_id", vendor.id)
+      .in("status", ["pending", "confirmed"])
+    pendingOrders = count ?? 0
+  }
+
   // ── Build vendor object ───────────────────────────────────────────────────
   const locationData = vendor.locations as { country: string; city: string; market_name: string } | null
 
@@ -168,6 +181,7 @@ export default async function VendorDashboardPage() {
         inStockCount,
         conversationCount,
         favoritesCount,
+        pendingOrders,
         dailyViews,
         topProduct,
       }}

@@ -10,7 +10,7 @@ import Link from "next/link"
 import {
   Eye, Package, LogOut, Plus, Settings, Trash2, Moon, Sun, User,
   Radio, TrendingUp, TrendingDown, MessageCircle, Heart,
-  ShoppingBag, ArrowUpRight, Minus, BarChart2, Flame,
+  ShoppingBag, ArrowUpRight, Minus, BarChart2, Flame, ClipboardList,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
@@ -53,6 +53,8 @@ type Stats = {
   inStockCount: number
   conversationCount: number
   favoritesCount: number
+  /** Orders in pending/confirmed — the shop's outstanding work queue. */
+  pendingOrders: number
   dailyViews: DailyView[]
   topProduct: { id: string; name: string; image_url: string | null; views: number } | null
 }
@@ -414,7 +416,41 @@ export function DashboardClient({ vendor, stats, userId }: Props) {
         )}
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+          <Link
+            href="/vendor/orders"
+            className={
+              "flex items-center gap-3 rounded-2xl border p-3 sm:p-4 transition-colors " +
+              (stats.pendingOrders > 0
+                ? "border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15"
+                : "border-border bg-card hover:bg-muted/40")
+            }
+          >
+            <div
+              className={
+                "flex h-9 w-9 items-center justify-center rounded-xl shrink-0 " +
+                (stats.pendingOrders > 0
+                  ? "bg-amber-500 text-white"
+                  : "bg-muted")
+              }
+            >
+              <ClipboardList
+                className={
+                  "h-4 w-4 " +
+                  (stats.pendingOrders > 0 ? "" : "text-muted-foreground")
+                }
+              />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Orders</p>
+              <p className="text-xs text-muted-foreground">
+                {stats.pendingOrders > 0
+                  ? `${stats.pendingOrders} waiting on you`
+                  : "Manage customer orders"}
+              </p>
+            </div>
+          </Link>
+
           <Link
             href="/vendor/products/add"
             className="flex items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 p-3 sm:p-4 hover:bg-primary/10 transition-colors"
