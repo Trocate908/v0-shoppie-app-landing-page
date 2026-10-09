@@ -19,8 +19,9 @@ const money = (value: number) => formatPrice(value, CURRENCIES.USD)
 
 export default function CartPageClient() {
   const router = useRouter()
-  const { lines, mode, count, setQuantity, removeLine } = useCart()
+  const { lines, mode, count, setQuantity, removeLine, clearCart } = useCart()
   const [busyLine, setBusyLine] = useState<string | null>(null)
+  const [clearing, setClearing] = useState(false)
   const { toast } = useToast()
 
   const groups = useMemo(() => groupLinesByVendor(lines), [lines])
@@ -57,6 +58,23 @@ export default function CartPageClient() {
     }
   }
 
+  async function handleClear() {
+    if (clearing) return
+    if (!window.confirm("Remove all items from your cart?")) return
+    setClearing(true)
+    try {
+      await clearCart()
+    } catch {
+      toast({
+        title: "Couldn't clear cart",
+        description: "Please try again in a moment.",
+        variant: "destructive",
+      })
+    } finally {
+      setClearing(false)
+    }
+  }
+
   return (
     <>
       {/* Header — mirrors the wishlist page chrome */}
@@ -68,6 +86,22 @@ export default function CartPageClient() {
               <h1 className="text-xl font-bold text-foreground">ShoppieApp</h1>
             </Link>
             <div className="flex items-center gap-3">
+              {lines.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={clearing}
+                  onClick={handleClear}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  {clearing ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Clear cart
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={() => router.push("/?tab=store")}>
                 Continue shopping
               </Button>

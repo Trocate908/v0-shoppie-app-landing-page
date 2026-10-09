@@ -42,6 +42,12 @@ type CartContextValue = {
    *  guest-cart merge. Resolves true when a session is available. */
   ensureSession: () => Promise<boolean>
   refresh: () => Promise<void>
+  /** Add several lines in a single write (used by reorder). Quantities merge
+   *  into any existing line and cap at MAX_QTY. Resolves to the number of
+   *  units added. */
+  addLines: (entries: Array<{ line: NewCartLine; quantity: number }>) => Promise<number>
+  /** Empty the whole cart in one action — account rows or the guest store. */
+  clearCart: () => Promise<void>
 }
 
 const CartContext = createContext<CartContextValue | null>(null)
@@ -407,6 +413,109 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [persistServerLine, refresh],
   )
 
+  const addLines = useCallback(
+    async (entries: Array<{ line: NewCartLine; quantity: number }>) => {
+      await readyRef.current?.promise
+      if (entries.length === 0) return 0
+
+      // Collapse duplicates first so one product results in one write, and a
+      // single reorder can never push a line past the DB's 999 cap.
+      const wanted = new Map<string, { line: NewCartLine; quantity: number }>()
+      for (const entry of entries) {
+        const qty = clampQty(entry.quantity)
+        const existing = wanted.get(entry.line.product_id)
+        if (existing) {
+          existing.quantity = Math.min(MAX_QTY, existing.quantity + qty)
+        } else {
+          wanted.set(entry.line.product_id, { line: entry.line, quantity: qty })
+        }
+      }
+      const merged = Array.from(wanted.values())
+
+      setLines((prev) => {
+        const next = [...prev]
+        for (const { line, quantity } of merged) {
+          const index = next.findIndex((l) => l.product_id === line.product_id)
+          if (index === -1) {
+            next.push({ ...line, quantity })
+          } else {
+            next[index] = {
+              ...next[index],
+              ...line,
+              quantity: Math.min(MAX_QTY, next[index].quantity + quantity),
+            }
+          }
+        }
+        return next
+      })
+
+      try {
+        if (uidRef.current) {
+          const uid = uidRef.current
+          const supabase = createBrowserClient()
+          const ids = merged.map((entry) => entry.line.product_id)
+          const { data: existingRows } = await supabase
+            .from("cart_items")
+            .select("product_id, quantity")
+            .eq("user_id", uid)
+            .in("product_id", ids)
+          const current = new Map(
+            ((existingRows ?? []) as { product_id: string; quantity: number }[]).map(
+              (row) => [row.product_id, row.quantity],
+            ),
+          )
+          const rows = merged.map(({ line, quantity }) => ({
+            user_id: uid,
+            product_id: line.product_id,
+            quantity: Math.min(MAX_QTY, (current.get(line.product_id) ?? 0) + quantity),
+          }))
+          const { error } = await supabase
+            .from("cart_items")
+            .upsert(rows, { onConflict: "user_id,product_id" })
+          if (error) throw new Error(error.message)
+        } else {
+          const guest = readGuestCart()
+          for (const { line, quantity } of merged) {
+            const found = guest.find((g) => g.product_id === line.product_id)
+            if (found) {
+              found.quantity = Math.min(MAX_QTY, found.quantity + quantity)
+            } else {
+              guest.push({ product_id: line.product_id, quantity })
+            }
+          }
+          writeGuestCart(guest)
+        }
+        return merged.reduce((sum, entry) => sum + entry.quantity, 0)
+      } catch (error) {
+        console.error("[cart] add lines failed:", error)
+        await refresh()
+        throw error
+      }
+    },
+    [refresh],
+  )
+
+  const clearCart = useCallback(async () => {
+    await readyRef.current?.promise
+    setLines([])
+    try {
+      if (uidRef.current) {
+        const supabase = createBrowserClient()
+        const { error } = await supabase
+          .from("cart_items")
+          .delete()
+          .eq("user_id", uidRef.current)
+        if (error) throw new Error(error.message)
+      } else {
+        clearGuestCart()
+      }
+    } catch (error) {
+      console.error("[cart] clear failed:", error)
+      await refresh()
+      throw error
+    }
+  }, [refresh])
+
   // setQuantity delegates to removeLine for qty <= 0; keep a ref so the
   // callbacks can reference each other without a dependency cycle.
   const removeLineRef = useRef(removeLine)
@@ -475,8 +584,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       removeLine,
       ensureSession,
       refresh,
+      addLines,
+      clearCart,
     }),
-    [lines, mode, count, qtyOf, addLine, setQuantity, removeLine, ensureSession, refresh],
+    [
+      lines,
+      mode,
+      count,
+      qtyOf,
+      addLine,
+      setQuantity,
+      removeLine,
+      ensureSession,
+      refresh,
+      addLines,
+      clearCart,
+    ],
   )
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>

@@ -47,6 +47,7 @@ export default async function OrdersPage({
       ),
       order_items (
         id,
+        product_id,
         product_name,
         product_image,
         unit_price,

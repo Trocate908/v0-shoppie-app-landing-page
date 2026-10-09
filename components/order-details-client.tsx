@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card"
 import { AppFooter } from "@/components/app-footer"
 import ProfileButton from "@/components/profile-button"
 import OrderStatusBadge from "@/components/order-status-badge"
+import ReorderButton from "@/components/reorder-button"
 import MessageSellerButton from "@/components/message-seller-button"
 import WhatsAppButton from "@/components/whatsapp-button"
 import { VerificationBadge } from "@/components/verification-badge"
@@ -359,6 +360,13 @@ export default function OrderDetailsClient({ order }: { order: OrderDetails }) {
               <span className="text-base font-extrabold text-foreground">
                 {money(Number(order.subtotal))}
               </span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-3">
+              <span className="text-xs text-muted-foreground">
+                Re-add these items at today's prices.
+              </span>
+              <ReorderButton items={order.order_items} label="Reorder" />
             </div>
           </Card>
 

@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
@@ -16,6 +17,7 @@ import { EmptyState } from "@/components/empty-state"
 import ProfileButton from "@/components/profile-button"
 import { AppFooter } from "@/components/app-footer"
 import OrderStatusBadge from "@/components/order-status-badge"
+import ReorderButton from "@/components/reorder-button"
 import { CURRENCIES, formatPrice } from "@/lib/currency"
 
 const money = (value: number) => formatPrice(value, CURRENCIES.USD)
@@ -40,6 +42,7 @@ export type OrderSummary = {
   } | null
   order_items: Array<{
     id: string
+    product_id: string | null
     product_name: string
     product_image: string | null
     unit_price: number | string
@@ -56,6 +59,25 @@ function formatDate(iso: string): string {
   })
 }
 
+type OrderFilter = "all" | "active" | "delivered" | "cancelled"
+
+/** Statuses the shop is still working through (everything not delivered or
+ *  cancelled) — what a shopper usually wants to see first. */
+const ACTIVE_STATUSES = new Set(["pending", "confirmed", "ready", "pickup_ready"])
+
+const FILTER_LABEL: Record<OrderFilter, string> = {
+  all: "All",
+  active: "In progress",
+  delivered: "Delivered",
+  cancelled: "Cancelled",
+}
+
+function matchesFilter(order: OrderSummary, filter: OrderFilter): boolean {
+  if (filter === "all") return true
+  if (filter === "active") return ACTIVE_STATUSES.has(order.status)
+  return order.status === filter
+}
+
 export default function OrdersClient({
   orders,
   placed,
@@ -64,8 +86,29 @@ export default function OrdersClient({
   placed?: boolean
 }) {
   const router = useRouter()
+  const [filter, setFilter] = useState<OrderFilter>("all")
   const units = (order: OrderSummary) =>
     order.order_items.reduce((sum, item) => sum + item.quantity, 0)
+
+  const counts = useMemo(() => {
+    const next: Record<OrderFilter, number> = {
+      all: orders.length,
+      active: 0,
+      delivered: 0,
+      cancelled: 0,
+    }
+    for (const order of orders) {
+      if (ACTIVE_STATUSES.has(order.status)) next.active += 1
+      if (order.status === "delivered") next.delivered += 1
+      if (order.status === "cancelled") next.cancelled += 1
+    }
+    return next
+  }, [orders])
+
+  const visibleOrders = useMemo(
+    () => orders.filter((order) => matchesFilter(order, filter)),
+    [orders, filter],
+  )
 
   return (
     <>
@@ -117,6 +160,31 @@ export default function OrdersClient({
             </div>
           </div>
 
+          {orders.length > 0 && (
+            <div className="mb-5 flex gap-1.5 overflow-x-auto pb-1">
+              {(Object.keys(FILTER_LABEL) as OrderFilter[]).map((value) => {
+                const active = filter === value
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setFilter(value)}
+                    aria-pressed={active}
+                    className={
+                      "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition-colors " +
+                      (active
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border text-muted-foreground hover:text-foreground")
+                    }
+                  >
+                    {FILTER_LABEL[value]}
+                    <span className="ml-1.5 opacity-70">{counts[value]}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           {orders.length === 0 ? (
             <EmptyState
               icon={Package}
@@ -129,10 +197,17 @@ export default function OrdersClient({
             />
           ) : (
             <div className="space-y-3">
-              {orders.map((order) => (
-                <Link key={order.id} href={`/orders/${order.id}`}>
-                  <Card className="mb-3 overflow-hidden p-4 transition-colors hover:bg-muted/40">
-                    <div className="flex items-start gap-3">
+              {visibleOrders.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
+                  No {FILTER_LABEL[filter].toLowerCase()} orders.
+                </p>
+              ) : (
+                visibleOrders.map((order) => (
+                  <Card key={order.id} className="overflow-hidden">
+                    <Link
+                      href={`/orders/${order.id}`}
+                      className="flex items-start gap-3 p-4 transition-colors hover:bg-muted/40"
+                    >
                       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-muted">
                         {order.vendor?.profile_picture_url ? (
                           <Image
@@ -178,10 +253,18 @@ export default function OrdersClient({
                         </span>
                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                       </div>
+                    </Link>
+                    <div className="flex items-center justify-end border-t border-border/60 px-4 py-2.5">
+                      <ReorderButton
+                        items={order.order_items}
+                        variant="outline"
+                        size="sm"
+                        className="rounded-full"
+                      />
                     </div>
                   </Card>
-                </Link>
-              ))}
+                ))
+              )}
             </div>
           )}
         </div>
