@@ -1,9 +1,9 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { ArrowLeft, Loader2, Package, Store, Check, Truck } from "lucide-react"
+import { ArrowLeft, Clock, Loader2, Package, Store, Check, Truck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import OrderStatusBadge from "@/components/order-status-badge"
@@ -67,6 +67,22 @@ function formatDateTime(iso: string): string {
   })
 }
 
+/** How long an order has been sitting with the shop. `stale` flags orders
+ *  that have waited long enough to deserve attention in the list. */
+function orderAge(
+  createdAt: string,
+  now: number,
+): { label: string; stale: boolean } | null {
+  const ms = now - new Date(createdAt).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return null
+  const stale = ms >= 6 * 60 * 60 * 1000
+  const minutes = Math.floor(ms / 60000)
+  if (minutes < 60) return { label: `${Math.max(1, minutes)}m`, stale }
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return { label: `${hours}h`, stale }
+  return { label: `${Math.floor(hours / 24)}d`, stale }
+}
+
 export function VendorOrdersClient({
   orders: initialOrders,
   shopName,
@@ -77,7 +93,14 @@ export function VendorOrdersClient({
   const [orders, setOrders] = useState<VendorOrder[]>(initialOrders)
   const [filter, setFilter] = useState<Filter>("all")
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  // Ages come from the browser clock after mount so the server and client
+  // render identical markup (no hydration mismatch).
+  const [now, setNow] = useState<number | null>(null)
   const { toast } = useToast()
+
+  useEffect(() => {
+    setNow(Date.now())
+  }, [])
 
   const counts = useMemo(() => {
     const map: Record<Filter, number> = {
@@ -105,6 +128,16 @@ export function VendorOrdersClient({
 
   async function handleStatusChange(order: VendorOrder, next: OrderStatus) {
     if (updatingId) return
+    // Cancelling is destructive and irreversible from the shop's side, so ask
+    // first — a mis-tap used to cancel the order immediately.
+    if (
+      next === "cancelled" &&
+      !window.confirm(
+        `Cancel order ${order.reference}? The customer will be notified and this can't be undone.`,
+      )
+    ) {
+      return
+    }
     setUpdatingId(order.id)
     try {
       const res = await fetch("/api/orders/status", {
@@ -222,6 +255,12 @@ export function VendorOrdersClient({
                 (sum, item) => sum + item.quantity,
                 0,
               )
+              // Only orders the shop still has to act on get an age chip.
+              const needsAction =
+                order.status === "pending" || order.status === "confirmed"
+              const age = needsAction && now !== null
+                ? orderAge(order.created_at, now)
+                : null
               return (
                 <Card key={order.id} className="overflow-hidden">
                   <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-3">
@@ -244,6 +283,20 @@ export function VendorOrdersClient({
                       · {formatDateTime(order.created_at)} · {units}{" "}
                       {units === 1 ? "item" : "items"}
                     </span>
+                    {age && (
+                      <span
+                        className={
+                          "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold " +
+                          (age.stale
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                            : "bg-muted text-muted-foreground")
+                        }
+                        title="Time since this order was placed"
+                      >
+                        <Clock className="h-3 w-3" />
+                        Waiting {age.label}
+                      </span>
+                    )}
                     <OrderStatusBadge status={order.status} className="ml-auto shrink-0" />
                   </div>
 
