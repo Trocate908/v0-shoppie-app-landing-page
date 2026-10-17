@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
@@ -18,6 +18,9 @@ import ProfileButton from "@/components/profile-button"
 import { AppFooter } from "@/components/app-footer"
 import OrderStatusBadge from "@/components/order-status-badge"
 import ReorderButton from "@/components/reorder-button"
+import { useLiveRefresh } from "@/hooks/use-live-refresh"
+import { useToast } from "@/hooks/use-toast"
+import { isOrderStatus, orderStatusLabel, STATUS_DESCRIPTION } from "@/lib/orders"
 import { CURRENCIES, formatPrice } from "@/lib/currency"
 
 const money = (value: number) => formatPrice(value, CURRENCIES.USD)
@@ -87,8 +90,36 @@ export default function OrdersClient({
 }) {
   const router = useRouter()
   const [filter, setFilter] = useState<OrderFilter>("all")
+  const { toast } = useToast()
   const units = (order: OrderSummary) =>
     order.order_items.reduce((sum, item) => sum + item.quantity, 0)
+
+  // Shops move orders on their own time, so keep the list current while the
+  // page is open and tell the shopper when something changed underneath them.
+  useLiveRefresh()
+  const seenStatuses = useRef(new Map(orders.map((order) => [order.id, order.status])))
+  useEffect(() => {
+    const seen = seenStatuses.current
+    const changed = orders.filter(
+      (order) => seen.has(order.id) && seen.get(order.id) !== order.status,
+    )
+    seenStatuses.current = new Map(orders.map((order) => [order.id, order.status]))
+    if (changed.length === 0) return
+    if (changed.length === 1) {
+      const order = changed[0]
+      toast({
+        title: `Order ${order.reference} · ${orderStatusLabel(order.status)}`,
+        description: isOrderStatus(order.status)
+          ? STATUS_DESCRIPTION[order.status]
+          : undefined,
+      })
+      return
+    }
+    toast({
+      title: `${changed.length} orders updated`,
+      description: "The shops changed the status of your orders.",
+    })
+  }, [orders, toast])
 
   const counts = useMemo(() => {
     const next: Record<OrderFilter, number> = {

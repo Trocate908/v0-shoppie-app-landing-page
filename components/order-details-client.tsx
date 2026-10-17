@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
@@ -16,10 +16,13 @@ import WhatsAppButton from "@/components/whatsapp-button"
 import { VerificationBadge } from "@/components/verification-badge"
 import { describeOrderError } from "@/lib/cart"
 import { useToast } from "@/hooks/use-toast"
+import { useLiveRefresh } from "@/hooks/use-live-refresh"
 import {
   OrderStatus,
   STATUS_LABEL,
   STATUS_DESCRIPTION,
+  isOrderStatus,
+  orderStatusLabel,
   paymentLabel,
 } from "@/lib/orders"
 import { CURRENCIES, formatPrice } from "@/lib/currency"
@@ -78,6 +81,21 @@ export default function OrderDetailsClient({ order }: { order: OrderDetails }) {
   const { toast } = useToast()
   const [cancelling, setCancelling] = useState(false)
   const isCancelled = order.status === "cancelled"
+
+  // The shop can confirm or complete this order while it is on screen, so
+  // refresh the server data in place and surface the change when it happens.
+  useLiveRefresh()
+  const previousStatus = useRef(order.status)
+  useEffect(() => {
+    if (previousStatus.current === order.status) return
+    previousStatus.current = order.status
+    toast({
+      title: `Order ${order.reference} · ${orderStatusLabel(order.status)}`,
+      description: isOrderStatus(order.status)
+        ? STATUS_DESCRIPTION[order.status]
+        : undefined,
+    })
+  }, [order.status, order.reference, toast])
   const shopSlug = order.vendor?.slug ?? order.vendor?.id
 
   // Buyers may cancel their own order while the shop hasn't started

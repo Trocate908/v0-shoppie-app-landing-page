@@ -20,17 +20,39 @@ const money = (value: number) => formatPrice(value, CURRENCIES.USD)
 
 export default function CheckoutClient() {
   const router = useRouter()
-  const { lines, mode, count, ensureSession, refresh } = useCart()
+  const { lines, mode, count, ensureSession, refresh, removeLines } = useCart()
   const [note, setNote] = useState("")
   const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">("pickup")
   const [address, setAddress] = useState("")
   const [payment, setPayment] = useState<PaymentMethod>("cash")
   const [placing, setPlacing] = useState(false)
+  const [removingUnavailable, setRemovingUnavailable] = useState(false)
   const { toast } = useToast()
 
   const groups = useMemo(() => groupLinesByVendor(lines), [lines])
   const total = grandTotal(lines)
   const hasUnavailable = lines.some((line) => !line.in_stock)
+
+  async function handleRemoveUnavailable() {
+    const ids = lines.filter((line) => !line.in_stock).map((line) => line.product_id)
+    if (ids.length === 0 || removingUnavailable) return
+    setRemovingUnavailable(true)
+    try {
+      await removeLines(ids)
+      toast({
+        title: `${ids.length} out-of-stock ${ids.length === 1 ? "item" : "items"} removed`,
+        description: "Review the updated total, then place your order.",
+      })
+    } catch {
+      toast({
+        title: "Couldn't update cart",
+        description: "Please try again in a moment.",
+        variant: "destructive",
+      })
+    } finally {
+      setRemovingUnavailable(false)
+    }
+  }
 
   async function handlePlaceOrder() {
     if (placing || lines.length === 0) return
@@ -197,10 +219,25 @@ export default function CheckoutClient() {
           ) : (
             <div className="space-y-4">
               {hasUnavailable && (
-                <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                  Some items are out of stock. Go back to your cart and remove
-                  them to continue.
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
+                  <p className="text-sm text-destructive">
+                    Some items sold out while you were shopping. Remove them to
+                    place the rest of your order.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={removingUnavailable || placing}
+                    onClick={handleRemoveUnavailable}
+                    className="shrink-0 rounded-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    {removingUnavailable && (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    )}
+                    Remove out of stock
+                  </Button>
+                </div>
               )}
 
               {/* One order per shop */}
