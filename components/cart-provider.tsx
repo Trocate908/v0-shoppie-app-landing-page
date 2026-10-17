@@ -13,6 +13,7 @@ import { createBrowserClient } from "@/lib/supabase/client"
 import {
   clampQty,
   clearGuestCart,
+  GUEST_CART_KEY,
   MAX_QTY,
   readGuestCart,
   writeGuestCart,
@@ -37,6 +38,9 @@ type CartContextValue = {
   addLine: (line: NewCartLine, quantity?: number) => Promise<void>
   setQuantity: (productId: string, quantity: number) => Promise<void>
   removeLine: (productId: string) => Promise<void>
+  /** Remove several lines in a single write — used to clear out-of-stock
+   *  items in one tap instead of one request per line. */
+  removeLines: (productIds: string[]) => Promise<void>
   /** Ensure a Supabase session exists before checkout (signs in anonymously
    *  for guests, mirroring the existing buyer flow), then triggers the
    *  guest-cart merge. Resolves true when a session is available. */
@@ -413,6 +417,36 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [persistServerLine, refresh],
   )
 
+  const removeLines = useCallback(
+    async (productIds: string[]) => {
+      const ids = [...new Set(productIds.filter(Boolean))]
+      if (ids.length === 0) return
+      await readyRef.current?.promise
+      const removing = new Set(ids)
+      setLines((prev) => prev.filter((l) => !removing.has(l.product_id)))
+      try {
+        if (uidRef.current) {
+          const supabase = createBrowserClient()
+          const { error } = await supabase
+            .from("cart_items")
+            .delete()
+            .eq("user_id", uidRef.current)
+            .in("product_id", ids)
+          if (error) throw new Error(error.message)
+        } else {
+          writeGuestCart(
+            readGuestCart().filter((g) => !removing.has(g.product_id)),
+          )
+        }
+      } catch (error) {
+        console.error("[cart] bulk remove failed:", error)
+        await refresh()
+        throw error
+      }
+    },
+    [refresh],
+  )
+
   const addLines = useCallback(
     async (entries: Array<{ line: NewCartLine; quantity: number }>) => {
       await readyRef.current?.promise
@@ -516,6 +550,26 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refresh])
 
+  // Keep tabs and returning visitors in step with the account cart. Guest
+  // carts live in localStorage, and the `storage` event only fires in the
+  // *other* tabs — so editing the cart in one tab used to leave the badge in
+  // every other tab stale until a reload.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== GUEST_CART_KEY || uidRef.current) return
+      void loadGuestCart()
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refresh()
+    }
+    window.addEventListener("storage", onStorage)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      window.removeEventListener("storage", onStorage)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [loadGuestCart, refresh])
+
   // setQuantity delegates to removeLine for qty <= 0; keep a ref so the
   // callbacks can reference each other without a dependency cycle.
   const removeLineRef = useRef(removeLine)
@@ -582,6 +636,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       addLine,
       setQuantity,
       removeLine,
+      removeLines,
       ensureSession,
       refresh,
       addLines,
@@ -595,6 +650,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       addLine,
       setQuantity,
       removeLine,
+      removeLines,
       ensureSession,
       refresh,
       addLines,

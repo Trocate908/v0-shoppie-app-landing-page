@@ -19,9 +19,10 @@ const money = (value: number) => formatPrice(value, CURRENCIES.USD)
 
 export default function CartPageClient() {
   const router = useRouter()
-  const { lines, mode, count, setQuantity, removeLine, clearCart } = useCart()
+  const { lines, mode, count, setQuantity, removeLine, removeLines, clearCart } = useCart()
   const [busyLine, setBusyLine] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
+  const [removingUnavailable, setRemovingUnavailable] = useState(false)
   const { toast } = useToast()
 
   const groups = useMemo(() => groupLinesByVendor(lines), [lines])
@@ -55,6 +56,27 @@ export default function CartPageClient() {
       })
     } finally {
       setBusyLine(null)
+    }
+  }
+
+  async function handleRemoveUnavailable() {
+    const ids = lines.filter((line) => !line.in_stock).map((line) => line.product_id)
+    if (ids.length === 0 || removingUnavailable) return
+    setRemovingUnavailable(true)
+    try {
+      await removeLines(ids)
+      toast({
+        title: `${ids.length} out-of-stock ${ids.length === 1 ? "item" : "items"} removed`,
+        description: "You can check out the rest of your cart now.",
+      })
+    } catch {
+      toast({
+        title: "Couldn't update cart",
+        description: "Please try again in a moment.",
+        variant: "destructive",
+      })
+    } finally {
+      setRemovingUnavailable(false)
     }
   }
 
@@ -147,9 +169,26 @@ export default function CartPageClient() {
           ) : (
             <div className="space-y-4">
               {hasUnavailable && (
-                <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                  Some items are out of stock. Remove them to continue to checkout.
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
+                  <p className="text-sm text-destructive">
+                    Some items are out of stock — remove them to check out.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={removingUnavailable}
+                    onClick={handleRemoveUnavailable}
+                    className="shrink-0 rounded-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    {removingUnavailable ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    Remove out of stock
+                  </Button>
+                </div>
               )}
 
               {groups.map((group) => (
@@ -204,6 +243,11 @@ export default function CartPageClient() {
                             </Link>
                             <p className="mt-0.5 text-sm font-semibold text-foreground">
                               {money(line.price)}
+                              {line.quantity > 1 && (
+                                <span className="ml-1.5 text-xs font-medium text-muted-foreground sm:hidden">
+                                  · {money(line.price * line.quantity)} total
+                                </span>
+                              )}
                             </p>
                             {!line.in_stock && (
                               <p className="mt-1 text-xs font-semibold text-destructive">
