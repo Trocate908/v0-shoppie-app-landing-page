@@ -213,9 +213,11 @@ TURN_CREDENTIAL=your-turn-credential
 
 ### In-app voice calls
 
-Run `supabase/migrations/add_voice_calls.sql` once, then see
+Run `supabase/migrations/add_voice_calls.sql` and
+`supabase/migrations/add_user_presence.sql` once, then see
 [`docs/voice-calls.md`](docs/voice-calls.md) for the signaling/security model,
-TURN setup, browser restrictions and the two-device test checklist.
+TURN setup, callee push notifications (VAPID keys), browser restrictions and
+the two-device test checklist.
 
 ## Deployment
 

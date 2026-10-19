@@ -62,6 +62,10 @@ export type WebPushMessage = {
   link?: string
   imageUrl?: string
   data?: Record<string, string>
+  /** How long (seconds) the push service may hold the message while a device
+   *  is offline. Defaults to 24h. Call notifications pass a short TTL so an
+   *  undelivered ring cannot show up long after the call has ended. */
+  ttlSeconds?: number
 }
 
 /**
@@ -113,7 +117,7 @@ export async function sendWebPushToSubscriptions(
       }
       try {
         await webpush.sendNotification(parsed, payload, {
-          TTL: 86400,
+          TTL: msg.ttlSeconds ?? 86400,
           urgency: "high",
         })
         successCount++
