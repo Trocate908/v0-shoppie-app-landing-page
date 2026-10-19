@@ -53,24 +53,61 @@ TURN credentials stay on the server and are handed to authenticated clients by
 # Optional: override the default public STUN servers
 STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
 
-# Required for reliable calls outside simple home/mobile networks
+# Option A (recommended): Cloudflare Realtime TURN — short-lived credentials
+CLOUDFLARE_TURN_KEY_ID=your-turn-key-id
+CLOUDFLARE_TURN_API_TOKEN=your-turn-key-api-token
+# Optional, default 86400 seconds / 24h (clamped to 300–86400)
+CLOUDFLARE_TURN_TTL_SECONDS=86400
+
+# Option B: any static TURN provider
 TURN_URLS=turn:your-turn-host:3478?transport=udp,turn:your-turn-host:3478?transport=tcp
 TURN_USERNAME=your-turn-username
 TURN_CREDENTIAL=your-turn-credential
 ```
 
-`NEXT_PUBLIC_STUN_URLS`, `NEXT_PUBLIC_TURN_URLS`, `NEXT_PUBLIC_TURN_USERNAME`
-and `NEXT_PUBLIC_TURN_CREDENTIAL` are also accepted as fallbacks, but they are
-compiled into the client bundle. Prefer the server-only names.
+`TURN_KEY_ID` / `TURN_KEY_API_TOKEN` are accepted as aliases for the Cloudflare
+names. `NEXT_PUBLIC_STUN_URLS`, `NEXT_PUBLIC_TURN_URLS`,
+`NEXT_PUBLIC_TURN_USERNAME` and `NEXT_PUBLIC_TURN_CREDENTIAL` are accepted as
+legacy fallbacks, but they are compiled into the client bundle. Prefer the
+server-only names.
 
-The endpoint returns STUN only (with `turnConfigured: false`) when TURN is not
+**Priority:** Cloudflare TURN (if both variables are set) → static TURN → public
+STUN. The endpoint returns `source: "cloudflare"` or `source: "static"` so you
+can confirm which path was used. If the Cloudflare API is down or rejects the
+credentials, the endpoint logs it and falls back instead of breaking call setup.
+The endpoint returns STUN only (with `turnConfigured: false`) when no TURN is
 configured. Direct peer-to-peer calls still work on many networks, but mobile
 carrier NATs frequently require a relay. **Do not assume direct connectivity.**
 
-### Configuring TURN
+### Cloudflare Realtime TURN (recommended free option)
+
+Cloudflare's TURN service includes **1,000 GB/month of free egress shared with
+the Realtime SFU**, then **$0.05/GB**. Relayed audio is only tens of MB per hour,
+so the free allowance is large for a small app. You need a Cloudflare account and
+a TURN key; there is no per-call SDK or change to the Supabase signaling flow.
+
+1. In the Cloudflare dashboard, open **Realtime → TURN** and create a TURN key.
+2. Copy the **TURN Key ID** and **API token** into `CLOUDFLARE_TURN_KEY_ID` and
+   `CLOUDFLARE_TURN_API_TOKEN` in the sandbox and production environments. Never
+   put the TURN key in a `NEXT_PUBLIC_*` variable or client code.
+3. Restart the preview / redeploy. The route now calls
+   `POST https://rtc.live.cloudflare.com/v1/turn/keys/<key>/credentials/generate-ice-servers`
+   with the configured TTL and returns Cloudflare's STUN + TURN URLs and the
+   short-lived username/credential. URLs on port 53 are filtered out because
+   browsers block that port.
+4. Verify a relay path with two devices on mobile data and
+   `chrome://webrtc-internals` (look for a `relay` candidate pair).
+
+The credential is minted per call, and the client deliberately does not cache it
+for the page lifetime, so an open PWA cannot reuse an expired relay credential.
+The default TTL is 24 hours, longer than any normal voice call, because a relay
+credential must not expire mid-call. Lower `CLOUDFLARE_TURN_TTL_SECONDS` if you
+prefer shorter-lived credentials and know your maximum call length.
+
+### Other TURN providers
 
 Any standards-compliant TURN service works (coturn self-hosted, or a managed
-provider such as Metered, Twilio Network Traversal, Cloudflare Calls, etc.):
+provider such as Metered, Xirsys, Twilio Network Traversal, etc.):
 
 1. Create the TURN server/credential in the provider dashboard.
 2. Put its URLs and credentials in `TURN_URLS` / `TURN_USERNAME` /
@@ -81,8 +118,8 @@ provider such as Metered, Twilio Network Traversal, Cloudflare Calls, etc.):
 4. Verify by joining a call with both devices on mobile data and checking
    `chrome://webrtc-internals` for a relay candidate pair.
 
-Short-lived TURN credentials are not generated here; if your provider supports
-them, mint them in `/api/calls/ice-servers` instead of using a static secret.
+Do not use a shared public TURN credential from a tutorial in production; use a
+provider-issued free tier or your own authenticated coturn instance.
 
 ## 3. Browser and platform restrictions
 

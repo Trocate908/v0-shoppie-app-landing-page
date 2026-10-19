@@ -90,8 +90,6 @@ const FALLBACK_ICE: IceConfig = {
   turnConfigured: false,
 }
 
-let cachedIce: IceConfig | null = null
-
 function isValidIceServer(value: unknown): value is RTCIceServer {
   if (!value || typeof value !== "object") return false
   const urls = (value as { urls?: unknown }).urls
@@ -105,9 +103,12 @@ function isValidIceServer(value: unknown): value is RTCIceServer {
 
 /** Loads ICE servers from our authenticated API so TURN credentials stay on
  *  the server instead of being baked into the client bundle. Falls back to
- *  public STUN when the endpoint is unavailable or unconfigured. */
+ *  public STUN when the endpoint is unavailable or unconfigured.
+ *
+ *  Deliberately fetched per call rather than cached for the page lifetime:
+ *  Cloudflare TURN credentials are short-lived, and a long-open PWA must not
+ *  reuse an expired relay credential on a later call. */
 export async function loadIceConfig(): Promise<IceConfig> {
-  if (cachedIce) return cachedIce
   try {
     const res = await fetch("/api/calls/ice-servers", {
       cache: "no-store",
@@ -119,11 +120,10 @@ export async function loadIceConfig(): Promise<IceConfig> {
       ? data.iceServers.filter(isValidIceServer)
       : []
     if (servers.length === 0) return FALLBACK_ICE
-    cachedIce = {
+    return {
       iceServers: servers,
       turnConfigured: data.turnConfigured === true,
     }
-    return cachedIce
   } catch {
     return FALLBACK_ICE
   }
