@@ -8,6 +8,7 @@ import { PwaProvider } from "@/components/pwa-provider"
 import InstallBanner from "@/components/install-banner"
 import { NotificationProvider } from "@/components/notification-provider"
 import { CartProvider } from "@/components/cart-provider"
+import { CallProvider } from "@/components/call-provider"
 import AnnouncementBanner from "@/components/announcement-banner"
 import "./globals.css"
 import "../styles/chat-bg.css"
@@ -105,7 +106,9 @@ export default function RootLayout({
           <PwaProvider>
             <WebVitals />
             <AnnouncementBanner />
-            <CartProvider>{children}</CartProvider>
+            <CartProvider>
+              <CallProvider>{children}</CallProvider>
+            </CartProvider>
             <InstallBanner />
             <NotificationProvider />
             <Toaster />

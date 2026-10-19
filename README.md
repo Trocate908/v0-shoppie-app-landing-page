@@ -195,7 +195,27 @@ SUPABASE_SERVICE_ROLE_KEY=
 # Cloudinary
 CLOUDINARY_URL=cloudinary://api_key:api_secret@cloud_name
 NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
+
+# In-app voice calls (optional TURN relay; STUN falls back to public servers)
+STUN_URLS=stun:stun.l.google.com:19302
+
+# Recommended free option: Cloudflare Realtime TURN (server-only credentials)
+CLOUDFLARE_TURN_KEY_ID=your-turn-key-id
+CLOUDFLARE_TURN_API_TOKEN=your-turn-key-api-token
+# Optional, default 86400 seconds (24h)
+CLOUDFLARE_TURN_TTL_SECONDS=86400
+
+# Or any static TURN provider
+TURN_URLS=turn:your-turn-host:3478?transport=udp
+TURN_USERNAME=your-turn-username
+TURN_CREDENTIAL=your-turn-credential
 \`\`\`
+
+### In-app voice calls
+
+Run `supabase/migrations/add_voice_calls.sql` once, then see
+[`docs/voice-calls.md`](docs/voice-calls.md) for the signaling/security model,
+TURN setup, browser restrictions and the two-device test checklist.
 
 ## Deployment
 
