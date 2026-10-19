@@ -57,6 +57,7 @@ import { avatarGradient } from "@/lib/avatar"
 import { usePresence, formatLastSeen } from "@/hooks/use-presence"
 import { VerificationBadge } from "@/components/verification-badge"
 import { EmojiPicker } from "@/components/emoji-picker"
+import { CallButton } from "@/components/call-button"
 
 // Module-level singleton — one Supabase client reused across all effects
 let _chatSupabase: ReturnType<typeof createBrowserClient> | null = null
@@ -1017,6 +1018,13 @@ function ChatHeader({
           )}
         </p>
       </div>
+
+      {/* Voice call — one tap into the same conversation, no phone number. */}
+      <CallButton
+        conversationId={conversation.id}
+        peerName={otherName}
+        peerAvatarUrl={avatarUrl}
+      />
 
       {/* Options menu */}
       <DropdownMenu>
