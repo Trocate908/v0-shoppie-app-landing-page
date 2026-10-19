@@ -13,6 +13,7 @@ import {
 import { createBrowserClient } from "@/lib/supabase/client"
 import {
   acquireMicrophone,
+  closeCallPushNotices,
   CONNECT_TIMEOUT_MS,
   DISCONNECT_GRACE_MS,
   describeMicError,
@@ -20,6 +21,8 @@ import {
   isVoiceCallSupported,
   loadIceConfig,
   mapCallError,
+  requestCallMissedPush,
+  requestCallRingPush,
   RING_TIMEOUT_MS,
   type CallRow,
   type CallSession,
@@ -45,6 +48,16 @@ function getClient(): SupabaseBrowserClient {
   if (!_client) _client = createBrowserClient()
   return _client
 }
+
+// Caller-side end reasons that mean the ring was never answered. When one of
+// these ends a call, the callee's other devices get a "Missed call" push that
+// replaces the incoming-call notification (server-gated on presence).
+const RING_NEVER_ANSWERED_REASONS = new Set([
+  "cancel",
+  "timeout",
+  "mic_denied",
+  "setup_failed",
+])
 
 type PeerContext = {
   peerId: string
@@ -286,6 +299,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
           title: "Call declined",
           description: `${current.peerName} couldn't take the call.`,
         })
+      }
+
+      // The in-app overlay makes any OS notification for this ring redundant
+      // on this device; the callee's other devices are handled by tag
+      // replacement and the missed-call update below.
+      void closeCallPushNotices(current.id)
+      // A ring that was never answered (cancel, timeout, mic/setup failure)
+      // becomes a "Missed call" push on the callee's devices. The server
+      // skips it when the callee is in the app right now.
+      if (
+        current.role === "caller" &&
+        endReason !== null &&
+        RING_NEVER_ANSWERED_REASONS.has(endReason)
+      ) {
+        void requestCallMissedPush(current.id)
       }
     },
     [teardown, toast],
@@ -621,6 +649,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (incomingSeenRef.current.has(row.id)) return
       incomingSeenRef.current.add(row.id)
 
+      // The ring overlay takes over from any OS notification this device
+      // received (e.g. the callee returned to the app just in time).
+      void closeCallPushNotices(row.id)
+
       const age = Date.now() - new Date(row.created_at).getTime()
       if (age > RING_TIMEOUT_MS) {
         void callRpc("respond_call", {
@@ -839,6 +871,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
         })
         return
       }
+
+      // Push the callee's devices — the server sends it only when their
+      // presence heartbeat shows they are not already in the app.
+      void requestCallRingPush(row.id)
 
       const context = await loadPeerContext(client, conversationId, selfId)
       const next: CallSession = {
@@ -1132,6 +1168,70 @@ export function CallProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
       data.subscription.unsubscribe()
+    }
+  }, [])
+
+  // Heartbeat so /api/calls/notify can tell whether a callee is already in
+  // the app: while visible, stamp public.user_presence every 30s, and stamp
+  // once when backgrounded so the "away" clock starts then. Failures are
+  // silent — until add_user_presence.sql runs, the notify route fails open
+  // and pushes anyway.
+  useEffect(() => {
+    const client = getClient()
+    let cancelled = false
+    let uid: string | null = null
+    let warned = false
+
+    async function beat(force = false) {
+      if (!uid) return
+      if (!force && document.visibilityState !== "visible") return
+      const { error } = await client
+        .from("user_presence")
+        .upsert(
+          { user_id: uid, last_seen_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        )
+      if (error && !warned) {
+        warned = true
+        const missingTable =
+          error.code === "42P01" ||
+          String(error.message).includes("user_presence")
+        if (!missingTable) {
+          console.warn("[calls] presence heartbeat failed:", error.message)
+        }
+      }
+    }
+
+    const { data: authSub } = client.auth.onAuthStateChange(
+      (_event, session) => {
+        const next = session?.user?.id ?? null
+        if (next !== uid) {
+          uid = next
+          if (uid) void beat()
+        }
+      },
+    )
+    client.auth
+      .getUser()
+      .then(({ data: auth }) => {
+        if (cancelled) return
+        const next = auth.user?.id ?? null
+        if (next !== uid) {
+          uid = next
+          if (uid) void beat()
+        }
+      })
+      .catch(() => {})
+
+    const interval = setInterval(() => void beat(), 30_000)
+    const onVisibility = () => void beat(document.visibilityState !== "visible")
+    document.addEventListener("visibilitychange", onVisibility)
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      document.removeEventListener("visibilitychange", onVisibility)
+      authSub.subscription.unsubscribe()
     }
   }, [])
 

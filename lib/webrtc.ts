@@ -217,6 +217,51 @@ export function mapCallError(message?: string | null): string {
   return "The call couldn't be started. Please try again."
 }
 
+async function postCallNotify(
+  callId: string,
+  kind: "ring" | "missed",
+): Promise<void> {
+  try {
+    await fetch("/api/calls/notify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ callId, kind }),
+    })
+  } catch {
+    // Best-effort: a call must never wait on a notification request.
+  }
+}
+
+/** Asks the server to push the incoming call to the callee's devices — but
+ *  only when they are not already in the app (the server checks their
+ *  presence heartbeat before sending). Fire-and-forget. */
+export function requestCallRingPush(callId: string): Promise<void> {
+  return postCallNotify(callId, "ring")
+}
+
+/** Replaces the callee's stale "incoming call" notification with a missed-
+ *  call notice after the ring times out or is cancelled. The server skips it
+ *  when the callee is in the app. Fire-and-forget. */
+export function requestCallMissedPush(callId: string): Promise<void> {
+  return postCallNotify(callId, "missed")
+}
+
+/** Closes any OS notification for this call (tag call-<id>) shown on this
+ *  device — used when the in-app overlay takes over while the ring is live. */
+export async function closeCallPushNotices(callId: string): Promise<void> {
+  try {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+      return
+    }
+    const registration = await navigator.serviceWorker.getRegistration("/")
+    if (!registration) return
+    const notices = await registration.getNotifications({ tag: `call-${callId}` })
+    for (const notice of notices) notice.close()
+  } catch {
+    // Best-effort cleanup.
+  }
+}
+
 export function formatCallDuration(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds))
   const hours = Math.floor(safe / 3600)

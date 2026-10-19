@@ -17,11 +17,17 @@ signaling and call state. No phone numbers, phone credit, video or group calls.
   and timers when a call ends or the app unmounts.
 - Global call provider, so a call keeps working while the user moves between
   Store, Messages and Settings.
+- **Push notifications for an absent callee.** When a call starts, the callee's
+  devices receive an "Incoming call from X" web push — but only when they are
+  not already looking at ShoppieApp (a fresh in-app ring overlay means no OS
+  popup). If nobody answers or the caller cancels, the notification is replaced
+  with "Missed call from X". See §3 for the exact gating and limits.
 
 ## 1. Apply the database migration
 
-Run `supabase/migrations/add_voice_calls.sql` in the Supabase SQL editor (or via
-`supabase db push`) **before** testing calls. It creates:
+Run `supabase/migrations/add_voice_calls.sql` **and**
+`supabase/migrations/add_user_presence.sql` in the Supabase SQL editor (or via
+`supabase db push`) **before** testing calls. The calls migration creates:
 
 | Object | Purpose |
 | --- | --- |
@@ -31,7 +37,13 @@ Run `supabase/migrations/add_voice_calls.sql` in the Supabase SQL editor (or via
 | `respond_call(call_id, action, reason)` | Validates identity and status transitions for accept / decline / cancel / end / missed / fail. |
 | `expire_stale_calls()` | Closes abandoned rings/calls and deletes leftover signaling rows. |
 
-Both tables are added to the `supabase_realtime` publication.
+The presence migration adds `public.user_presence`, a per-user heartbeat
+(rewritten every 30 seconds while the app is visible) that
+`POST /api/calls/notify` reads to decide whether a callee needs a push.
+
+`calls` and `call_signals` are added to the `supabase_realtime` publication;
+`user_presence` is deliberately not (clients poll it via upserts, so no
+realtime subscription or RLS read of other users' rows is needed).
 
 ### Access rules
 
@@ -125,11 +137,21 @@ provider-issued free tier or your own authenticated coturn instance.
 
 These are browser/platform limits, not bugs:
 
-- **The app must be open.** A browser/PWA cannot receive a WebRTC call while it
-  is fully closed. Phase 1 rings only when ShoppieApp is open in a tab, installed
-  PWA window, or a recently backgrounded tab whose realtime socket is still
-  alive. Waking a closed app needs Web Push plus native CallKit (iOS) /
-  ConnectionService (Android) through a native wrapper — that is outside Phase 1.
+- **The app must be open to *answer*.** A browser/PWA cannot receive a WebRTC
+  call while it is fully closed. Phase 1 rings live when ShoppieApp is open in
+  a tab, installed PWA window, or a recently backgrounded tab whose realtime
+  socket is still alive. When the callee is **not** in the app (backgrounded
+  tab, locked phone, minimized PWA), the caller's client asks
+  `POST /api/calls/notify`, which sends a web push — "Incoming call from X" —
+  to the callee's registered devices, but only if their presence heartbeat is
+  stale (they are not looking at the app). The push links into the chat, where
+  the ring is recovered if it is still live, and is replaced by a "Missed
+  call" notification once the ring dies. The push has a short TTL so an
+  undelivered ring cannot surface an hour later. Each call gets at most one
+  ring push and one missed push, and only the caller of record can trigger
+  them. Answering a WebRTC call still requires opening the app within the 60s
+  ring window; native CallKit (iOS) / ConnectionService (Android) wake-up is
+  outside Phase 1.
 - **Background tabs are throttled.** Android Chrome may suspend timers and the
   Supabase socket after a while in the background. The ring can arrive late or
   be missed; the app catches up on resume and marks expired rings as missed.
@@ -172,12 +194,22 @@ signed-in identities on two devices:
     caller gets a "busy" message instead of overwriting the live call.
 11. End the call → both overlays show "Call ended"; check
     `chrome://webrtc-internals` has no live peer connection afterwards.
+12. **Absent-callee push:** background ShoppieApp on the callee's device (or
+    lock the phone) for a minute, then call. The callee's device shows an
+    "Incoming call from X" push; tapping it opens the chat and recovers the
+    ring if it is still within 60s. Cancel the call → the push is replaced by
+    "Missed call from X". With the callee's app open in the foreground, no OS
+    notification appears — only the in-app ring overlay.
+13. **No duplicate/late pushes:** each call produces at most one ring push and
+    one missed push (checked via the `call_ring` / `call_missed` rows in
+    `notification_sends`), and the ring push cannot be delivered after its
+    ~90s TTL.
 
 ## Known Phase 1 limitations
 
 - No call-history screen yet (rows are stored in `public.calls` for a future
   history tab and for missed-call audits).
-- No video, group calls, hold/transfer, ringing while the app is closed, or
-  reconnect-after-reload.
+- No video, group calls, hold/transfer, native wake-up of a fully closed app
+  (iOS CallKit / Android ConnectionService), or reconnect-after-reload.
 - Signaling replays up to 200 rows per call; enough for a 1:1 call, not a
   conference.
