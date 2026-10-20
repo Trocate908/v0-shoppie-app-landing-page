@@ -26,6 +26,12 @@ let audioContext: AudioContext | null = null
 let mode: "ring" | "ringback" | null = null
 let burstTimer: ReturnType<typeof setTimeout> | null = null
 let vibrateTimer: ReturnType<typeof setInterval> | null = null
+/** Holds references to gains that may still be sounding, with the timeout
+ *  that will release each one, so `stopCallSounds` can fade them mid-burst
+ *  instead of letting a still-queued burst finish at full volume. */
+const gainDisposableNodesRef: {
+  current: Array<{ gain: GainNode; timer: ReturnType<typeof setTimeout> }> | null
+} = { current: null }
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null
@@ -76,7 +82,31 @@ function playBurst() {
     oscillator.stop(now + duration)
     oscillator.onended = () => oscillator.disconnect()
   }
-  setTimeout(() => gain.disconnect(), duration * 1000 + 100)
+  const timeout = setTimeout(() => {
+    if (gainDisposableNodesRef.current) {
+      gainDisposableNodesRef.current = gainDisposableNodesRef.current.filter((e) => e.gain !== gain)
+    }
+    try {
+      gain.disconnect()
+    } catch {
+      // already disconnected
+    }
+  }, duration * 1000 + 100)
+
+  // If the call was already ended by the time this burst began (a stop inside
+  // a previous fade, a race in the teardown path, etc.), fade it out
+  // immediately so it never sounds past the stop point.
+  if (!mode) {
+    const releaseMs = 0.04
+    gain.gain.cancelScheduledValues(now)
+    gain.gain.setValueAtTime(gain.gain.value, now)
+    gain.gain.linearRampToValueAtTime(0, now + releaseMs)
+  } else {
+    // Track the still-sounding gains so stopCallSounds can fade them out
+    // mid-burst without leaving a hard cut.
+    if (!gainDisposableNodesRef.current) gainDisposableNodesRef.current = []
+    gainDisposableNodesRef.current.push({ gain, timer: timeout })
+  }
 }
 
 function scheduleBursts() {
@@ -119,7 +149,14 @@ export function startRingback(): void {
 }
 
 /** Stops every tone and the vibration loop. Idempotent — safe to call from
- *  every path that ends a call. */
+ *  every path that ends a call.
+ *
+ *  Because `playBurst` schedules its finish 450–1000ms in the future, a
+ *  burst that is mid-sound when the call is answered would otherwise finish at
+ *  full volume after the overlay closes. We fade the currently-playing gain
+ *  instead, so the ring eases to silence rather than cutting off inside a
+ *  syllable. Future bursts are also killed in their announce stage: `playBurst`
+ *  itself fades when it starts to find `mode` already null. */
 export function stopCallSounds(): void {
   mode = null
   if (burstTimer) {
@@ -132,5 +169,23 @@ export function stopCallSounds(): void {
   }
   if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
     navigator.vibrate(0)
+  }
+  // Fade out every burst currently sounding — fast enough to feel instant,
+  // short enough to avoid a hard click when the gain ramp is interrupted.
+  const audio = getAudioContext()
+  if (audio && audio.state === "running") {
+    const now = audio.currentTime
+    const releaseMs = 0.04
+    gainDisposableNodesRef.current?.forEach((entry) => {
+      try {
+        if (entry.gain.gain.value > 0) {
+          entry.gain.gain.cancelScheduledValues(now)
+          entry.gain.gain.setValueAtTime(entry.gain.gain.value, now)
+          entry.gain.gain.linearRampToValueAtTime(0, now + releaseMs)
+        }
+      } catch {
+        // already stopped / disconnected
+      }
+    })
   }
 }
