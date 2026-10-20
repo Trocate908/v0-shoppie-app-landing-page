@@ -10,11 +10,18 @@ import { createBrowserClient } from "@/lib/supabase/client"
  * - Any component can call `usePresence(currentUserId)` to get `isOnline(id)` and
  *   `getLastSeen(id)` helpers that re-render when presence changes.
  * - Last-seen timestamps are persisted to localStorage so they survive reloads.
+ *
+ * The subscription is a module-level singleton, so mounting it from the app
+ * shell *and* the messages tab (and every chat header) creates one channel, not
+ * three. Subscribers only re-render when the online set actually changes —
+ * heartbeat echoes don't churn the conversation list.
  */
 
 // ─── Module-level singleton state ─────────────────────────────────────────────
 
 const LAST_SEEN_KEY = "shoppie_presence_last_seen_v1"
+/** Keep the persisted map bounded — it grows one entry per user ever seen. */
+const LAST_SEEN_LIMIT = 300
 
 let sharedClient: ReturnType<typeof createBrowserClient> | null = null
 function getClient() {
@@ -22,12 +29,16 @@ function getClient() {
   return sharedClient
 }
 
+type PresenceChannel = ReturnType<ReturnType<typeof createBrowserClient>["channel"]>
+
 let onlineSet: Set<string> = new Set()
 let lastSeenMap: Map<string, number> = new Map()
 const listeners = new Set<() => void>()
 
 let initializedForUser: string | null = null
+let presenceChannel: PresenceChannel | null = null
 let persistTimer: ReturnType<typeof setInterval> | null = null
+let retryTimer: ReturnType<typeof setTimeout> | null = null
 
 function loadPersistedLastSeen() {
   if (typeof window === "undefined") return
@@ -46,6 +57,13 @@ function loadPersistedLastSeen() {
 function persistLastSeen() {
   if (typeof window === "undefined") return
   try {
+    // Drop the oldest entries before writing so the map can't grow forever.
+    if (lastSeenMap.size > LAST_SEEN_LIMIT) {
+      const trimmed = [...lastSeenMap.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, LAST_SEEN_LIMIT)
+      lastSeenMap = new Map(trimmed)
+    }
     const obj: Record<string, number> = {}
     lastSeenMap.forEach((v, k) => {
       obj[k] = v
@@ -60,50 +78,93 @@ function notifyListeners() {
   listeners.forEach((l) => l())
 }
 
+/**
+ * Swap in a new online set, notifying subscribers only when it really changed.
+ * Presence `sync` fires on heartbeats too, so an unconditional notify woke the
+ * whole conversation list every few seconds.
+ */
+function applyPresenceState(next: Set<string>) {
+  let changed = next.size !== onlineSet.size
+  if (!changed) {
+    for (const id of next) {
+      if (!onlineSet.has(id)) {
+        changed = true
+        break
+      }
+    }
+  }
+  if (!changed) return
+
+  for (const id of onlineSet) {
+    if (!next.has(id)) lastSeenMap.set(id, Date.now())
+  }
+  onlineSet = next
+  notifyListeners()
+}
+
+function readPresenceState(channel: PresenceChannel) {
+  const state = channel.presenceState() as Record<string, unknown[]>
+  applyPresenceState(new Set<string>(Object.keys(state)))
+}
+
+// Re-track after the tab wakes up or the network comes back: presence entries
+// expire while a backgrounded tab is suspended, and the server then shows the
+// user as offline even though the page is open again.
+function handleWake() {
+  if (typeof document !== "undefined" && document.hidden) return
+  void presenceChannel?.track({ online_at: new Date().toISOString() }).catch(() => {})
+}
+
 function initPresenceForUser(userId: string) {
   if (initializedForUser === userId) return
   initializedForUser = userId
 
   loadPersistedLastSeen()
+  persistLastSeen()
 
   const supabase = getClient()
   const channel = supabase.channel("global_presence", {
     config: { presence: { key: userId } },
   })
+  presenceChannel = channel
 
   channel
-    .on("presence", { event: "sync" }, () => {
-      const state = channel.presenceState() as Record<string, unknown[]>
-      const next = new Set<string>(Object.keys(state))
-
-      // Anyone who just left — stamp a last_seen
-      for (const id of onlineSet) {
-        if (!next.has(id)) {
-          lastSeenMap.set(id, Date.now())
-        }
-      }
-
+    .on("presence", { event: "sync" }, () => readPresenceState(channel))
+    .on("presence", { event: "join" }, () => readPresenceState(channel))
+    .on("presence", { event: "leave" }, ({ key }: { key: string }) => {
+      lastSeenMap.set(key, Date.now())
+      const next = new Set(onlineSet)
+      next.delete(key)
       onlineSet = next
       notifyListeners()
     })
-    .on("presence", { event: "leave" }, ({ key }: { key: string }) => {
-      lastSeenMap.set(key, Date.now())
-      onlineSet.delete(key)
-      notifyListeners()
-    })
-    .subscribe(async (status) => {
+    .subscribe((status) => {
       if (status === "SUBSCRIBED") {
-        await channel.track({ online_at: new Date().toISOString() })
+        void channel.track({ online_at: new Date().toISOString() }).catch(() => {})
+      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        // A single failed join used to leave every peer permanently "offline"
+        // for the rest of the session. Reset and retry while anyone is still
+        // listening for presence.
+        initializedForUser = null
+        presenceChannel = null
+        supabase.removeChannel(channel)
+        if (retryTimer) clearTimeout(retryTimer)
+        retryTimer = setTimeout(() => {
+          retryTimer = null
+          if (listeners.size > 0 && !initializedForUser) initPresenceForUser(userId)
+        }, 5000)
       }
     })
 
-  // Persist last-seen map every 15s so it survives reloads
+  // Persist last-seen so it survives reloads
   if (persistTimer) clearInterval(persistTimer)
   persistTimer = setInterval(persistLastSeen, 15_000)
 
-  // Flush on unload
   if (typeof window !== "undefined") {
     window.addEventListener("beforeunload", persistLastSeen)
+    window.addEventListener("pagehide", persistLastSeen)
+    document.addEventListener("visibilitychange", handleWake)
+    window.addEventListener("online", handleWake)
   }
 }
 
@@ -115,9 +176,11 @@ export function usePresence(currentUserId: string | null) {
 
   useEffect(() => {
     if (!currentUserId) return
-    initPresenceForUser(currentUserId)
+    // Subscribe first: a membership change that landed between the init and the
+    // listener registration would otherwise be missed until the next sync.
     const l = () => setTick((t) => t + 1)
     listeners.add(l)
+    initPresenceForUser(currentUserId)
     return () => {
       listeners.delete(l)
     }

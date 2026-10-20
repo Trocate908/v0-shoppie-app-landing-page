@@ -1,6 +1,17 @@
 import { createServerClient } from "@/lib/supabase/server"
 import { NextResponse, after } from "next/server"
 
+export const dynamic = "force-dynamic"
+
+/**
+ * How many conversations the list returns. The old query embedded up to 200
+ * messages *per conversation*, so a busy inbox shipped tens of thousands of
+ * rows (and megabytes of JSON) before the list could paint. Now each
+ * conversation embeds exactly one row — its newest message — and unread counts
+ * come from a single narrow query.
+ */
+const CONVERSATION_LIMIT = 60
+
 // GET /api/messages/conversations — list all conversations for the current user
 export async function GET() {
   const supabase = await createServerClient()
@@ -13,9 +24,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // Fetch conversations with their related data.
-  // Messages are ordered newest-first and capped at 200 per conversation
-  // so that unread counts are accurate without pulling unbounded history.
+  // One query for the conversations, their product, and only the latest
+  // message in each (`limit(1, foreignTable)` applies per parent row).
   const { data: conversations, error } = await supabase
     .from("conversations")
     .select(
@@ -32,14 +42,14 @@ export async function GET() {
         image_url,
         price
       ),
-      messages(id, content, sender_id, delivered, read, created_at)
+      messages(id, content, sender_id, read, delivered, created_at)
     `
     )
     .or(`buyer_id.eq.${user.id},vendor_id.eq.${user.id}`)
     .order("last_message_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false, foreignTable: "messages" })
-    .limit(100)
-    .limit(200, { foreignTable: "messages" })
+    .limit(CONVERSATION_LIMIT)
+    .limit(1, { foreignTable: "messages" })
 
   if (error) {
     console.error("[messages/conversations] Query error:", error)
@@ -50,13 +60,23 @@ export async function GET() {
     return NextResponse.json({ conversations: [] })
   }
 
-  // Collect all unique vendor_ids to look up vendor profiles
+  const conversationIds = conversations.map((c) => c.id)
   const vendorIds = [...new Set(conversations.map((c) => c.vendor_id))]
 
-  const { data: vendorRows } = await supabase
-    .from("vendors")
-    .select("user_id, id, shop_name, profile_picture_url, is_verified, verification_expires_at")
-    .in("user_id", vendorIds)
+  // Two narrow queries in parallel: shop details for the rows, and just the
+  // ids/flags of incoming unread messages (no content, no history).
+  const [{ data: vendorRows }, { data: unreadRows }] = await Promise.all([
+    supabase
+      .from("vendors")
+      .select("user_id, id, shop_name, profile_picture_url, is_verified, verification_expires_at")
+      .in("user_id", vendorIds),
+    supabase
+      .from("messages")
+      .select("id, conversation_id, delivered")
+      .in("conversation_id", conversationIds)
+      .eq("read", false)
+      .neq("sender_id", user.id),
+  ])
 
   // Build vendor lookup map
   const vendorMap: Record<
@@ -79,8 +99,16 @@ export async function GET() {
     }
   }
 
-  // Collect undelivered message IDs and compute stats from the already-fetched messages
+  const unreadByConversation = new Map<string, number>()
   const undeliveredIds: string[] = []
+  for (const row of unreadRows ?? []) {
+    unreadByConversation.set(
+      row.conversation_id,
+      (unreadByConversation.get(row.conversation_id) ?? 0) + 1
+    )
+    if (!row.delivered) undeliveredIds.push(row.id)
+  }
+
   const enriched = conversations.map((c) => {
     const messages = (c.messages ?? []) as Array<{
       id: string
@@ -90,21 +118,9 @@ export async function GET() {
       read: boolean
       created_at: string
     }>
-
-    // Count unread messages from other users
-    const unreadCount = messages.filter(
-      (m) => !m.read && m.sender_id !== user.id
-    ).length
-
-    // Collect undelivered messages to batch update
-    messages.forEach((m) => {
-      if (!m.delivered && m.sender_id !== user.id) {
-        undeliveredIds.push(m.id)
-      }
-    })
-
-    // Get last message (most recent)
-    const lastMsg = messages.length > 0 ? messages[0] : null
+    const lastMsg = messages.length > 0
+      ? messages.reduce((a, b) => (b.created_at > a.created_at ? b : a))
+      : null
 
     return {
       id: c.id,
@@ -115,7 +131,7 @@ export async function GET() {
       created_at: c.created_at,
       products: c.products,
       vendors: vendorMap[c.vendor_id] ?? null,
-      unread_count: unreadCount,
+      unread_count: unreadByConversation.get(c.id) ?? 0,
       is_buyer: c.buyer_id === user.id,
       last_message: lastMsg
         ? {
@@ -126,10 +142,7 @@ export async function GET() {
     }
   })
 
-  // Batch update delivered status if needed (single query).
-  // This is bookkeeping the list never reads back, so it must not sit in
-  // front of the response — awaiting it added a write round trip to every
-  // load. `after` runs it once the response has been sent.
+  // Bookkeeping the list never reads back — run it after the response is sent.
   if (undeliveredIds.length > 0) {
     after(async () => {
       const { error: updateError } = await supabase

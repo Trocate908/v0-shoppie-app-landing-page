@@ -8,7 +8,7 @@ import { usePresence, formatLastSeen } from "@/hooks/use-presence"
 import { Button } from "@/components/ui/button"
 import Image from "next/image"
 import { isToday, isYesterday, format, differenceInCalendarDays } from "date-fns"
-import ChatWindow from "@/components/chat-window"
+import ChatWindow, { prefetchMessages } from "@/components/chat-window"
 import { VerificationBadge } from "@/components/verification-badge"
 import { avatarGradient } from "@/lib/avatar"
 import { cn } from "@/lib/utils"
@@ -100,6 +100,10 @@ export default function MessagesTab({
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<FilterTab>("all")
   const openedIds = useRef<Set<string>>(new Set())
+  // Ids currently in the list, readable synchronously from the realtime
+  // callback (state alone is only visible on the next render).
+  const conversationIdsRef = useRef<Set<string>>(new Set())
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // IDs of conversations that have been deleted — any fetch that returns them
   // will be filtered out, so stale reads can't resurrect a deleted chat.
   const deletedIds = useRef<Set<string>>(new Set())
@@ -149,11 +153,25 @@ export default function MessagesTab({
         openedIds.current.has(c.id) ? { ...c, unread_count: 0 } : c
       )
       setConversations(sortConversations(patched))
+      conversationIdsRef.current = new Set(patched.map((c) => c.id))
     } catch {
       setIsAuthenticated(false)
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  // Coalesce bursts into one refresh when we genuinely need the server.
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null
+      void fetchConversations()
+    }, 500)
+  }, [fetchConversations])
+
+  useEffect(() => () => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
   }, [])
 
   useEffect(() => {
@@ -169,26 +187,57 @@ export default function MessagesTab({
     void fetchConversations()
   }, [fetchConversations])
 
-  // Realtime: refresh list on new messages
+  // Realtime: patch the list in place on new messages.
+  //
+  // This used to call fetchConversations() for every message — twice, once per
+  // branch — which re-ran the heaviest query in the app while you were reading.
+  // The payload already carries everything a row shows, so the list updates
+  // locally and only hits the network for conversations it has never seen.
   useEffect(() => {
     if (!isAuthenticated || !userId) return
     const supabase = getSharedSupabaseClient()
     const channel = supabase
-      .channel("messages_tab_list_v2")
+      .channel("messages_tab_list_v3")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
         (payload) => {
-          const msg = payload.new as { sender_id?: string }
-          // Only refresh the list when someone else sent the message
-          if (msg.sender_id !== userId) {
-            fetchConversations()
-          } else {
-            // Own message: still refresh to update the preview text + timestamp, but
-            // fetchConversations will correctly return unread_count=0 for own messages
-            // because the API already uses neq("sender_id", user.id)
-            fetchConversations()
+          const msg = payload.new as {
+            id: string
+            conversation_id?: string
+            sender_id?: string
+            content?: string | null
+            created_at?: string
           }
+          if (!msg?.conversation_id) return
+
+          if (!conversationIdsRef.current.has(msg.conversation_id)) {
+            // Brand-new conversation (e.g. first message from a vendor).
+            scheduleRefresh()
+            return
+          }
+
+          const conversationId = msg.conversation_id
+          const isOwn = msg.sender_id === userId
+          setConversations((prev) => {
+            const idx = prev.findIndex((c) => c.id === conversationId)
+            if (idx === -1) return prev
+            const current = prev[idx]
+            const skipUnread = isOwn || openedIds.current.has(conversationId)
+            const list = prev.slice()
+            list[idx] = {
+              ...current,
+              last_message_at: msg.created_at ?? current.last_message_at,
+              last_message: {
+                content: msg.content ?? null,
+                sender_id: msg.sender_id ?? current.last_message?.sender_id ?? "",
+              },
+              unread_count: skipUnread
+                ? (current.unread_count ?? 0)
+                : (current.unread_count ?? 0) + 1,
+            }
+            return sortConversations(list)
+          })
         }
       )
       .on(
@@ -204,7 +253,7 @@ export default function MessagesTab({
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [isAuthenticated, userId, fetchConversations])
+  }, [isAuthenticated, userId, scheduleRefresh])
 
   // Auto-open from deep-link
   useEffect(() => {
@@ -445,6 +494,7 @@ export default function MessagesTab({
                       getLastSeen={getLastSeen}
                       onClick={() => openConversation(convo)}
                       onDelete={() => setDeleteTarget(convo)}
+                      onPrefetch={() => prefetchMessages(convo.id)}
                     />
                   ))}
                 </ul>
@@ -488,6 +538,7 @@ function ConversationItem({
   getLastSeen,
   onClick,
   onDelete,
+  onPrefetch,
 }: {
   conversation: Conversation
   currentUserId: string
@@ -495,6 +546,8 @@ function ConversationItem({
   getLastSeen: (id: string | null | undefined) => number | null
   onClick: () => void
   onDelete: () => void
+  /** Fired on pointer-down so the thread is already loading when the tap lands. */
+  onPrefetch: () => void
 }) {
   const { products, vendors, unread_count, last_message_at, last_message, is_buyer } = conversation
   const hasUnread = (unread_count ?? 0) > 0
@@ -535,6 +588,7 @@ function ConversationItem({
         {/* Main tap area */}
         <button
           onClick={onClick}
+          onPointerDown={onPrefetch}
           className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left"
         >
           {/* Avatar */}

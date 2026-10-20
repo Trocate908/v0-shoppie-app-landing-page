@@ -7,6 +7,7 @@ import BottomNav, { type NavTab } from "@/components/bottom-nav"
 import BrowseProductsClient from "@/components/browse-products-client"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { useNotifications } from "@/hooks/use-notifications"
+import { usePresence } from "@/hooks/use-presence"
 import { useToast } from "@/hooks/use-toast"
 
 const HomeTab = dynamic(() => import("@/components/home-tab"), { ssr: false })
@@ -75,50 +76,66 @@ export default function AppShell({ products, locations }: AppShellProps) {
 
   const openConversationIdRef = useRef<string | null>(null)
   const activeTabRef = useRef<NavTab>(resolvedTab)
-  const currentUserIdRef = useRef<string | null>(null)
+  const [selfId, setSelfId] = useState<string | null>(null)
+  const selfIdRef = useRef<string | null>(null)
+  const unreadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { notify } = useNotifications()
   const { toast } = useToast()
+
+  // Presence is tracked for the whole app, not only while the messages tab is
+  // mounted — otherwise a vendor browsing their shop reads as "offline" to the
+  // buyer waiting on a reply. The hook is a module-level singleton, so the
+  // messages tab joining in costs nothing extra.
+  usePresence(selfId)
 
   useEffect(() => {
     activeTabRef.current = activeTab
   }, [activeTab])
 
   useEffect(() => {
-    const supabase = getSupabaseClient()
-    supabase.auth.getUser().then(({ data }) => {
-      currentUserIdRef.current = data.user?.id ?? null
-    })
+    // Locally cached session: no auth round trip before the first paint just to
+    // learn our own user id.
+    getSupabaseClient()
+      .auth.getSession()
+      .then(({ data }) => setSelfId(data.session?.user?.id ?? null))
+      .catch(() => setSelfId(null))
   }, [])
 
-  type CachedConv = {
-    id: string
-    is_buyer: boolean
-    vendors: { shop_name: string } | null
-  }
-  const conversationsCacheRef = useRef<Map<string, CachedConv>>(new Map())
+  useEffect(() => {
+    selfIdRef.current = selfId
+  }, [selfId])
 
   const fetchUnreadCount = useCallback(async () => {
     try {
-      const res = await fetch("/api/messages/conversations")
+      // Counts-only endpoint: the badge no longer downloads the whole inbox.
+      const res = await fetch("/api/messages/unread-count")
       if (!res.ok) {
         setUnreadReady(true)
         return
       }
-      const data = await res.json()
-      const conversations: (CachedConv & { unread_count: number })[] =
-        data.conversations ?? []
-      conversationsCacheRef.current = new Map(
-        conversations.map((c) => [c.id, { id: c.id, is_buyer: c.is_buyer, vendors: c.vendors }])
-      )
-      const total = conversations.reduce((sum, c) => {
-        if (c.id === openConversationIdRef.current) return sum
-        return sum + (c.unread_count ?? 0)
-      }, 0)
-      setUnreadCount(total)
+      const data: { total?: number; byConversation?: Record<string, number> } =
+        await res.json()
+      const openId = openConversationIdRef.current
+      const openCount = openId ? (data.byConversation?.[openId] ?? 0) : 0
+      setUnreadCount(Math.max((data.total ?? 0) - openCount, 0))
     } catch {
     } finally {
       setUnreadReady(true)
     }
+  }, [])
+
+  // Coalesce bursts (a chatty thread can emit several inserts a second) into a
+  // single count refresh.
+  const scheduleUnreadRefresh = useCallback(() => {
+    if (unreadTimerRef.current) clearTimeout(unreadTimerRef.current)
+    unreadTimerRef.current = setTimeout(() => {
+      unreadTimerRef.current = null
+      void fetchUnreadCount()
+    }, 400)
+  }, [fetchUnreadCount])
+
+  useEffect(() => () => {
+    if (unreadTimerRef.current) clearTimeout(unreadTimerRef.current)
   }, [])
 
   useEffect(() => {
@@ -149,11 +166,11 @@ export default function AppShell({ products, locations }: AppShellProps) {
 
   function handleConversationChange(conversationId: string | null) {
     openConversationIdRef.current = conversationId
-    fetchUnreadCount()
+    void fetchUnreadCount()
   }
 
   useEffect(() => {
-    fetchUnreadCount()
+    void fetchUnreadCount()
 
     const supabase = getSupabaseClient()
     const channel = supabase
@@ -163,11 +180,11 @@ export default function AppShell({ products, locations }: AppShellProps) {
         { event: "INSERT", schema: "public", table: "messages" },
         (payload) => {
           const msg = payload.new as { sender_id?: string; content?: string; conversation_id?: string }
-          const isOwnMessage = msg.sender_id === currentUserIdRef.current
+          const isOwnMessage = msg.sender_id === selfIdRef.current
           const isOpenConversation = msg.conversation_id === openConversationIdRef.current
 
           if (!isOwnMessage && !isOpenConversation) {
-            fetchUnreadCount()
+            scheduleUnreadRefresh()
           }
 
           const shouldNotify =
@@ -183,19 +200,10 @@ export default function AppShell({ products, locations }: AppShellProps) {
               }
             }
 
-            const convo = msg.conversation_id
-              ? conversationsCacheRef.current.get(msg.conversation_id)
-              : undefined
-            const senderLabel = convo
-              ? convo.is_buyer
-                ? convo.vendors?.shop_name ?? "Vendor"
-                : "Customer"
-              : "Someone"
-            const notifTitle = `New message from ${senderLabel}`
             const notifBody = msg.content?.trim() || "Sent an image"
 
             notify({
-              title: notifTitle,
+              title: "New message",
               body: notifBody,
               tag: `msg-${msg.conversation_id}`,
               onClick: openInApp,
@@ -203,29 +211,22 @@ export default function AppShell({ products, locations }: AppShellProps) {
 
             if (typeof document !== "undefined" && !document.hidden) {
               toast({
-                title: notifTitle,
+                title: "New message",
                 description: notifBody,
               })
             }
           }
         }
       )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "messages" },
-        (payload) => {
-          const msg = payload.new as { read?: boolean }
-          if (msg.read === true) {
-            fetchUnreadCount()
-          }
-        }
-      )
+      // No UPDATE subscription: read receipts on our own sent messages used to
+      // re-run the inbox query on every tick. Unread count only changes on
+      // inserts from the other side.
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [fetchUnreadCount, notify, toast])
+  }, [fetchUnreadCount, notify, toast, scheduleUnreadRefresh])
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">

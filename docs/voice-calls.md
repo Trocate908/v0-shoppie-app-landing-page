@@ -62,7 +62,7 @@ TURN credentials stay on the server and are handed to authenticated clients by
 `GET /api/calls/ice-servers`.
 
 ```env
-# Optional: override the default public STUN servers
+# Optional: override the default STUN servers (Metered STUN + Google STUN)
 STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
 
 # Option A (recommended): Cloudflare Realtime TURN — short-lived credentials
@@ -87,9 +87,24 @@ server-only names.
 STUN. The endpoint returns `source: "cloudflare"` or `source: "static"` so you
 can confirm which path was used. If the Cloudflare API is down or rejects the
 credentials, the endpoint logs it and falls back instead of breaking call setup.
-The endpoint returns STUN only (with `turnConfigured: false`) when no TURN is
-configured. Direct peer-to-peer calls still work on many networks, but mobile
-carrier NATs frequently require a relay. **Do not assume direct connectivity.**
+With no TURN configured the endpoint returns STUN only (`turnConfigured: false`):
+direct calls still work on many networks, but mobile carrier NATs frequently
+need a relay. **Do not assume direct connectivity.**
+
+A free starting point is the Metered Open Relay, whose free tier hands out the
+static credentials a browser app needs:
+
+```env
+TURN_URLS=turn:global.relay.metered.ca:80,turn:global.relay.metered.ca:80?transport=tcp,turn:global.relay.metered.ca:443,turns:global.relay.metered.ca:443?transport=tcp
+TURN_USERNAME=your-metered-username
+TURN_CREDENTIAL=your-metered-credential
+```
+
+Keep those credentials in the environment (sandbox `.env.local` and the
+production environment), never in git: `.env*` is gitignored, and a hardcoded
+credential trips the GitGuardian check on every pull request. The free relay is
+shared and best-effort — move to Cloudflare or your own TURN server for relayed
+traffic you depend on.
 
 ### Cloudflare Realtime TURN (recommended free option)
 

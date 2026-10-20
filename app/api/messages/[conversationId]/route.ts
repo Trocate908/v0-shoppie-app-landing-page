@@ -1,5 +1,5 @@
 import { createServerClient } from "@/lib/supabase/server"
-import { NextResponse } from "next/server"
+import { NextResponse, after } from "next/server"
 import { dispatchNotification } from "@/lib/notifications/dispatch"
 
 export const runtime = "nodejs"
@@ -23,17 +23,11 @@ async function verifyParticipant(supabase: ReturnType<typeof createServerClient>
 export async function GET(request: Request, { params }: Params) {
   const { conversationId } = await params
   const supabase = await createServerClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
 
   const url = new URL(request.url)
   const before = url.searchParams.get("before")
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50"), 100)
 
-  // Run auth check and messages fetch in parallel — saves one full round trip
   let messagesQuery = supabase
     .from("messages")
     .select("id, conversation_id, sender_id, content, image_url, read, delivered, deleted, created_at, edited_at")
@@ -45,12 +39,31 @@ export async function GET(request: Request, { params }: Params) {
     messagesQuery = messagesQuery.lt("created_at", before)
   }
 
-  const [conversation, { data, error }] = await Promise.all([
-    verifyParticipant(supabase, conversationId, user.id),
+  // Auth, the conversation row and the page of messages all start together.
+  // The page query needs no user id (RLS already scopes it from the session
+  // cookie), so awaiting auth first only added a round trip to every open.
+  const [
+    { data: { user }, error: authError },
+    { data: conversation },
+    { data, error },
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from("conversations")
+      .select("id, buyer_id, vendor_id")
+      .eq("id", conversationId)
+      .maybeSingle(),
     messagesQuery,
   ])
 
-  if (!conversation) {
+  if (authError || !user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  if (
+    !conversation ||
+    (conversation.buyer_id !== user.id && conversation.vendor_id !== user.id)
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -64,16 +77,26 @@ export async function GET(request: Request, { params }: Params) {
   const undeliveredIds = incomingMessages.filter((m) => !m.delivered).map((m) => m.id)
   const unreadIds = incomingMessages.filter((m) => !m.read).map((m) => m.id)
 
-  // Fire mark-as-read/delivered in the background — don't block the response
-  if (undeliveredIds.length > 0) {
-    supabase.from("messages").update({ delivered: true }).in("id", undeliveredIds).then(() => {})
-  }
-  if (unreadIds.length > 0) {
-    supabase.from("messages").update({ delivered: true, read: true }).in("id", unreadIds).then(() => {})
+  // Read/delivery bookkeeping runs after the response, in a single write
+  // instead of two fire-and-forget updates that Next could tear down early.
+  if (undeliveredIds.length > 0 || unreadIds.length > 0) {
+    after(async () => {
+      if (undeliveredIds.length > 0) {
+        await supabase.from("messages").update({ delivered: true }).in("id", undeliveredIds)
+      }
+      if (unreadIds.length > 0) {
+        await supabase
+          .from("messages")
+          .update({ delivered: true, read: true })
+          .in("id", unreadIds)
+      }
+    })
   }
 
-  // Respond immediately — marks happen in background
-  return NextResponse.json({ messages: messages.reverse(), current_user_id: user.id })
+  return NextResponse.json(
+    { messages: messages.reverse(), current_user_id: user.id },
+    { headers: { "Cache-Control": "private, no-store" } }
+  )
 }
 
 // POST /api/messages/[conversationId] — send a message
@@ -114,21 +137,23 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Update conversation timestamp in background — don't block response
-  supabase
-    .from("conversations")
-    .update({ last_message_at: message.created_at })
-    .eq("id", conversationId)
-    .then(() => {})
+  // Update conversation timestamp after the response — never blocks the sender
+  after(async () => {
+    await supabase
+      .from("conversations")
+      .update({ last_message_at: message.created_at })
+      .eq("id", conversationId)
+  })
 
   // Fire push notification completely in background — never blocks the sender
   const recipientId =
     conversation.buyer_id === user.id ? conversation.vendor_id : conversation.buyer_id
 
-  Promise.all([
-    supabase.from("vendors").select("shop_name").eq("user_id", user.id).maybeSingle(),
-    supabase.from("profiles").select("full_name, username").eq("id", user.id).maybeSingle(),
-  ]).then(([{ data: senderVendor }, { data: senderProfile }]) => {
+  after(async () => {
+    const [{ data: senderVendor }, { data: senderProfile }] = await Promise.all([
+      supabase.from("vendors").select("shop_name").eq("user_id", user.id).maybeSingle(),
+      supabase.from("profiles").select("full_name, username").eq("id", user.id).maybeSingle(),
+    ])
     const senderName =
       senderVendor?.shop_name ??
       senderProfile?.full_name ??
@@ -140,20 +165,22 @@ export async function POST(request: Request, { params }: Params) {
       (content?.trim() && content.trim().slice(0, 140)) ||
       (image_url ? "Sent you an image" : "New message")
 
-    return dispatchNotification(
-      { userId: recipientId },
-      {
-        type: "message",
-        refId: message.id,
-        dedupeWindowHours: 0,
-        title: `New message from ${senderName}`,
-        body: preview,
-        link: `/?tab=messages&cid=${conversationId}`,
-        data: { conversationId, messageId: message.id },
-      },
-    )
-  }).catch((err) => {
-    console.error("[messages] notification dispatch failed", err)
+    try {
+      await dispatchNotification(
+        { userId: recipientId },
+        {
+          type: "message",
+          refId: message.id,
+          dedupeWindowHours: 0,
+          title: `New message from ${senderName}`,
+          body: preview,
+          link: `/?tab=messages&cid=${conversationId}`,
+          data: { conversationId, messageId: message.id },
+        },
+      )
+    } catch (err) {
+      console.error("[messages] notification dispatch failed", err)
+    }
   })
 
   // Respond immediately — notification fires in background
