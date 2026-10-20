@@ -28,6 +28,12 @@ import {
   type CallSession,
   type CallSignalRow,
 } from "@/lib/webrtc"
+import {
+  primeCallAudio,
+  startIncomingRing,
+  startRingback,
+  stopCallSounds,
+} from "@/lib/call-sounds"
 import { CallOverlay } from "@/components/call-overlay"
 import { useNotifications } from "@/hooks/use-notifications"
 import { useToast } from "@/hooks/use-toast"
@@ -52,6 +58,11 @@ function getClient(): SupabaseBrowserClient {
 // Caller-side end reasons that mean the ring was never answered. When one of
 // these ends a call, the callee's other devices get a "Missed call" push that
 // replaces the incoming-call notification (server-gated on presence).
+/** How many ICE restarts one call may attempt before it counts as dropped. */
+const MAX_ICE_RESTARTS = 3
+/** Minimum spacing between restarts so a flapping link can't spam SDP offers. */
+const ICE_RESTART_COOLDOWN_MS = 4_000
+
 const RING_NEVER_ANSWERED_REASONS = new Set([
   "cancel",
   "timeout",
@@ -169,7 +180,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const signalChainRef = useRef<Promise<void>>(Promise.resolve())
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([])
   const remoteDescSetRef = useRef(false)
-  const restartAttemptedRef = useRef(false)
+  const restartAttemptsRef = useRef(0)
+  const lastRestartAtRef = useRef(0)
+  const micRecoveryUsedRef = useRef(false)
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null)
   const incomingSeenRef = useRef<Set<string>>(new Set())
   const iceConfigRef = useRef<{ turnConfigured: boolean }>({ turnConfigured: false })
 
@@ -259,9 +273,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     pendingCandidatesRef.current = []
     remoteDescSetRef.current = false
-    restartAttemptedRef.current = false
+    restartAttemptsRef.current = 0
+    lastRestartAtRef.current = 0
+    micRecoveryUsedRef.current = false
     seenSignalsRef.current.clear()
     signalChainRef.current = Promise.resolve()
+
+    // The ring tone and the vibration loop must never outlive the call.
+    stopCallSounds()
 
     if (signalChannelRef.current) {
       getClient().removeChannel(signalChannelRef.current)
@@ -356,11 +375,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function attemptIceRestart(callId: string): Promise<boolean> {
+  /** Re-gathers ICE candidates on the live connection. A call gets a small
+   *  budget of cooldown-spaced restarts so one blip doesn't kill it, while a
+   *  flapping link still can't loop forever. The budget refills whenever the
+   *  connection returns to "connected". */
+  async function attemptIceRestart(
+    callId: string,
+    force = false,
+  ): Promise<boolean> {
     const pc = pcRef.current
-    if (!pc || pc.signalingState === "closed") return false
-    if (restartAttemptedRef.current) return false
-    restartAttemptedRef.current = true
+    // "stable" also rules out closed connections and stacked restart offers.
+    if (!pc || pc.signalingState !== "stable") return false
+    if (restartAttemptsRef.current >= MAX_ICE_RESTARTS) return false
+    if (
+      !force &&
+      Date.now() - lastRestartAtRef.current < ICE_RESTART_COOLDOWN_MS
+    ) {
+      return false
+    }
+    restartAttemptsRef.current += 1
+    lastRestartAtRef.current = Date.now()
     patch({ notice: "Reconnecting…" })
     try {
       const offer = await pc.createOffer({ iceRestart: true })
@@ -386,6 +420,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     if (state === "connected") {
       clearTimers()
+      // Healthy again: the restart budget refills for any future blip.
+      restartAttemptsRef.current = 0
       patch({ notice: null })
       return
     }
@@ -411,6 +447,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (state === "failed") {
       const restarted = await attemptIceRestart(callId)
       if (!restarted) {
+        // A restart offer already in flight gets to prove itself first.
+        if (pc.signalingState === "have-local-offer") return
         void callRpc("respond_call", {
           p_call_id: callId,
           p_action: "fail",
@@ -418,6 +456,48 @@ export function CallProvider({ children }: { children: ReactNode }) {
         })
         finishCall("Call dropped", "connection_lost")
       }
+    }
+  }
+
+  /** A Bluetooth headset powering off ends the microphone track mid-call and
+   *  the call goes silently one-way. Re-open the mic and swap it into the
+   *  existing sender so the conversation survives the hardware change. */
+  async function handleMicEnded(callId: string) {
+    const current = sessionRef.current
+    const pc = pcRef.current
+    if (!current || current.id !== callId) return
+    if (current.phase === "ended" || current.phase === "ending") return
+    if (!pc || pc.signalingState === "closed") return
+
+    if (micRecoveryUsedRef.current) {
+      patch({ notice: "Microphone lost — they can't hear you" })
+      return
+    }
+    micRecoveryUsedRef.current = true
+    patch({ notice: "Reconnecting microphone…" })
+    try {
+      const fresh = await acquireMicrophone()
+      const stillMuted = sessionRef.current?.muted === true
+      fresh.getAudioTracks().forEach((track) => {
+        track.enabled = !stillMuted
+        track.addEventListener("ended", () => void handleMicEnded(callId))
+      })
+      localStreamRef.current?.getTracks().forEach((track) => {
+        try {
+          track.stop()
+        } catch {
+          // already stopped
+        }
+      })
+      localStreamRef.current = fresh
+      const sender = pc
+        .getSenders()
+        .find((s) => !s.track || s.track.kind === "audio")
+      if (sender) await sender.replaceTrack(fresh.getAudioTracks()[0])
+      patch({ notice: null })
+    } catch (error) {
+      console.warn("[calls] microphone recovery failed:", error)
+      patch({ notice: "Microphone lost — they can't hear you" })
     }
   }
 
@@ -435,7 +515,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
       const stream = localStreamRef.current
       if (stream) {
-        stream.getTracks().forEach((track) => pc.addTrack(track, stream))
+        stream.getTracks().forEach((track) => {
+          pc.addTrack(track, stream)
+          if (track.kind === "audio") {
+            track.addEventListener("ended", () => void handleMicEnded(callId))
+          }
+        })
       }
 
       pc.onicecandidate = (event) => {
@@ -712,6 +797,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       sessionRef.current = next
       setSessionState(next)
       startRingTimer()
+      startIncomingRing()
 
       const context = await loadPeerContext(
         getClient(),
@@ -810,6 +896,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
       if (existing) setSession(null)
 
+      // Still inside the tap's user gesture: unlock the AudioContext so the
+      // ringback tone can't be blocked by autoplay policy.
+      primeCallAudio()
+
       if (!isVoiceCallSupported()) {
         toast({
           title: "Calls aren't supported here",
@@ -897,6 +987,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       sessionRef.current = next
       setSessionState(next)
       setAudioBlocked(false)
+      startRingback()
 
       let stream: MediaStream
       try {
@@ -1348,6 +1439,25 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
       void callRpc("expire_stale_calls")
       void recoverRinging()
+      // Mid-call network blip: the browser is back online, so rebuild the
+      // media path now instead of waiting for ICE to time out on its own.
+      const current = sessionRef.current
+      if (
+        current &&
+        (current.phase === "active" || current.phase === "connecting") &&
+        pcRef.current &&
+        pcRef.current.connectionState !== "connected"
+      ) {
+        void attemptIceRestart(current.id, true).then((restarted) => {
+          if (restarted) return
+          void callRpc("respond_call", {
+            p_call_id: current.id,
+            p_action: "fail",
+            p_reason: "connection_lost",
+          })
+          finishCall("Call dropped", "connection_lost")
+        })
+      }
     }
     const onVisible = () => {
       if (!document.hidden) onOnline()
@@ -1362,6 +1472,41 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (channel) client.removeChannel(channel)
     }
   }, [handleCallRow])
+
+  // Keep the screen awake while a call is live — a locked phone dims the
+  // display and some Android browsers then deprioritise the audio session.
+  const acquireWakeLock = useCallback(async () => {
+    if (typeof navigator === "undefined" || !("wakeLock" in navigator)) return
+    if (document.visibilityState !== "visible") return
+    try {
+      wakeLockRef.current = await navigator.wakeLock.request("screen")
+    } catch {
+      // Denied or unsupported — the call works fine without it.
+    }
+  }, [])
+
+  const releaseWakeLock = useCallback(() => {
+    const sentinel = wakeLockRef.current
+    wakeLockRef.current = null
+    if (sentinel) sentinel.release().catch(() => {})
+  }, [])
+
+  const callLive =
+    !!session && session.phase !== "ended" && session.phase !== "ending"
+
+  useEffect(() => {
+    if (!callLive) return
+    void acquireWakeLock()
+    // The OS releases the lock when the tab hides; grab it again on return.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void acquireWakeLock()
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility)
+      releaseWakeLock()
+    }
+  }, [callLive, acquireWakeLock, releaseWakeLock])
 
   // Release the microphone/peer if the provider itself unmounts.
   useEffect(() => () => teardown(), [teardown])

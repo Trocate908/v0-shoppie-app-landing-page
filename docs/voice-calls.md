@@ -11,6 +11,24 @@ signaling and call state. No phone numbers, phone credit, video or group calls.
   handling, plus cancel while ringing.
 - Active-call screen with elapsed time, connection status, mute/unmute, audio
   output switching (where the browser supports it) and **End call**.
+- **Ring tone and vibration.** The callee hears a synthesised ring loop and
+  feels a vibration pattern while the overlay is up; the caller hears the
+  standard "ringback" tone while waiting for an answer. Tones are generated
+  with the Web Audio API (no bundled audio asset) and stop the moment the call
+  is answered, declined, cancelled or timed out. When autoplay policy blocks
+  audio (e.g. iOS before the first tap), the overlay and vibration still work.
+- **Connection recovery.** A dropped link triggers up to three cooldown-spaced
+  ICE restarts (the budget refills whenever the connection is healthy again),
+  the browser coming back online mid-call forces an immediate restart, and a
+  microphone track that ends mid-call (Bluetooth headset powering off) is
+  re-opened and swapped into the live connection once.
+- **Screen wake lock.** While a call is live the screen is kept awake where the
+  browser supports the Wake Lock API; the lock is released on end and
+  re-acquired when the tab becomes visible again.
+- **Call history in the inbox.** Each conversation's latest call is returned by
+  `/api/messages/conversations` and, when it is newer than the last message,
+  becomes the row's preview line (missed / incoming / outgoing, with duration
+  for answered calls). The list refreshes live when a call ends on either side.
 - Microphone permission errors, missing/busy devices, offline, busy recipient,
   declined, unanswered and dropped connections.
 - Automatic cleanup of the peer connection, microphone tracks, signaling channel
@@ -176,6 +194,9 @@ These are browser/platform limits, not bugs:
 - **iOS Safari** requires a user gesture before audio can play and does not
   support `setSinkId`, so the speaker/output button is hidden there. The audio
   route follows the device's current output (earpiece, Bluetooth, speaker).
+  The caller's ringback is safe (the call starts from a tap that unlocks
+  audio); a callee whose first interaction is the ring itself may only get the
+  visual overlay and vibration until their first tap unlocks audio.
 - **Android Chrome** supports output selection on recent versions; Bluetooth
   routing can still be controlled by the OS, and `setSinkId` may throw despite
   being present. Failures surface as a clear toast rather than a silent no-op.
@@ -219,11 +240,30 @@ signed-in identities on two devices:
     one missed push (checked via the `call_ring` / `call_missed` rows in
     `notification_sends`), and the ring push cannot be delivered after its
     ~90s TTL.
+14. **Sounds:** with the callee's app open, the ring tone is audible and the
+    phone vibrates (Android); the caller hears ringback while it rings. Both
+    stop the instant the call is answered, declined or cancelled.
+15. **Reconnect:** toggle Wi-Fi off for ~5s during an active call and back on —
+    the overlay shows "Reconnecting…" and the call survives (up to three ICE
+    restarts; coming back online retries immediately). Toggling repeatedly
+    until the budget is spent still ends with "Call dropped" and a clean
+    teardown.
+16. **Headset disconnect:** start a call on Bluetooth headphones, power the
+    headphones off — the call keeps going on the phone mic/speaker (one
+    automatic microphone recovery per call; a second loss shows
+    "Microphone lost").
+17. **Wake lock:** during an active call the screen stays awake on supported
+    browsers; ending the call releases it.
+18. **Inbox preview:** after a call ends, the conversation row in the Messages
+    list shows the call (e.g. "Missed call" in red, or "Outgoing call · 00:12")
+    when it is newer than the last message, on **both** participants' devices,
+    without a page reload.
 
 ## Known Phase 1 limitations
 
-- No call-history screen yet (rows are stored in `public.calls` for a future
-  history tab and for missed-call audits).
+- No full call-history screen yet: the Messages inbox surfaces each chat's
+  latest call, and rows are kept in `public.calls` for a future history tab and
+  missed-call audits.
 - No video, group calls, hold/transfer, native wake-up of a fully closed app
   (iOS CallKit / Android ConnectionService), or reconnect-after-reload.
 - Signaling replays up to 200 rows per call; enough for a 1:1 call, not a
