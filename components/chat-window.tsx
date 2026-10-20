@@ -107,6 +107,37 @@ interface Conversation {
   vendors: ConversationVendor | null
 }
 
+// ─── Thread cache ──────────────────────────────────────────────────────────────
+//
+// Opening a conversation used to be a cold network round trip every single
+// time: tap, skeleton, wait, then the same thread again after you came back
+// from the list. Threads are cached per conversation and prefetched from the
+// list on pointer-down, so a revisit paints instantly while the refresh runs
+// in the background.
+
+const threadCache = new Map<string, Message[]>()
+const inFlightThreads = new Map<string, Promise<Message[] | null>>()
+
+async function loadThread(conversationId: string): Promise<Message[] | null> {
+  const res = await fetch(`/api/messages/${conversationId}`)
+  if (!res.ok) return null
+  const data = await res.json()
+  const messages: Message[] = data.messages ?? []
+  threadCache.set(conversationId, messages)
+  return messages
+}
+
+/** Warm the cache before the tap lands. Safe to call repeatedly. */
+export function prefetchMessages(conversationId: string) {
+  if (threadCache.has(conversationId) || inFlightThreads.has(conversationId)) return
+  const pending = loadThread(conversationId)
+    .catch(() => null)
+    .finally(() => {
+      inFlightThreads.delete(conversationId)
+    })
+  inFlightThreads.set(conversationId, pending)
+}
+
 interface ChatWindowProps {
   conversation: Conversation
   /**
@@ -147,8 +178,8 @@ export default function ChatWindow({
     }
   }, [currentUserId])
 
-  const [messages, setMessages] = useState<Message[]>([])
-  const [loading, setLoading] = useState(true)
+  const [messages, setMessages] = useState<Message[]>(() => threadCache.get(conversation.id) ?? [])
+  const [loading, setLoading] = useState(() => !threadCache.has(conversation.id))
   const [input, setInput] = useState("")
   const [sending, setSending] = useState(false)
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
@@ -176,21 +207,56 @@ export default function ChatWindow({
   > | null>(null)
   const lastTypingSentAtRef = useRef<number>(0)
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Counts channel joins so we only re-fetch on a *re*-subscribe, not the first
+  // one (the mount fetch already covers that).
+  const subscribeCountRef = useRef(0)
 
   const otherName = conversation.is_buyer
     ? (conversation.vendors?.shop_name ?? "Vendor")
     : "Buyer"
 
+  // Every local mutation goes through here so the cache and the view never
+  // drift apart — reopening the thread shows what you just did.
+  const commit = useCallback(
+    (updater: (prev: Message[]) => Message[]) => {
+      setMessages((prev) => {
+        const next = updater(prev)
+        threadCache.set(conversation.id, next)
+        return next
+      })
+    },
+    [conversation.id]
+  )
+
   const fetchMessages = useCallback(async () => {
-    const res = await fetch(`/api/messages/${conversation.id}`)
-    if (!res.ok) return
-    const data = await res.json()
-    setMessages(data.messages ?? [])
+    // If a prefetch (or a previous open) is already in flight, ride along
+    // instead of firing a second identical request.
+    const pending = inFlightThreads.get(conversation.id)
+    let fresh = await (pending ?? loadThread(conversation.id).finally(() => {
+      inFlightThreads.delete(conversation.id)
+    }))
+    // A failed prefetch must not leave the thread permanently empty — try once
+    // more before giving up and showing the cached/empty state.
+    if (!fresh) fresh = await loadThread(conversation.id)
+    if (!fresh) {
+      setLoading(false)
+      return
+    }
+    commit((prev) => {
+      if (prev.length === 0) return fresh
+      const newest = fresh.length > 0 ? fresh[fresh.length - 1].created_at : null
+      // Keep unconfirmed optimistic bubbles and anything that arrived over
+      // realtime while this request was in flight.
+      const extras = prev.filter(
+        (m) => m.id.startsWith("optimistic-") || (newest !== null && m.created_at > newest)
+      )
+      return extras.length > 0 ? [...fresh, ...extras] : fresh
+    })
     setLoading(false)
-  }, [conversation.id])
+  }, [commit, conversation.id])
 
   useEffect(() => {
-    fetchMessages()
+    void fetchMessages()
   }, [fetchMessages])
 
   // On initial load: jump instantly to bottom (no animation = no layout thrash)
@@ -267,7 +333,7 @@ export default function ChatWindow({
         },
         (payload) => {
           const newMsg = payload.new as Message
-          setMessages((prev) => {
+          commit((prev) => {
             if (prev.some((m) => m.id === newMsg.id)) return prev
             return [...prev, newMsg]
           })
@@ -294,9 +360,7 @@ export default function ChatWindow({
         },
         (payload) => {
           const updated = payload.new as Message
-          setMessages((prev) =>
-            prev.map((m) => (m.id === updated.id ? updated : m))
-          )
+          commit((prev) => prev.map((m) => (m.id === updated.id ? updated : m)))
         }
       )
       .on(
@@ -310,7 +374,7 @@ export default function ChatWindow({
         (payload) => {
           const removed = payload.old as { id?: string }
           if (!removed?.id) return
-          setMessages((prev) => prev.filter((m) => m.id !== removed.id))
+          commit((prev) => prev.filter((m) => m.id !== removed.id))
         }
       )
       .on("broadcast", { event: "typing" }, (payload) => {
@@ -322,7 +386,14 @@ export default function ChatWindow({
         // tab, dropped connection), drop the indicator instead of leaving it on.
         typingStopTimerRef.current = setTimeout(() => setIsOtherTyping(false), 3000)
       })
-      .subscribe()
+      .subscribe((status) => {
+        // Re-sync after a reconnect: any message sent while the socket was down
+        // never produced an event, which left the thread silently stale.
+        if (status === "SUBSCRIBED") {
+          subscribeCountRef.current += 1
+          if (subscribeCountRef.current > 1) void fetchMessages()
+        }
+      })
 
     // Held so the composer can broadcast without re-subscribing per keystroke.
     typingChannelRef.current = channel
@@ -333,7 +404,7 @@ export default function ChatWindow({
       setIsOtherTyping(false)
       supabase.removeChannel(channel)
     }
-  }, [conversation.id, selfId, otherName])
+  }, [commit, conversation.id, selfId, fetchMessages])
 
   async function uploadImage(file: File): Promise<string | null> {
     try {
@@ -406,7 +477,7 @@ export default function ChatWindow({
       created_at: new Date().toISOString(),
       edited_at: null,
     }
-    setMessages((prev) => [...prev, optimistic])
+    commit((prev) => [...prev, optimistic])
 
     try {
       const res = await fetch(`/api/messages/${conversation.id}`, {
@@ -416,11 +487,9 @@ export default function ChatWindow({
       })
       if (res.ok) {
         const data = await res.json()
-        setMessages((prev) =>
-          prev.map((m) => (m.id === optimisticId ? data.message : m))
-        )
+        commit((prev) => prev.map((m) => (m.id === optimisticId ? data.message : m)))
       } else {
-        setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
+        commit((prev) => prev.filter((m) => m.id !== optimisticId))
         setInput(content)
         toast({
           title: "Couldn't send",
@@ -429,7 +498,7 @@ export default function ChatWindow({
         })
       }
     } catch {
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
+      commit((prev) => prev.filter((m) => m.id !== optimisticId))
       setInput(content)
     } finally {
       setSending(false)
@@ -449,27 +518,21 @@ export default function ChatWindow({
     })
     if (res.ok) {
       const data = await res.json()
-      setMessages((prev) =>
-        prev.map((m) => (m.id === data.message.id ? data.message : m))
-      )
+      commit((prev) => prev.map((m) => (m.id === data.message.id ? data.message : m)))
     }
     setEditingMessage(null)
     setEditContent("")
   }
 
   async function deleteMessage(messageId: string) {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === messageId ? { ...m, deleted: true } : m))
-    )
+    commit((prev) => prev.map((m) => (m.id === messageId ? { ...m, deleted: true } : m)))
     const res = await fetch(`/api/messages/${conversation.id}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_id: messageId }),
     })
     if (!res.ok) {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, deleted: false } : m))
-      )
+      commit((prev) => prev.map((m) => (m.id === messageId ? { ...m, deleted: false } : m)))
     }
   }
 

@@ -196,7 +196,8 @@ SUPABASE_SERVICE_ROLE_KEY=
 CLOUDINARY_URL=cloudinary://api_key:api_secret@cloud_name
 NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
 
-# In-app voice calls (optional TURN relay; STUN falls back to public servers)
+# In-app voice calls (optional TURN relay; without one, calls are STUN-only)
+# Credentials belong in .env.local / the production environment, never in git.
 STUN_URLS=stun:stun.l.google.com:19302
 
 # Recommended free option: Cloudflare Realtime TURN (server-only credentials)

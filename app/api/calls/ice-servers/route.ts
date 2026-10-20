@@ -17,9 +17,12 @@ export const dynamic = "force-dynamic"
 //   2. A static TURN provider — TURN_URLS / TURN_USERNAME / TURN_CREDENTIAL.
 // Cloudflare wins when configured; if it is unavailable or misconfigured we
 // fall back to static TURN, then to public STUN, so a relay outage never blocks
-// call setup. See docs/voice-calls.md.
+// call setup. Relay credentials never live in the repo: a static provider is
+// enabled with TURN_URLS / TURN_USERNAME / TURN_CREDENTIAL (see
+// docs/voice-calls.md for the Metered Open Relay example).
 
 const DEFAULT_STUN = [
+  "stun:stun.relay.metered.ca:80",
   "stun:stun.l.google.com:19302",
   "stun:stun1.l.google.com:19302",
 ]
@@ -58,7 +61,7 @@ function buildStaticIceConfig(): {
     })
   }
 
-  return { iceServers, turnConfigured: turnUrls.length > 0 }
+  return { iceServers, turnConfigured: hasTurnUrl(iceServers) }
 }
 
 function hasTurnUrl(servers: RTCIceServer[]): boolean {
