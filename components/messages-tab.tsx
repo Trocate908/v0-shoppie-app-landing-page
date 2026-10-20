@@ -2,7 +2,19 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { createBrowserClient } from "@/lib/supabase/client"
-import { MessageCircle, Store, ShoppingBag, Trash2, Search, X, Check, Clock } from "lucide-react"
+import {
+  MessageCircle,
+  Store,
+  ShoppingBag,
+  Trash2,
+  Search,
+  X,
+  Check,
+  Clock,
+  PhoneIncoming,
+  PhoneMissed,
+  PhoneOutgoing,
+} from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { usePresence, formatLastSeen } from "@/hooks/use-presence"
 import { Button } from "@/components/ui/button"
@@ -11,6 +23,7 @@ import { isToday, isYesterday, format, differenceInCalendarDays } from "date-fns
 import ChatWindow, { prefetchMessages } from "@/components/chat-window"
 import { VerificationBadge } from "@/components/verification-badge"
 import { avatarGradient } from "@/lib/avatar"
+import { formatCallDuration } from "@/lib/webrtc"
 import { cn } from "@/lib/utils"
 import {
   AlertDialog,
@@ -57,6 +70,13 @@ interface Conversation {
   products: ConversationProduct | null
   vendors: ConversationVendor | null
   last_message: { content: string | null; sender_id: string } | null
+  last_call: {
+    caller_id: string
+    status: string
+    answered_at: string | null
+    ended_at: string | null
+    created_at: string
+  } | null
 }
 
 interface MessagesTabProps {
@@ -66,22 +86,33 @@ interface MessagesTabProps {
 
 type FilterTab = "all" | "unread"
 
-function formatTime(dateStr: string | null): string {
-  if (!dateStr) return ""
-  const d = new Date(dateStr)
+function formatTime(date: string | number | null | undefined): string {
+  if (!date) return ""
+  const d = new Date(date)
   if (isToday(d)) return format(d, "HH:mm")
   if (isYesterday(d)) return "Yesterday"
   if (differenceInCalendarDays(new Date(), d) < 7) return format(d, "EEE")
   return format(d, "dd/MM/yy")
 }
 
-function sectionLabel(dateStr: string | null): string {
-  if (!dateStr) return "Older"
-  const d = new Date(dateStr)
+function sectionLabel(date: string | number | null): string {
+  if (!date) return "Older"
+  const d = new Date(date)
   if (isToday(d)) return "Today"
   if (isYesterday(d)) return "Yesterday"
   if (differenceInCalendarDays(new Date(), d) < 7) return "This week"
   return "Older"
+}
+
+/** Recency for ordering, section labels and row timestamps: the newest of
+ *  the last message and the last call, so a fresh missed call surfaces the
+ *  chat even when no new message followed it. */
+function lastActivityAt(c: Conversation): number {
+  const message = c.last_message_at ? Date.parse(c.last_message_at) : NaN
+  const call = c.last_call?.created_at ? Date.parse(c.last_call.created_at) : NaN
+  const base = Number.isFinite(message) ? message : Date.parse(c.created_at)
+  const newest = Math.max(Number.isFinite(call) ? call : 0, base)
+  return Number.isFinite(newest) ? newest : Date.now()
 }
 
 export default function MessagesTab({
@@ -127,11 +158,7 @@ export default function MessagesTab({
   useEffect(() => () => headerObserverRef.current?.disconnect(), [])
 
   const sortConversations = (list: Conversation[]): Conversation[] =>
-    list.slice().sort((a, b) => {
-      const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : new Date(a.created_at).getTime()
-      const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : new Date(b.created_at).getTime()
-      return bTime - aTime
-    })
+    list.slice().sort((a, b) => lastActivityAt(b) - lastActivityAt(a))
 
   const fetchConversations = useCallback(async () => {
     try {
@@ -255,6 +282,28 @@ export default function MessagesTab({
     return () => { supabase.removeChannel(channel) }
   }, [isAuthenticated, userId, scheduleRefresh])
 
+  // A call ending updates its calls row on both participants' devices; refresh
+  // the list so the missed/completed call becomes the preview even when the
+  // other side hung up and no message followed.
+  useEffect(() => {
+    if (!isAuthenticated || !userId) return
+    const supabase = getSharedSupabaseClient()
+    const channel = supabase
+      .channel("messages_tab_calls_v1")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "calls", filter: `caller_id=eq.${userId}` },
+        () => scheduleRefresh(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "calls", filter: `callee_id=eq.${userId}` },
+        () => scheduleRefresh(),
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [isAuthenticated, userId, scheduleRefresh])
+
   // Auto-open from deep-link
   useEffect(() => {
     if (!initialConversationId || didAutoOpen.current || conversations.length === 0) return
@@ -320,7 +369,7 @@ export default function MessagesTab({
     const order = ["Today", "Yesterday", "This week", "Older"]
     const map = new Map<string, Conversation[]>()
     for (const c of filteredConversations) {
-      const label = sectionLabel(c.last_message_at ?? c.created_at)
+      const label = sectionLabel(lastActivityAt(c))
       if (!map.has(label)) map.set(label, [])
       map.get(label)!.push(c)
     }
@@ -549,14 +598,56 @@ function ConversationItem({
   /** Fired on pointer-down so the thread is already loading when the tap lands. */
   onPrefetch: () => void
 }) {
-  const { products, vendors, unread_count, last_message_at, last_message, is_buyer } = conversation
+  const { products, vendors, unread_count, last_message_at, last_message, last_call, is_buyer } = conversation
   const hasUnread = (unread_count ?? 0) > 0
   const unreadNum = unread_count ?? 0
-  const timeStr = formatTime(last_message_at ?? conversation.created_at)
+  const timeStr = formatTime(lastActivityAt(conversation))
   const ownedLast = last_message?.sender_id === currentUserId
   const previewText = last_message
     ? (last_message.content ?? "📷 Photo")
     : "Tap to start chatting"
+
+  // A finished call newer than the last message becomes the preview line —
+  // so a missed or completed call is visible without opening the chat.
+  const callFinished =
+    !!last_call && last_call.status !== "ringing" && last_call.status !== "active"
+  const msgTs = last_message_at ? Date.parse(last_message_at) : NaN
+  const callTs = last_call ? Date.parse(last_call.created_at) : NaN
+  const showCallPreview =
+    callFinished && Number.isFinite(callTs) && (!Number.isFinite(msgTs) || callTs > msgTs)
+  const callOutgoing = last_call?.caller_id === currentUserId
+  const callAnswered = !!last_call?.answered_at
+  const callDurationSec =
+    callAnswered && last_call?.answered_at && last_call.ended_at
+      ? Math.max(
+          0,
+          Math.round(
+            (Date.parse(last_call.ended_at) - Date.parse(last_call.answered_at)) / 1000,
+          ),
+        )
+      : null
+  let callLabel = ""
+  let callMissed = false
+  if (showCallPreview && last_call) {
+    if (callAnswered) {
+      callLabel = `${callOutgoing ? "Outgoing" : "Incoming"} call${
+        callDurationSec ? ` · ${formatCallDuration(callDurationSec)}` : ""
+      }`
+    } else if (last_call.status === "declined") {
+      callLabel = callOutgoing ? "Call declined" : "Declined call"
+    } else if (last_call.status === "cancelled") {
+      callLabel = callOutgoing ? "Cancelled call" : "Missed call"
+      callMissed = !callOutgoing
+    } else {
+      callLabel = callOutgoing ? "No answer" : "Missed call"
+      callMissed = !callOutgoing
+    }
+  }
+  const CallPreviewIcon = callAnswered
+    ? callOutgoing
+      ? PhoneOutgoing
+      : PhoneIncoming
+    : PhoneMissed
   const shopName  = is_buyer ? (vendors?.shop_name ?? "Unknown Shop") : "Buyer"
   const avatarUrl = is_buyer ? (vendors?.profile_picture_url ?? null) : null
   const gradient  = avatarGradient(shopName)
@@ -653,17 +744,33 @@ function ConversationItem({
 
             {/* Row 2: preview + unread badge */}
             <div className="flex items-center gap-2">
-              <p className={cn(
-                "flex-1 min-w-0 truncate text-[13px] leading-snug",
-                hasUnread ? "font-medium text-foreground" : "text-muted-foreground"
-              )}>
-                {ownedLast && !hasUnread && (
-                  <span className="mr-1 inline-flex items-center align-middle text-primary">
-                    <DoubleTickIcon className="h-3.5 w-3.5" />
-                  </span>
-                )}
-                {previewText}
-              </p>
+              {showCallPreview ? (
+                <p className={cn(
+                  "flex-1 min-w-0 truncate text-[13px] leading-snug",
+                  hasUnread ? "font-medium text-foreground" : "text-muted-foreground"
+                )}>
+                  <CallPreviewIcon
+                    aria-hidden
+                    className={cn(
+                      "mr-1 inline h-3.5 w-3.5 align-[-2px]",
+                      callMissed ? "text-destructive" : "text-primary",
+                    )}
+                  />
+                  {callLabel}
+                </p>
+              ) : (
+                <p className={cn(
+                  "flex-1 min-w-0 truncate text-[13px] leading-snug",
+                  hasUnread ? "font-medium text-foreground" : "text-muted-foreground"
+                )}>
+                  {ownedLast && !hasUnread && (
+                    <span className="mr-1 inline-flex items-center align-middle text-primary">
+                      <DoubleTickIcon className="h-3.5 w-3.5" />
+                    </span>
+                  )}
+                  {previewText}
+                </p>
+              )}
               {hasUnread && (
                 <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold leading-none text-primary-foreground shadow-sm">
                   {unreadNum > 99 ? "99+" : unreadNum}

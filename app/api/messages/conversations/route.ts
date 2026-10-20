@@ -42,14 +42,17 @@ export async function GET() {
         image_url,
         price
       ),
-      messages(id, content, sender_id, read, delivered, created_at)
+      messages(id, content, sender_id, read, delivered, created_at),
+      calls(id, caller_id, status, answered_at, ended_at, created_at)
     `
     )
     .or(`buyer_id.eq.${user.id},vendor_id.eq.${user.id}`)
     .order("last_message_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false, foreignTable: "messages" })
+    .order("created_at", { ascending: false, foreignTable: "calls" })
     .limit(CONVERSATION_LIMIT)
     .limit(1, { foreignTable: "messages" })
+    .limit(1, { foreignTable: "calls" })
 
   if (error) {
     console.error("[messages/conversations] Query error:", error)
@@ -122,6 +125,22 @@ export async function GET() {
       ? messages.reduce((a, b) => (b.created_at > a.created_at ? b : a))
       : null
 
+    // Latest voice call in this chat, so the inbox can surface a missed or
+    // completed call even when no new message followed it. RLS scopes the
+    // embedded read to calls this user took part in.
+    const calls = (c.calls ?? []) as Array<{
+      id: string
+      caller_id: string
+      status: string
+      answered_at: string | null
+      ended_at: string | null
+      created_at: string
+    }>
+    const lastCall =
+      calls.length > 0
+        ? calls.reduce((a, b) => (b.created_at > a.created_at ? b : a))
+        : null
+
     return {
       id: c.id,
       product_id: c.product_id,
@@ -137,6 +156,16 @@ export async function GET() {
         ? {
             content: lastMsg.content,
             sender_id: lastMsg.sender_id,
+          }
+        : null,
+      last_call: lastCall
+        ? {
+            id: lastCall.id,
+            caller_id: lastCall.caller_id,
+            status: lastCall.status,
+            answered_at: lastCall.answered_at,
+            ended_at: lastCall.ended_at,
+            created_at: lastCall.created_at,
           }
         : null,
     }
